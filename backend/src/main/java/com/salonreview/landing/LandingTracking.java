@@ -26,6 +26,15 @@ public record LandingTracking(String visitorId, String landingPath, String refer
         return s != null && !s.isEmpty();
     }
 
+    private static final java.util.regex.Pattern GOOGLE_TOOL_HOST = java.util.regex.Pattern.compile(
+            "^(?:[a-z][a-z0-9+.-]*://)?(?:tagassistant|tagmanager|analytics|ads|lookerstudio|datastudio)\\.google\\.[a-z.]+(?:[:/?#]|$)"
+                    + "|^(?:[a-z][a-z0-9+.-]*://)?(?:search\\.google\\.com/search-console|web\\.dev|pagespeed\\.web\\.dev)(?:[:/?#]|$)");
+
+    /** Google debug/admin tools (Tag Assistant, GA, Ads, Search Console...) are not search results: such a referrer counts as none. */
+    public static boolean isGoogleToolReferrer(String referrer) {
+        return referrer != null && GOOGLE_TOOL_HOST.matcher(referrer.trim().toLowerCase(Locale.ROOT)).find();
+    }
+
     /** Human-readable attribution label, same rules and strings as the former classify_traffic_source. */
     public static String classify(LandingTracking t) {
         if (t == null) return "Direct / Unknown";
@@ -44,7 +53,7 @@ public record LandingTracking(String visitorId, String landingPath, String refer
         if (has(t.msclkid())) return utmDetail != null ? "Microsoft Ads (" + utmDetail + ")" : "Microsoft Ads (click)";
         if (utmDetail != null) return utmDetail;
 
-        String referrer = t.referrer() == null ? "" : t.referrer().toLowerCase(Locale.ROOT);
+        String referrer = t.referrer() == null || isGoogleToolReferrer(t.referrer()) ? "" : t.referrer().toLowerCase(Locale.ROOT);
         if (referrer.isEmpty()) return "Direct / No referrer";
         if (referrer.contains("google.")) return "Google (organic)";
         if (referrer.contains("instagram.com")) return "Instagram (organic)";

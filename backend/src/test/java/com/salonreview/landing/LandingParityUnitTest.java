@@ -22,6 +22,14 @@ class LandingParityUnitTest {
     }
 
     @Test
+    void googleToolReferrerIsDirectButSearchIsOrganic() {
+        assertThat(LandingTracking.classify(t("https://tagassistant.google.com/", null, null, null, null, null))).isEqualTo("Direct / No referrer");
+        assertThat(LandingTracking.classify(t("https://search.google.com/search-console", null, null, null, null, null))).isEqualTo("Direct / No referrer");
+        assertThat(LandingTracking.classify(t("https://www.google.com/", null, null, null, null, null))).isEqualTo("Google (organic)");
+        assertThat(LandingTracking.classify(t("https://www.google.de/", null, null, null, null, null))).isEqualTo("Google (organic)");
+    }
+
+    @Test
     void trafficSourceMatchesFormerService() {
         assertThat(LandingTracking.classify(null)).isEqualTo("Direct / Unknown");
         assertThat(LandingTracking.classify(t(null, null, null, null, null, null))).isEqualTo("Direct / No referrer");

@@ -295,7 +295,7 @@ public class SmsWebsiteLeadService {
         if (gclid != null) return utmDetail != null ? "Google Ads (" + utmDetail + ")" : "Google Ads (click)";
         if (utmDetail != null) return utmDetail;
 
-        String ref = referrer == null ? "" : referrer.toLowerCase(Locale.ROOT);
+        String ref = referrer == null || com.salonreview.landing.LandingTracking.isGoogleToolReferrer(referrer) ? "" : referrer.toLowerCase(Locale.ROOT);
         if (ref.isEmpty()) return "Direct / No referrer";
         if (ref.contains("google.")) return "Google (organic)";
         if (ref.contains("instagram.com")) return "Instagram (organic)";
