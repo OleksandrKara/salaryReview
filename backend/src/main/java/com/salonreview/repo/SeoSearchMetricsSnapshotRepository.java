@@ -11,6 +11,8 @@ public interface SeoSearchMetricsSnapshotRepository extends JpaRepository<SeoSea
     List<SeoSearchMetricsSnapshot> findByBusinessIdAndDateBetweenOrderByDateAsc(
             Long businessId, LocalDate start, LocalDate end);
 
+    Optional<SeoSearchMetricsSnapshot> findFirstByBusinessIdOrderByDateDesc(Long businessId);
+
     List<SeoSearchMetricsSnapshot> findByBusinessIdAndDate(Long businessId, LocalDate date);
 
     /** Upsert target — {@code SearchConsoleClient.queryPerformance} always requests both

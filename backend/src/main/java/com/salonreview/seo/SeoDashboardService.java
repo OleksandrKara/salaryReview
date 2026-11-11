@@ -134,7 +134,7 @@ public class SeoDashboardService {
                     trackedKeywords(businessId, site));
         }
 
-        LocalDate end = LocalDate.now();
+        LocalDate end = windowEnd(businessId);
         LocalDate start = end.minusDays(days);
         List<SeoSearchMetricsSnapshot> rows = metrics(businessId, start, end, site);
         List<SeoAnalyticsSnapshot> analyticsRows =
@@ -158,6 +158,16 @@ public class SeoDashboardService {
                 pageAnalysisService.contentOpportunities(rows, start, end),
                 pageAnalysisService.cannibalizedQueries(rows),
                 trackedKeywords(businessId, site));
+    }
+
+    /** Search Console lags 2-3 days, so ending the window at today counts empty days as zero and
+     * shows false drops. End at the newest synced day instead (never later than today). */
+    private LocalDate windowEnd(Long businessId) {
+        LocalDate today = LocalDate.now();
+        return searchMetricsRepository.findFirstByBusinessIdOrderByDateDesc(businessId)
+                .map(SeoSearchMetricsSnapshot::getDate)
+                .filter(d -> d.isBefore(today))
+                .orElse(today);
     }
 
     private List<SeoSearchMetricsSnapshot> metrics(Long businessId, LocalDate start, LocalDate end, String site) {

@@ -224,6 +224,22 @@ class SeoDashboardServiceTest {
     }
 
     @Test
+    @DisplayName("window ends at the newest synced day, not today, so Search Console lag is not counted as a drop")
+    void windowEndsAtNewestSyncedDay() {
+        LocalDate latest = LocalDate.now().minusDays(3);
+        when(connectionRepository.findByBusinessId(1L)).thenReturn(Optional.of(SeoConnection.builder().businessId(1L).build()));
+        when(pageSnapshotRepository.findFirstByBusinessIdAndStrategyOrderByDateDesc(any(), any())).thenReturn(Optional.empty());
+        when(issueRepository.findByBusinessIdAndResolvedAtIsNull(any())).thenReturn(List.of());
+        when(searchMetricsRepository.findFirstByBusinessIdOrderByDateDesc(1L))
+                .thenReturn(Optional.of(row(latest, "q", "/", 1, 10, BigDecimal.valueOf(0.1), BigDecimal.valueOf(5))));
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any())).thenReturn(List.of());
+
+        service.overview(1L, 28);
+
+        verify(searchMetricsRepository).findByBusinessIdAndDateBetweenOrderByDateAsc(1L, latest.minusDays(28), latest);
+    }
+
+    @Test
     @DisplayName("period comparisons (7d/28d/YoY) are all omitted when there's no prior-period data at all")
     void periodComparisonsOmittedWithNoPriorData() {
         LocalDate end = LocalDate.now();
