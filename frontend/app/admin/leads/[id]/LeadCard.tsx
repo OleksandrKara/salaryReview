@@ -3,7 +3,7 @@
 import FlagIcon from '../FlagIcon';
 import Link from 'next/link';
 import { useRef, useState } from 'react';
-import { t } from '../../../lib/i18n';
+import { t, tf } from '../../../lib/i18n';
 import VipIcon from '../../messages/VipIcon';
 import SmsConsentIcon from '../../messages/SmsConsentIcon';
 import NegativeFeedbackIcon from '../../messages/NegativeFeedbackIcon';
@@ -20,7 +20,7 @@ import { isActive } from '../leadActions';
 import CopyButton from '../CopyButton';
 import LeadOwnerPanel from '../LeadOwnerPanel';
 import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
-import type { Language, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
+import type { Language, Lead, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
 
 const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM'];
 function Pill({ tone, icon, children }: { tone: string; icon: React.ReactNode; children: React.ReactNode }) {
@@ -72,7 +72,7 @@ function Details({ payload, language, open }: { payload: Record<string, string>;
   );
 }
 
-const ATTR_ORDER = ['traffic_source', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'msclkid', 'fbclid', 'ttclid', 'landing_url', 'referrer'];
+const ATTR_ORDER = ['traffic_source', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'msclkid', 'fbclid', 'ttclid', 'landing_url', 'referrer', 'ad_first_source', 'ad_first_campaign', 'ad_first_medium', 'ad_first_click_id', 'ad_first_at', 'ad_first_landing'];
 
 function CampaignDetails({ attribution, language, open, title }: { attribution: Record<string, string>; language: Language | null; open?: boolean; title?: string }) {
   const entries = ATTR_ORDER.filter((k) => attribution[k]).map((k) => [k, attribution[k]] as [string, string]);
@@ -85,6 +85,20 @@ function CampaignDetails({ attribution, language, open, title }: { attribution: 
       </dl>
     </details>
   );
+}
+
+function adsJourney(lead: Lead, language: Language | null): string {
+  const first = new Date(lead.adFirstAt as string);
+  const conv = new Date(lead.createdAt);
+  const days = Math.round((conv.getTime() - first.getTime()) / 86400000);
+  return tf(language, 'leadAdsAssistedJourney', {
+    ad: lead.adFirstSource ?? '',
+    campaign: lead.adFirstCampaign ? tf(language, 'leadAdsAssistedCampaign', { c: lead.adFirstCampaign }) : '',
+    adDate: fmt(first.toISOString(), language),
+    src: lead.source,
+    convDate: fmt(conv.toISOString(), language),
+    gap: days > 0 ? tf(language, 'leadAdsAssistedGap', { n: days }) : '',
+  });
 }
 
 type Kind = 'contact' | 'sms' | 'email' | 'visit' | 'note' | 'system';
@@ -481,6 +495,12 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           ))}
         </div>
       </nav>
+
+      {data.lead.adsAssisted && data.lead.adFirstAt && (
+        <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
+          {adsJourney(data.lead, language)}
+        </div>
+      )}
 
       {data.firstTouch && (
         <div className="rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200">

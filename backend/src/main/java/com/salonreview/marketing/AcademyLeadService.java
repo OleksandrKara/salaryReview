@@ -47,6 +47,7 @@ public class AcademyLeadService {
      * site build that does not) gets the same labels as website-form contacts, so Direct, Google
      * organic and referrals are told apart instead of landing as Unknown. */
     static String trafficSource(AcademyLead l) {
+        if (l.hasVisit()) return currentVisit(l).trafficSource();
         if (l.referrer() == null) {
             return notBlank(l.gclid()) ? "Google Ads" : notBlank(l.utmSource())
                     ? com.salonreview.landing.TrafficSource.classify(l.utmSource(), l.utmMedium(), l.utmCampaign(), null, null, null, null, null, null, null) : null;
@@ -57,6 +58,19 @@ public class AcademyLeadService {
                 blankToNull(l.utmContent()), blankToNull(l.fbclid()), blankToNull(l.gclid()), null, null));
     }
 
+    /** This visit's own evidence (landing-URL click ids/UTMs and visit referrer); never the stored first touch. */
+    static com.salonreview.landing.Attribution currentVisit(AcademyLead l) {
+        return com.salonreview.landing.VisitAttribution.current(l.visitLandingUrl(), l.visitReferrer());
+    }
+
+    /** The first paid touch the browser carries, from the stored first-touch fields (empty when not paid). */
+    static Map<String, String> adHistory(AcademyLead l) {
+        var stored = new com.salonreview.landing.Attribution(l.utmSource(), l.utmMedium(), l.utmCampaign(), l.utmTerm(),
+                l.utmContent(), l.gclid(), null, null, null, l.fbclid(), null, null, null);
+        return com.salonreview.landing.VisitAttribution.adHistory(stored,
+                com.salonreview.landing.VisitAttribution.isoFromEpochMillis(l.firstTouchAt()), l.firstTouchLanding());
+    }
+
     private static String blankToNull(String s) {
         return s == null || s.isBlank() ? null : s;
     }
@@ -65,7 +79,23 @@ public class AcademyLeadService {
                               String message, boolean smsConsent, boolean emailConsent, String sourcePageUrl,
                               String utmSource, String utmMedium, String utmCampaign, String gclid,
                               String location, String utmTerm, String utmContent, String referrer, String fbclid,
-                              String visitorId, String pagePath) {
+                              String visitorId, String pagePath, String visitLandingUrl, String visitReferrer,
+                              String firstTouchAt, String firstTouchLanding) {
+        public AcademyLead(String kind, String name, String phone, String email, String courseSlug, String courseName,
+                           String message, boolean smsConsent, boolean emailConsent, String sourcePageUrl,
+                           String utmSource, String utmMedium, String utmCampaign, String gclid,
+                           String location, String utmTerm, String utmContent, String referrer, String fbclid,
+                           String visitorId, String pagePath) {
+            this(kind, name, phone, email, courseSlug, courseName, message, smsConsent, emailConsent, sourcePageUrl,
+                    utmSource, utmMedium, utmCampaign, gclid, location, utmTerm, utmContent, referrer, fbclid, visitorId,
+                    pagePath, null, null, null, null);
+        }
+
+        /** True when the site sent this visit's landing URL (new clients): the label then comes from the visit alone. */
+        public boolean hasVisit() {
+            return visitLandingUrl != null && !visitLandingUrl.isBlank();
+        }
+
         public boolean isSubscription() {
             return "subscribe".equals(kind);
         }
@@ -134,10 +164,24 @@ public class AcademyLeadService {
 
     /** One marketing.submissions row per form, tied to the browser (visitor id) and carrying the first-touch
      * source, so the lead's Website tab shows where each form came from and which visits led to it. */
-    private com.salonreview.landing.Attribution academyAttribution(long businessId, AcademyLead l) {
+    record AcademyAttribution(com.salonreview.landing.Attribution attribution, Map<String, String> adHistory) {
+        String toJson() {
+            return attribution.toJson(adHistory);
+        }
+    }
+
+    private AcademyAttribution academyAttribution(long businessId, AcademyLead l) {
+        if (l.hasVisit()) {
+            var visit = currentVisit(l);
+            // The visitor's recorded visits may only complete a visit that itself carries a click: an organic
+            // return must not be re-labelled with an older ad visit.
+            var attr = attributionResolver != null && visit.hasMarkers()
+                    ? attributionResolver.resolve(businessId, l.visitorId(), visit) : visit;
+            return new AcademyAttribution(attr, adHistory(l));
+        }
         var given = new com.salonreview.landing.Attribution(l.utmSource(), l.utmMedium(), l.utmCampaign(), l.utmTerm(),
                 l.utmContent(), l.gclid(), null, null, null, l.fbclid(), null, l.sourcePageUrl(), l.referrer());
-        return attributionResolver == null ? given : attributionResolver.resolve(businessId, l.visitorId(), given);
+        return new AcademyAttribution(attributionResolver == null ? given : attributionResolver.resolve(businessId, l.visitorId(), given), Map.of());
     }
 
     private void recordSubmission(long businessId, AcademyLead l, Long id) {
@@ -145,15 +189,22 @@ public class AcademyLeadService {
             String visitor = l.visitorId() != null && l.visitorId().matches("[0-9a-fA-F-]{36}") ? l.visitorId() : null;
             String path = notBlank(l.sourcePageUrl()) ? l.sourcePageUrl().replaceFirst("^https?://[^/]+", "") : null;
             String phone = notBlank(l.phone()) ? l.phone() : null;
+            var visit = l.hasVisit() ? currentVisit(l) : null;
             jdbc.update("""
                     INSERT INTO marketing.submissions (business_id, visitor_id, submission_type, customer_email, customer_phone,
                         landing_path, referrer, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbclid, gclid,
                         landing_page_slug, traffic_source, page_path)
                     VALUES (?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'academy', ?, ?)
                     """, businessId, visitor, l.isSubscription() ? "academy_subscribe" : "academy_request",
-                    notBlank(l.email()) ? l.email().trim().toLowerCase() : null, phone, path, blankToNull(l.referrer()),
-                    blankToNull(l.utmSource()), blankToNull(l.utmMedium()), blankToNull(l.utmCampaign()), blankToNull(l.utmTerm()),
-                    blankToNull(l.utmContent()), blankToNull(l.fbclid()), blankToNull(l.gclid()),
+                    notBlank(l.email()) ? l.email().trim().toLowerCase() : null, phone, path,
+                    visit != null ? visit.referrer() : blankToNull(l.referrer()),
+                    visit != null ? visit.utmSource() : blankToNull(l.utmSource()),
+                    visit != null ? visit.utmMedium() : blankToNull(l.utmMedium()),
+                    visit != null ? visit.utmCampaign() : blankToNull(l.utmCampaign()),
+                    visit != null ? visit.utmTerm() : blankToNull(l.utmTerm()),
+                    visit != null ? visit.utmContent() : blankToNull(l.utmContent()),
+                    visit != null ? visit.fbclid() : blankToNull(l.fbclid()),
+                    visit != null ? visit.gclid() : blankToNull(l.gclid()),
                     trafficSource(l) == null ? "Direct / No referrer" : trafficSource(l), blankToNull(l.pagePath()));
         } catch (RuntimeException e) {
             log.warn("Academy lead {}: submission row failed: {}", id, e.toString());

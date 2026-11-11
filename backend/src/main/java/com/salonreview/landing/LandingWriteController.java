@@ -205,7 +205,7 @@ public class LandingWriteController {
                     tracking == null ? null : tracking.utmCampaign(), tracking == null ? null : tracking.referrer(),
                     landing[0], landing[1], ctx, squareCustomerId);
             repository.insertSubmission(businessId, tracking == null ? null : tracking.visitorId(), "step1", tracking,
-                    ctx, null, null, null, email, phone, landing[0], landing[1], source);
+                    ctx, null, null, null, email, phone, landing[0], landing[1], VisitAttribution.conversionSource(tracking));
         } catch (RuntimeException e) {
             log.error("Failed to record Step 1 contact", e);
         }
@@ -343,7 +343,7 @@ public class LandingWriteController {
                     tracking == null ? null : tracking.variantId());
             repository.insertSubmission(businessId, tracking == null ? null : tracking.visitorId(), "four_hand_request",
                     tracking, ctx, bookingId, LandingFourHandService.SERVICE_NAME, null, email, phone, landing[0],
-                    landing[1], LandingTracking.classify(tracking));
+                    landing[1], VisitAttribution.conversionSource(tracking));
         } catch (RuntimeException e) {
             log.error("Failed to record marketing submission (booking itself was unaffected)", e);
         }
@@ -449,7 +449,7 @@ public class LandingWriteController {
                                String given, boolean optIn, String customerId, String status, String startAt,
                                String artistName) {
         String visitor = tracking == null ? null : tracking.visitorId();
-        String source = LandingTracking.classify(tracking);
+        String source = VisitAttribution.conversionSource(tracking);
         String[] landing = new String[] {null, null};
         try {
             landing = repository.resolveLandingContext(tracking == null ? null : tracking.landingPageId(),

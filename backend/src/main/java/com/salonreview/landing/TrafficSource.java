@@ -189,6 +189,13 @@ public final class TrafficSource {
         return DIRECT;
     }
 
+    /** True for a paid label (Google Ads, Meta Ads, "Paid: x" ...). */
+    public static boolean isPaid(String label) {
+        if (!has(label)) return false;
+        String l = label.toLowerCase(Locale.ROOT);
+        return l.contains(" ads") || l.startsWith("paid");
+    }
+
     public static String classify(LandingTracking t) {
         if (t == null) return DIRECT;
         return classify(t.utmSource(), t.utmMedium(), t.utmCampaign(), t.referrer(), t.gclid(), t.gbraid(),
