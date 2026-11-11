@@ -1,5 +1,6 @@
 import { serverApi } from '../lib/serverApi';
 import AdminMenu from './AdminMenu';
+import DocTitle from './DocTitle';
 import type { Language, MeBusinessOption, Role } from '../lib/types';
 
 // The shared page header: a consistent title row with the navigation menu, on every authenticated
@@ -58,11 +59,20 @@ export default async function PageHeader({
     leadsAccess ? serverApi.getLeadActionCount() : Promise.resolve(0),
   ]);
 
+  let businessName = biz?.find((b) => b.id === abid)?.name;
+  if (!businessName) businessName = (await serverApi.getMe()).businesses.find((b) => b.id === abid)?.name;
+
   return (
     <div className="mb-6 flex items-center gap-3">
+      <DocTitle title={businessName ? `${title} - ${businessName}` : title} />
       {/* AdminMenu is fixed to the viewport corner, not this row — the right padding here just
           keeps a long title from running underneath it on narrow screens. */}
-      <h1 className="pr-44 text-xl sm:pr-32 font-semibold sm:text-2xl">{title}</h1>
+      <h1 className="min-w-0 pr-44 text-xl sm:pr-32 font-semibold sm:text-2xl">
+        {title}
+        {businessName && (
+          <span className="font-normal text-gray-500 dark:text-gray-400"> - <span className="break-words">{businessName}</span></span>
+        )}
+      </h1>
       <AdminMenu
         role={r}
         language={l ?? null}
