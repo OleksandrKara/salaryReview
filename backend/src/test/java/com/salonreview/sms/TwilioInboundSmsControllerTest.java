@@ -61,6 +61,7 @@ class TwilioInboundSmsControllerTest {
     private TwilioSmsConfigRepository twilioConfigs;
     private CurrentBusinessContext currentBusinessContext;
     private SmsWebsiteLeadService websiteLeadService;
+    private com.salonreview.marketing.LeadIntakeService leadIntake;
     private MockMvc mvc;
 
     @BeforeEach
@@ -77,7 +78,8 @@ class TwilioInboundSmsControllerTest {
         mediaService = mock(SmsMediaService.class);
         reactionService = mock(SmsReactionService.class);
         websiteLeadService = mock(SmsWebsiteLeadService.class);
-        when(websiteLeadService.capture(any(), any(), any())).thenReturn(java.util.Optional.empty());
+        leadIntake = mock(com.salonreview.marketing.LeadIntakeService.class);
+        when(websiteLeadService.captureDetailed(any(), any(), any())).thenReturn(java.util.Optional.empty());
         businesses = mock(BusinessRepository.class);
         when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(BUSINESS_ID).name("Test")
                 .shortCode("test").timezone("UTC").active(true).build());
@@ -105,7 +107,7 @@ class TwilioInboundSmsControllerTest {
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
                 properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
                 blockedNumberRepository, mediaService, reactionService, businesses, twilioConfigs,
-                currentBusinessContext, websiteLeadService, mock(com.salonreview.marketing.LeadIntakeService.class));
+                currentBusinessContext, websiteLeadService, leadIntake);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -217,6 +219,26 @@ class TwilioInboundSmsControllerTest {
         SmsMessage saved = captor.getAllValues().get(captor.getAllValues().size() - 1);
         assertThat(saved.getReplyFlowId()).isEqualTo(42L);
         assertThat(saved.getRating()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("text tied to a website tap → CRM lead carries that tap's source; untied text carries none")
+    void leadUsesMatchedTapSource() throws Exception {
+        when(websiteLeadService.captureDetailed(any(), any(), any()))
+                .thenReturn(Optional.of(new SmsWebsiteLeadService.Capture("🌐 From the website: / · Google (organic)", "Google (organic)")));
+        var p = params(PHONE, "Hi! I have a question about permanent makeup.");
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", sign(AUTH_TOKEN, WEBHOOK_URL, p))
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<com.salonreview.marketing.LeadIntakeService.Lead> lead =
+                ArgumentCaptor.forClass(com.salonreview.marketing.LeadIntakeService.Lead.class);
+        verify(leadIntake).capture(lead.capture());
+        assertThat(lead.getValue().channel()).isEqualTo("SMS");
+        assertThat(lead.getValue().trafficSource()).isEqualTo("Google (organic)");
     }
 
     @Test
