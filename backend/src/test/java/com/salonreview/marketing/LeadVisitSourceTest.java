@@ -32,7 +32,7 @@ class LeadVisitSourceTest {
     void googleAdClickInLandingUrlIsReadFromItsOwnParameters() throws Exception {
         Visit v = LeadFollowUpService.visitOf(row("/book/?utm_source=google&utm_medium=cpc&utm_campaign=brows&utm_term=pmu%20san%20diego&gclid=Cj0K",
                 "https://www.google.com/", null, null, null), true);
-        assertThat(v.trafficSource()).isEqualTo("Google Ads (google / cpc / brows)");
+        assertThat(v.trafficSource()).isEqualTo("Google Ads");
         assertThat(v.adClick()).isEqualTo("gclid (Google Ads)");
         assertThat(v.utm()).isEqualTo("google / cpc / brows / pmu san diego");
         assertThat(v.landing()).startsWith("/book/?utm_source=google");
@@ -42,7 +42,7 @@ class LeadVisitSourceTest {
     @Test
     void gbraidAndWbraidCountAsGoogleAds() throws Exception {
         assertThat(LeadFollowUpService.visitOf(row("/?gbraid=abc", null, null, null, null), false).trafficSource())
-                .isEqualTo("Google Ads (click)");
+                .isEqualTo("Google Ads");
         assertThat(LeadFollowUpService.visitOf(row("/?wbraid=abc", null, null, null, null), false).adClick())
                 .isEqualTo("gbraid/wbraid (Google Ads)");
     }
@@ -50,7 +50,7 @@ class LeadVisitSourceTest {
     @Test
     void metaAndMicrosoftClickIds() throws Exception {
         assertThat(LeadFollowUpService.visitOf(row("/?fbclid=xyz&utm_source=facebook&utm_medium=paid", null, null, null, null), false).trafficSource())
-                .isEqualTo("Meta Ads (facebook / paid)");
+                .isEqualTo("Facebook Ads (Meta)");
         assertThat(LeadFollowUpService.visitOf(row("/?msclkid=m1", null, null, null, null), false).adClick())
                 .isEqualTo("msclkid (Microsoft Ads)");
     }
@@ -69,7 +69,7 @@ class LeadVisitSourceTest {
     @Test
     void visitWithoutLandingUrlFallsBackToStoredColumns() throws Exception {
         Visit v = LeadFollowUpService.visitOf(row(null, null, "https://www.google.com/", "google", "abc"), false);
-        assertThat(v.trafficSource()).isEqualTo("Google Ads (google)");
+        assertThat(v.trafficSource()).isEqualTo("Google Ads");
         assertThat(v.landing()).isEqualTo("/");
     }
 }

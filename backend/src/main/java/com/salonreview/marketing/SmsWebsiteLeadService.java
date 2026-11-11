@@ -56,6 +56,12 @@ public class SmsWebsiteLeadService {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
     private Ga4SmsSentService smsSent;
+    private AttributionResolver attributionResolver;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAttributionResolver(AttributionResolver r) {
+        this.attributionResolver = r;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setSmsSent(Ga4SmsSentService smsSent) {
@@ -129,7 +135,11 @@ public class SmsWebsiteLeadService {
 
     /** The staff-alert line plus, when the text was tied to one tap, that tap's classified traffic
      * source (null for the ambiguous "possibly from the website" case). */
-    public record Capture(String context, String trafficSource) {}
+    public record Capture(String context, String trafficSource, String attribution) {
+        public Capture(String context, String trafficSource) {
+            this(context, trafficSource, null);
+        }
+    }
 
     public Optional<Capture> captureDetailed(Long businessId, String phoneNumber, String body) {
         try {
@@ -207,9 +217,11 @@ public class SmsWebsiteLeadService {
 
     private Capture recordLead(Long businessId, String phoneNumber, Map<String, Object> row) {
         JsonNode meta = readMeta(row);
-        String googleClick = firstNonNull(text(meta, "gclid"), text(meta, "gbraid"), text(meta, "wbraid"));
-        String source = classifyTrafficSource(text(meta, "utm_source"), text(meta, "utm_medium"),
-                text(meta, "utm_campaign"), referrer(meta), googleClick, text(meta, "fbclid"));
+        com.salonreview.landing.Attribution tapAttr = com.salonreview.landing.Attribution.of(k ->
+                k.equals("referrer") ? referrer(meta) : text(meta, k));
+        com.salonreview.landing.Attribution attr = attributionResolver == null ? tapAttr
+                : attributionResolver.resolve(businessId, (String) row.get("visitor_id"), tapAttr);
+        String source = attr.trafficSource();
 
         int inserted = jdbcTemplate.update(
                 """
@@ -219,8 +231,8 @@ public class SmsWebsiteLeadService {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
                 ON CONFLICT (business_id, phone_number) DO NOTHING
                 """,
-                businessId, phoneNumber, source, source, text(meta, "utm_source"), text(meta, "utm_medium"),
-                text(meta, "utm_campaign"), referrer(meta), row.get("landing_page_slug"), row.get("variant_name"));
+                businessId, phoneNumber, source, source, attr.utmSource(), attr.utmMedium(),
+                attr.utmCampaign(), attr.referrer(), row.get("landing_page_slug"), row.get("variant_name"));
         // A tap leads to at most one number: the next text from someone else can't reuse it.
         if (row.get("event_id") != null) {
             jdbcTemplate.update("UPDATE marketing.events SET metadata = metadata || jsonb_build_object('matched_phone', ?::text) "
@@ -239,7 +251,7 @@ public class SmsWebsiteLeadService {
 
         String page = text(meta, "path");
         return new Capture("🌐 From the website" + (page != null ? ": " + page : "") + " · " + source
-                + (inserted > 0 ? " (new contact)" : ""), source);
+                + (inserted > 0 ? " (new contact)" : ""), source, attr.toJson());
     }
 
     private void sendGa4SmsLead(Long businessId, String gaClientId, String visitorId, String page, String source) {
@@ -279,34 +291,10 @@ public class SmsWebsiteLeadService {
         return s.isBlank() ? null : s;
     }
 
-    /** Same labels salonLandings' classify_traffic_source gives a booking (app/services/
-     * traffic_source.py), so an SMS lead and a booked contact read the same in Contacts and the
-     * "Google Ads%"/"Meta Ads%" prefix matching keeps working. Keep the two in step. */
+    /** Delegates to the single taxonomy (landing.TrafficSource). */
     static String classifyTrafficSource(String utmSource, String utmMedium, String utmCampaign, String referrer,
                                         String gclid, String fbclid) {
-        String utmDetail = null;
-        if (utmSource != null) {
-            StringBuilder sb = new StringBuilder(utmSource);
-            if (utmMedium != null) sb.append(" / ").append(utmMedium);
-            if (utmCampaign != null) sb.append(" / ").append(utmCampaign);
-            utmDetail = sb.toString();
-        }
-        if (fbclid != null) return utmDetail != null ? "Meta Ads (" + utmDetail + ")" : "Meta Ads (click)";
-        if (gclid != null) return utmDetail != null ? "Google Ads (" + utmDetail + ")" : "Google Ads (click)";
-        if (utmDetail != null) return utmDetail;
-
-        String ref = referrer == null || com.salonreview.landing.LandingTracking.isGoogleToolReferrer(referrer) ? "" : referrer.toLowerCase(Locale.ROOT);
-        if (ref.isEmpty()) return "Direct / No referrer";
-        if (ref.contains("google.")) return "Google (organic)";
-        if (ref.contains("instagram.com")) return "Instagram (organic)";
-        if (ref.contains("facebook.com") || ref.contains("fb.com")) return "Facebook (organic)";
-        if (ref.contains("bing.")) return "Bing (organic)";
-        if (ref.contains("yahoo.")) return "Yahoo (organic)";
-        try {
-            String host = URI.create(referrer).getHost();
-            return host != null ? "Referral: " + host : "Direct / No referrer";
-        } catch (IllegalArgumentException e) {
-            return "Direct / No referrer";
-        }
+        return com.salonreview.landing.TrafficSource.classify(utmSource, utmMedium, utmCampaign, referrer, gclid,
+                null, null, null, fbclid, null);
     }
 }

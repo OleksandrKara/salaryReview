@@ -2600,7 +2600,7 @@ export interface Lead {
 }
 export interface LostRow { reason: string; source: string | null; count: number }
 export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }
-export interface LeadTouch { id: number; channel: string; source: string | null; detail: string | null; createdAt: string; payload: Record<string, string> | null }
+export interface LeadTouch { id: number; channel: string; source: string | null; detail: string | null; createdAt: string; payload: Record<string, string> | null; attribution?: Record<string, string> | null }
 export interface LeadVisit { at: string; landing: string | null; trafficSource: string | null; referrer: string | null; utm: string | null; adClick: string | null; device: string | null; first: boolean }
 export interface LeadPageView { at: string; path: string }
 export interface LeadJourney { first: LeadVisit | null; visits: LeadVisit[]; pages: LeadPageView[]; pageTotal: number }
@@ -2611,7 +2611,7 @@ export interface LeadOrigin {
   browser: string | null; ip: string | null; location: string | null; service: string | null;
 }
 export interface LeadEvent { id: number; type: string; text: string | null; createdBy: string | null; createdAt: string }
-export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[]; sms: LeadSms[]; squareNote: string | null; payments: LeadPayment[]; forms: LeadForm[]; place: LeadPlace | null; badges: LeadBadges | null; reminders: LeadReminder[]; journey: LeadJourney | null }
+export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[]; sms: LeadSms[]; squareNote: string | null; payments: LeadPayment[]; forms: LeadForm[]; place: LeadPlace | null; badges: LeadBadges | null; reminders: LeadReminder[]; journey: LeadJourney | null; firstTouch?: Record<string, string> | null }
 export interface LeadReminder { id: number; dueAt: string; note: string | null; origin: string; createdBy: string | null; fired: boolean }
 export interface LeadPlace { countryCode: string; country: string | null; city: string | null; region: string | null; flag: string; scope: 'LOCAL' | 'OUT_OF_STATE' | 'INTERNATIONAL' | null }
 export interface LeadBadges { vip: boolean; visitCount: number | null; smsConsent: boolean; negativeFeedback: boolean; blocked: boolean; optedOut: boolean; spamFlag: boolean; clickedGoogle: boolean; clickedYelp: boolean; clickedFeedback: boolean }

@@ -40,18 +40,20 @@ public class LeadIntakeInternalController {
         String utmSource = str(body, "utm_source", "source");
         String utmMedium = str(body, "utm_medium", "medium");
         String campaign = str(body, "utm_campaign", "campaign");
-        String ts = null;
-        if (utmSource != null) {
-            String m = utmMedium == null ? "" : utmMedium.toLowerCase();
-            String s = utmSource.toLowerCase();
-            if (s.contains("google") && (m.contains("cpc") || m.contains("ppc") || m.contains("paid"))) ts = "Google Ads (" + (campaign == null ? "call" : campaign) + ")";
-            else if (s.contains("google")) ts = "Google (organic)";
-            else if (s.contains("instagram")) ts = "Instagram (organic)";
-            else if (s.contains("facebook") || s.contains("meta")) ts = "Facebook (organic)";
-            else ts = utmSource;
-        }
+        com.salonreview.landing.Attribution attr = com.salonreview.landing.Attribution.of(k -> switch (k) {
+            case "utm_source" -> utmSource;
+            case "utm_medium" -> utmMedium;
+            case "utm_campaign" -> campaign;
+            case "utm_term" -> str(body, "utm_term", "term", "keyword");
+            case "utm_content" -> str(body, "utm_content", "content");
+            case "gclid", "gbraid", "wbraid", "msclkid", "fbclid", "ttclid" -> str(body, k);
+            case "landing_url" -> str(body, "landing_url", "landing_page", "page_url");
+            case "referrer" -> str(body, "referrer");
+            default -> null;
+        });
+        String ts = attr.hasMarkers() ? attr.trafficSource() : null;
         LeadIntakeService.Result r = service.capture(new LeadIntakeService.Lead(businessId, "Call", ts, phone, null,
-                str(body, "caller_name", "name"), campaign, callId, payloadJson(body)));
+                str(body, "caller_name", "name"), campaign, callId, payloadJson(body), attr.toJson()));
         return Map.of("outcome", r.outcome(), "marked", r.marked());
     }
 

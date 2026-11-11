@@ -72,6 +72,21 @@ function Details({ payload, language, open }: { payload: Record<string, string>;
   );
 }
 
+const ATTR_ORDER = ['traffic_source', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'msclkid', 'fbclid', 'ttclid', 'landing_url', 'referrer'];
+
+function CampaignDetails({ attribution, language, open, title }: { attribution: Record<string, string>; language: Language | null; open?: boolean; title?: string }) {
+  const entries = ATTR_ORDER.filter((k) => attribution[k]).map((k) => [k, attribution[k]] as [string, string]);
+  if (entries.length === 0) return null;
+  return (
+    <details open={open} className="mt-1 text-xs text-zinc-600">
+      <summary className="cursor-pointer">{title ?? t(language, 'leadCampaignDetails')}</summary>
+      <dl className="mt-1 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5">
+        {entries.map(([k, v]) => (<div key={k} className="contents"><dt className="text-zinc-500">{k}</dt><dd className="break-all">{v}</dd></div>))}
+      </dl>
+    </details>
+  );
+}
+
 type Kind = 'contact' | 'sms' | 'email' | 'visit' | 'note' | 'system';
 function apptNotes(a: { sellerNote?: string | null; customerNote?: string | null }, language: Language | null) {
   return [
@@ -82,7 +97,7 @@ function apptNotes(a: { sellerNote?: string | null; customerNote?: string | null
 
 type Item = {
   key: string; at: string; kind: Kind; label: string; text?: string | null; by?: string | null;
-  touchId?: number; payload?: Record<string, string> | null; inbound?: boolean; emailId?: number;
+  touchId?: number; payload?: Record<string, string> | null; attribution?: Record<string, string> | null; inbound?: boolean; emailId?: number;
   media?: string[]; opened?: boolean; clicked?: boolean; hasContent?: boolean; apptNotes?: { label: string; text: string }[]; tone?: string; future?: boolean; openDetails?: boolean;
 };
 type PanelTab = 'timeline' | 'notes' | 'visits' | 'images' | 'emails' | 'web';
@@ -184,7 +199,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
     }),
     ...data.touches.filter((x) => !(x.channel === 'Academy' && data.forms.some((f) => f.kind === 'academy' && Math.abs(new Date(f.at).getTime() - new Date(x.createdAt).getTime()) < 10 * 60000))).map((x): Item => ({
       key: `t${x.id}`, touchId: x.id, at: x.createdAt, kind: 'contact', label: `${t(language, 'leadEventTouch')}: ${x.channel}`,
-      text: [x.source, x.detail].filter(Boolean).join(' · '), payload: x.payload,
+      text: [x.source, x.detail].filter(Boolean).join(' · '), payload: x.payload, attribution: x.attribution,
     })),
     ...data.events.map((x): Item => {
       const manual = x.type === 'NOTE' || x.type === 'CALL' || x.type === 'AGREEMENT';
@@ -467,6 +482,12 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
         </div>
       </nav>
 
+      {data.firstTouch && (
+        <div className="rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200">
+          <CampaignDetails attribution={data.firstTouch} language={language} open title={t(language, 'leadFirstTouchCampaign')} />
+        </div>
+      )}
+
       {tab === 'timeline' && (
         <section className="flex flex-col gap-3">
           <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -531,6 +552,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
                         <audio controls preload="none" src={`/api/leads/recording/${r.touchId}`} className="mt-1 h-9 max-w-full" />
                       )}
                       {r.payload && <Details payload={r.payload} language={language} open={r.openDetails} />}
+                      {r.attribution && <CampaignDetails attribution={r.attribution} language={language} />}
                     </div>
                   </div>
                 </li>

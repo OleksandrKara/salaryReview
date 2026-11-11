@@ -33,25 +33,25 @@ class LandingParityUnitTest {
     void trafficSourceMatchesFormerService() {
         assertThat(LandingTracking.classify(null)).isEqualTo("Direct / No referrer");
         assertThat(LandingTracking.classify(t(null, null, null, null, null, null))).isEqualTo("Direct / No referrer");
-        assertThat(LandingTracking.classify(t(null, "ig", "social", "c1", null, null))).isEqualTo("ig / social / c1");
-        assertThat(LandingTracking.classify(t(null, null, null, null, "x", null))).isEqualTo("Meta Ads (click)");
-        assertThat(LandingTracking.classify(t(null, "fb", null, null, "x", null))).isEqualTo("Meta Ads (fb)");
+        assertThat(LandingTracking.classify(t(null, "ig", "social", "c1", null, null))).isEqualTo("Instagram (organic)");
+        assertThat(LandingTracking.classify(t(null, null, null, null, "x", null))).isEqualTo("Facebook/Instagram (click, unspecified)");
+        assertThat(LandingTracking.classify(t(null, "fb", null, null, "x", null))).isEqualTo("Facebook (organic)");
         assertThat(LandingTracking.classify(t(null, "google", "cpc", null, null, "g")))
-                .isEqualTo("Google Ads (google / cpc)");
+                .isEqualTo("Google Ads");
         assertThat(LandingTracking.classify(t("https://www.google.com/search", null, null, null, null, null)))
                 .isEqualTo("Google (organic)");
         assertThat(LandingTracking.classify(t("https://l.instagram.com/", null, null, null, null, null)))
                 .isEqualTo("Instagram (organic)");
         assertThat(LandingTracking.classify(t("https://chatgpt.com/", null, null, null, null, null)))
-                .isEqualTo("Referral: chatgpt.com");
+                .isEqualTo("ChatGPT (AI)");
         assertThat(LandingTracking.classify(t("https://m.facebook.com", null, null, null, null, null)))
                 .isEqualTo("Facebook (organic)");
         assertThat(LandingTracking.classify(t("https://www.bing.com/", null, null, null, null, null)))
                 .isEqualTo("Bing (organic)");
         assertThat(LandingTracking.classify(t("not a url", null, null, null, null, null))).isEqualTo("Direct / No referrer");
         assertThat(LandingTracking.classify(t("https://www.pinterest.com/", null, null, null, null, null)))
-                .isEqualTo("Referral: www.pinterest.com");
-        assertThat(LandingTracking.classify(t(null, "newsletter", null, null, null, null))).isEqualTo("newsletter");
+                .isEqualTo("Pinterest");
+        assertThat(LandingTracking.classify(t(null, "newsletter", null, null, null, null))).isEqualTo("Campaign: newsletter");
     }
 
     @Test

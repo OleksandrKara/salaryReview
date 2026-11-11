@@ -38,34 +38,9 @@ public record LandingTracking(String visitorId, String landingPath, String refer
         return referrer != null && GOOGLE_TOOL_HOST.matcher(referrer.trim().toLowerCase(Locale.ROOT)).find();
     }
 
-    /** Human-readable attribution label, same rules and strings as the former classify_traffic_source. */
+    /** Human-readable attribution label; the rules live in {@link TrafficSource}. */
     public static String classify(LandingTracking t) {
-        if (t == null) return "Direct / No referrer";
-
-        String utmDetail = null;
-        if (has(t.utmSource())) {
-            StringBuilder sb = new StringBuilder(t.utmSource());
-            if (has(t.utmMedium())) sb.append(" / ").append(t.utmMedium());
-            if (has(t.utmCampaign())) sb.append(" / ").append(t.utmCampaign());
-            utmDetail = sb.toString();
-        }
-        if (has(t.fbclid())) return utmDetail != null ? "Meta Ads (" + utmDetail + ")" : "Meta Ads (click)";
-        if (has(t.gclid()) || has(t.gbraid()) || has(t.wbraid())) {
-            return utmDetail != null ? "Google Ads (" + utmDetail + ")" : "Google Ads (click)";
-        }
-        if (has(t.msclkid())) return utmDetail != null ? "Microsoft Ads (" + utmDetail + ")" : "Microsoft Ads (click)";
-        if (utmDetail != null) return utmDetail;
-
-        String referrer = t.referrer() == null || isGoogleToolReferrer(t.referrer()) ? "" : t.referrer().toLowerCase(Locale.ROOT);
-        if (referrer.isEmpty()) return "Direct / No referrer";
-        if (referrer.contains("google.")) return "Google (organic)";
-        if (referrer.contains("instagram.com")) return "Instagram (organic)";
-        if (referrer.contains("facebook.com") || referrer.contains("fb.com")) return "Facebook (organic)";
-        if (referrer.contains("bing.")) return "Bing (organic)";
-        if (referrer.contains("yahoo.")) return "Yahoo (organic)";
-
-        String domain = netloc(t.referrer());
-        return domain.isEmpty() ? "Direct / No referrer" : "Referral: " + domain;
+        return TrafficSource.classify(t);
     }
 
     /** Python urllib.parse.urlparse(url).netloc for the cases referrers actually take. */

@@ -177,7 +177,7 @@ class LandingPmuConsultationTest {
                 .andExpect(jsonPath("$.artist_name").value("Anna K."))
                 .andExpect(jsonPath("$.square_customer_id").doesNotExist());
 
-        verify(squareClient).setCustomerAttribute("CUST-7", "marketing_traffic_source", "Google Ads (google / cpc / brows-ads)");
+        verify(squareClient).setCustomerAttribute("CUST-7", "marketing_traffic_source", "Google Ads");
         verify(squareClient).setCustomerAttribute("CUST-7", "sms_marketing_consent", "Opted In");
         verify(squareClient).setCustomerAttribute("CUST-7", "email_marketing_consent", "Opted In");
 

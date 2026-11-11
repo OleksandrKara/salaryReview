@@ -34,6 +34,8 @@ class TrafficSourceSqlParityTest {
         REFERRER_TO_BUCKET.put("https://search.google.com/local/reviews", "google_organic");
         REFERRER_TO_BUCKET.put("https://l.instagram.com/", "instagram_organic");
         REFERRER_TO_BUCKET.put("https://www.yelp.com/biz/x", "yelp");
+        REFERRER_TO_BUCKET.put("https://m.yelp.com/", "yelp");
+        REFERRER_TO_BUCKET.put("https://www.yelp.com/biz_redir?url=x", "yelp");
     }
 
     @Test
@@ -42,7 +44,7 @@ class TrafficSourceSqlParityTest {
             String ref = e.getKey();
             String visit = jdbc.queryForObject("SELECT (" + TrafficSourceSql.visitChannelCase("c")
                     + ") FROM (SELECT CAST(? AS text) AS referrer, CAST(NULL AS text) AS utm_source, CAST(NULL AS text) AS utm_medium,"
-                    + " CAST(NULL AS text) AS gclid, CAST(NULL AS text) AS fbclid) c", String.class, ref);
+                    + " CAST(NULL AS text) AS gclid, CAST(NULL AS text) AS gbraid, CAST(NULL AS text) AS wbraid, CAST(NULL AS text) AS fbclid) c", String.class, ref);
             String contact = jdbc.queryForObject("SELECT (" + TrafficSourceSql.contactChannelCase("c")
                     + ") FROM (SELECT CAST(? AS text) AS referrer, CAST(NULL AS text) AS utm_source, CAST(NULL AS text) AS utm_medium,"
                     + " CAST(NULL AS text) AS marketing_traffic_source, CAST(NULL AS text) AS original_traffic_source) c", String.class, ref);
@@ -54,6 +56,7 @@ class TrafficSourceSqlParityTest {
                 case "direct" -> "Direct / No referrer";
                 case "google_organic" -> "Google (organic)";
                 case "instagram_organic" -> "Instagram (organic)";
+                case "yelp" -> "Yelp (organic)";
                 default -> label;
             });
             if (!e.getValue().equals("yelp")) {
