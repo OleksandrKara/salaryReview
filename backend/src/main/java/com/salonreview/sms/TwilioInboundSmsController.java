@@ -70,8 +70,9 @@ public class TwilioInboundSmsController {
     private final LeadIntakeService leadIntake;
 
     /** Carrier-supplied sender location, kept on the lead touch. */
-    private static String smsPayload(Map<String, String> params) {
+    private static String smsPayload(Map<String, String> params, boolean tapMatched) {
         Map<String, String> out = new java.util.LinkedHashMap<>();
+        if (tapMatched) out.put(com.salonreview.marketing.LeadFollowUpService.TAP_MATCHED_KEY, "1");
         for (String k : new String[]{"FromCity", "FromState", "FromZip", "FromCountry", "To"}) {
             String v = params.get(k);
             if (v != null && !v.isBlank()) out.put(k, v);
@@ -194,7 +195,7 @@ public class TwilioInboundSmsController {
         // Every inbound text is a lead: tie it to a Square profile with its source (never duplicates; see LeadIntakeService).
         if (!isOptOut) {
             try {
-                leadIntake.capture(new LeadIntakeService.Lead(businessId, websiteContext != null ? "SMS" : "Text", tapTrafficSource, from, null, null, null, "sms:" + params.get("MessageSid"), smsPayload(params)));
+                leadIntake.capture(new LeadIntakeService.Lead(businessId, websiteContext != null ? "SMS" : "Text", tapTrafficSource, from, null, null, null, "sms:" + params.get("MessageSid"), smsPayload(params, tapTrafficSource != null)));
             } catch (RuntimeException e) {
                 log.warn("Inbound SMS lead intake failed, continuing with the alert: {}", e.toString());
             }

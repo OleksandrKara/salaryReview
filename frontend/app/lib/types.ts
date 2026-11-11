@@ -2600,7 +2600,7 @@ export interface Lead {
 }
 export interface LostRow { reason: string; source: string | null; count: number }
 export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }
-export interface LeadTouch { id: number; channel: string; source: string; detail: string | null; createdAt: string; payload: Record<string, string> | null }
+export interface LeadTouch { id: number; channel: string; source: string | null; detail: string | null; createdAt: string; payload: Record<string, string> | null }
 export interface LeadVisit { at: string; landing: string | null; trafficSource: string | null; referrer: string | null; utm: string | null; adClick: string | null; device: string | null; first: boolean }
 export interface LeadPageView { at: string; path: string }
 export interface LeadJourney { first: LeadVisit | null; visits: LeadVisit[]; pages: LeadPageView[]; pageTotal: number }
