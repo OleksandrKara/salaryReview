@@ -241,7 +241,7 @@ class LandingWriteControllerTest {
         assertThat(count("contacts", "phone_number = '+16195550101'")).isEqualTo(1);
         Map<String, Object> contact = jdbc.queryForMap("SELECT * FROM marketing.contacts WHERE phone_number = '+16195550101'");
         assertThat(contact).containsEntry("given_name", "Ann").containsEntry("square_customer_id", "CUST-1")
-                .containsEntry("original_traffic_source", "Google Ads (google / cpc)")
+                .containsEntry("original_traffic_source", "Google Ads")
                 .containsEntry("device_type", "mobile");
         assertThat(count("submissions", "submission_type = 'step1' AND customer_phone = '+16195550101'")).isEqualTo(2);
         verify(square, never()).createLandingCustomer(any(), any(), any(), any(), any());
@@ -281,10 +281,10 @@ class LandingWriteControllerTest {
                 .readTree(r.getResponse().getContentAsString()).get("booking_id").asText();
 
         verify(square).createLandingCustomer(eq("Ann"), eq("Test"), eq(TEST_PHONE), eq("Ann@example.com"), any());
-        verify(square).setCustomerAttribute("CUST-9", "marketing_traffic_source", "Google Ads (google / cpc)");
+        verify(square).setCustomerAttribute("CUST-9", "marketing_traffic_source", "Google Ads");
         verify(square).setCustomerAttribute("CUST-9", "utm_source", "google");
         verify(square).setCustomerAttribute("CUST-9", "utm_medium", "cpc");
-        verify(square).setCustomerAttribute("CUST-9", "original_organic_source", "Google Ads (google / cpc)");
+        verify(square).setCustomerAttribute("CUST-9", "original_organic_source", "Google Ads");
         verify(square).setCustomerAttribute("CUST-9", "sms_marketing_consent", "Opted In");
         verify(square).setCustomerAttribute("CUST-9", "email_marketing_consent", "Opted In");
 
@@ -326,7 +326,7 @@ class LandingWriteControllerTest {
                 .readTree(r.getResponse().getContentAsString()).get("booking_id").asText();
         Map<String, Object> sub = jdbc.queryForMap("SELECT * FROM marketing.submissions WHERE square_booking_id = ?", bookingId);
         assertThat(sub).containsEntry("gclid", "abc").containsEntry("gbraid", "gb9").containsEntry("msclkid", "ms9")
-                .containsEntry("landing_url", "/book/?gclid=abc").containsEntry("traffic_source", "Google Ads (google / cpc)");
+                .containsEntry("landing_url", "/book/?gclid=abc").containsEntry("traffic_source", "Google Ads");
         assertThat(jdbc.queryForMap("SELECT fbclid, is_first_visit FROM marketing.visits WHERE visitor_id = ?::uuid", vid))
                 .containsEntry("fbclid", "first").containsEntry("is_first_visit", true);
     }
