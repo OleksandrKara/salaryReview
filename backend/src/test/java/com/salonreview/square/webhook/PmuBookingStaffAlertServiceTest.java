@@ -61,7 +61,7 @@ class PmuBookingStaffAlertServiceTest {
             saved.add(inv.getArgument(0));
             return inv.getArgument(0);
         });
-        when(telegram.sendPlainAlert(anyLong(), anyString())).thenReturn(true);
+        when(telegram.sendProcedureBookingAlert(anyLong(), any(), any(), any(), any(), any(), any())).thenReturn(true);
         service = new PmuBookingStaffAlertService(clients, providers, customers, telegram, automations, alerts);
     }
 
@@ -75,12 +75,7 @@ class PmuBookingStaffAlertServiceTest {
     void alertsStaffChatOnSiteProcedure() {
         when(square.catalogNames(any())).thenReturn(Map.of("V1", "Powder Brows"));
         service.handleBookingCreated(2L, booking("b1", "V1", "API"));
-        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
-        verify(telegram).sendPlainAlert(eq(2L), text.capture());
-        assertTrue(text.getValue().contains("Powder Brows"));
-        assertTrue(text.getValue().contains("Jane Doe"));
-        assertTrue(text.getValue().contains("Anna Kara"));
-        assertTrue(text.getValue().contains("Новая запись"));
+        verify(telegram).sendProcedureBookingAlert(eq(2L), eq("Powder Brows"), eq("Jane Doe"), any(), any(), eq("Anna Kara"), eq("2026-11-05T18:00:00Z"));
         assertEquals("SENT", saved.get(saved.size() - 1).getDeliveryStatus());
         verify(telegram, never()).sendOwnerAlert(anyLong(), anyString());
     }
@@ -89,27 +84,27 @@ class PmuBookingStaffAlertServiceTest {
     void skipsStaffMadeBooking() {
         service.handleBookingCreated(2L, booking("b2", "V1", "FIRST_PARTY_MERCHANT"));
         service.handleBookingCreated(2L, booking("b2", "V1", null));
-        verify(telegram, never()).sendPlainAlert(anyLong(), anyString());
+        verify(telegram, never()).sendProcedureBookingAlert(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void skipsConsultations() {
         when(square.catalogNames(any())).thenReturn(Map.of("V3", "In-Studio Consultation"));
         service.handleBookingCreated(2L, booking("b3", "V3", "API"));
-        verify(telegram, never()).sendPlainAlert(anyLong(), anyString());
+        verify(telegram, never()).sendProcedureBookingAlert(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void skipsWhenAutomationDisabled() {
         when(automations.isEnabled(2L, "pmu_booking_staff_alert")).thenReturn(false);
         service.handleBookingCreated(2L, booking("b4", "V1", "API"));
-        verify(telegram, never()).sendPlainAlert(anyLong(), anyString());
+        verify(telegram, never()).sendProcedureBookingAlert(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void skipsOtherBusiness() {
         service.handleBookingCreated(1L, booking("b5", "V1", "API"));
-        verify(telegram, never()).sendPlainAlert(anyLong(), anyString());
+        verify(telegram, never()).sendProcedureBookingAlert(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -117,6 +112,6 @@ class PmuBookingStaffAlertServiceTest {
         when(square.catalogNames(any())).thenReturn(Map.of("V1", "Powder Brows"));
         service.handleBookingCreated(2L, booking("b6", "V1", "API"));
         service.handleBookingCreated(2L, booking("b6", "V1", "API"));
-        verify(telegram, times(1)).sendPlainAlert(anyLong(), anyString());
+        verify(telegram, times(1)).sendProcedureBookingAlert(any(), any(), any(), any(), any(), any(), any());
     }
 }

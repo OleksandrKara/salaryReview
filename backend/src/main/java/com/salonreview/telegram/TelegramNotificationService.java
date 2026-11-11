@@ -65,6 +65,124 @@ public class TelegramNotificationService {
         this.ownerChatId = ownerChatId;
     }
 
+    private LeadAlertContextService leadContexts;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setLeadContexts(LeadAlertContextService leadContexts) {
+        this.leadContexts = leadContexts;
+    }
+
+    /** CRM lead facts for an alert. Fail-open: UNKNOWN when the lookup is unavailable or throws. */
+    public LeadAlertContext leadContext(Long businessId, String phone, String email) {
+        try {
+            return leadContexts == null ? LeadAlertContext.UNKNOWN : leadContexts.lookup(businessId, phone, email);
+        } catch (RuntimeException e) {
+            return LeadAlertContext.UNKNOWN;
+        }
+    }
+
+    public LeadAlertContext academyRequestContext(Long businessId) {
+        try {
+            return leadContexts == null ? LeadAlertContext.UNKNOWN : leadContexts.forAcademyRequest(businessId);
+        } catch (RuntimeException e) {
+            return LeadAlertContext.UNKNOWN;
+        }
+    }
+
+    /** Link to open the lead in the CRM, or null when the person has no lead (no broken link). */
+    public String leadUrl(LeadAlertContext ctx, String phone, Long businessId) {
+        if (ctx == null || ctx.state() == LeadAlertContext.State.MISSING) return null;
+        if (phone != null && !phone.replaceAll("\\D", "").isEmpty()) return leadLink(phone, businessId);
+        return ctx.leadId() == null ? null : publicBaseUrl + "/admin/leads/" + ctx.leadId();
+    }
+
+    /** Compact HTML staff alert with an optional "Open lead" button. If Telegram rejects the HTML
+     * (or the button), it is resent as plain text with the link inline. Never throws. */
+    public boolean sendLeadAlert(Long businessId, String html, String leadUrl) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Lead Telegram alert skipped: bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+        String label = businessLabel(businessId);
+        try {
+            Map<String, Object> reqBody = new java.util.HashMap<>(Map.of("chat_id", chatId, "text", label + html,
+                    "parse_mode", "HTML", "disable_web_page_preview", true));
+            if (leadUrl != null) {
+                Map<String, Object> button = Map.of("text", LeadAlertFormat.BUTTON_TEXT, "url", leadUrl);
+                reqBody.put("reply_markup", Map.of("inline_keyboard", java.util.List.of(java.util.List.of(button))));
+            }
+            if (postMessage(token, reqBody)) return true;
+        } catch (Exception e) {
+            log.warn("Lead Telegram alert (HTML) failed, retrying as plain text: {}", e.getMessage());
+        }
+        try {
+            return postMessage(token, new java.util.HashMap<>(Map.of("chat_id", chatId,
+                    "text", LeadAlertFormat.toPlain(label + html, leadUrl), "disable_web_page_preview", true)));
+        } catch (Exception e) {
+            log.warn("Lead Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean postMessage(String token, Map<String, Object> reqBody) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                .timeout(Duration.ofSeconds(5))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (res.statusCode() < 200 || res.statusCode() >= 300) {
+            log.warn("Lead Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+            return false;
+        }
+        return true;
+    }
+
+    /** Compact new-procedure alert (website booking). Lead facts are looked up fail-open. */
+    public boolean sendProcedureBookingAlert(Long businessId, String services, String customer, String phone,
+                                             String email, String artist, String startAtIso) {
+        LeadAlertContext ctx = leadContext(businessId, phone, email);
+        return sendLeadAlert(businessId, formatProcedureMessage(services, customer, phone, artist, startAtIso, ctx),
+                leadUrl(ctx, phone, businessId));
+    }
+
+    static String formatProcedureMessage(String services, String customer, String phone, String artist,
+                                         String startAtIso, LeadAlertContext ctx) {
+        StringBuilder sb = new StringBuilder("🆕 <b>New procedure</b>");
+        if (services != null && !services.isBlank()) sb.append(" · ").append(escapeHtml(services));
+        sb.append('\n').append(whoLine(customer, phone));
+        sb.append("\n🕐 ").append(escapeHtml(formatCompactTime(startAtIso)));
+        if (artist != null && !artist.isBlank()) sb.append(" · ").append(escapeHtml(artist));
+        return sb + tagsTail(ctx);
+    }
+
+    private static String tagsTail(LeadAlertContext ctx, String... extra) {
+        String tags = LeadAlertFormat.tagsLine(ctx, extra);
+        return tags.isEmpty() ? "" : "\n🏷 " + tags;
+    }
+
+    private static String whoLine(String name, String phone) {
+        String n = name == null || name.isBlank() ? null : escapeHtml(name.strip());
+        String p = phone == null || phone.isBlank() ? null : escapeHtml(formatPhoneDisplay(phone));
+        if (n != null && p != null) return "👤 " + n + " · " + p;
+        return "👤 " + (n != null ? n : p != null ? p : "Name not provided");
+    }
+
+    private static final DateTimeFormatter COMPACT_TIME = DateTimeFormatter
+            .ofPattern("EEE, MMM d, h:mm a", Locale.US).withZone(ZoneId.of("America/Los_Angeles"));
+
+    static String formatCompactTime(String iso) {
+        try {
+            return COMPACT_TIME.format(Instant.parse(iso)) + " PT";
+        } catch (Exception e) {
+            return iso == null ? "-" : iso;
+        }
+    }
+
     /** Plain-text message to the owner-only chat (SEO/GEO/AI-visibility reports, not for staff).
      * Never uses the business's staff chat, even when the owner chat is unset: then it only logs.
      * Never throws. The business label prefix tells the owner which business it is about. */
@@ -204,9 +322,11 @@ public class TelegramNotificationService {
         }
 
         try {
+            String inbound = formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId,
+                    attachmentCount, media);
+            String tags = LeadAlertFormat.tagsLine(leadContext(businessId, phoneNumber, null));
             Map<String, Object> reqBody = Map.of("chat_id", chatId,
-                    "text", businessLabel(businessId) + formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId,
-                            attachmentCount, media),
+                    "text", businessLabel(businessId) + LeadAlertFormat.insertAfterFirstLine(inbound, tags.isEmpty() ? tags : "🏷 " + tags),
                     "parse_mode", "HTML", "disable_web_page_preview", true);
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
@@ -605,35 +725,8 @@ public class TelegramNotificationService {
      * booking, provider-schedule-closure). Business-scoped via {@code businessId}, same pattern as
      * {@link #sendPaymentFailedAlert}. Never throws, same contract as every other send method here. */
     public boolean sendConsultationRequestAlert(Long businessId, ConsultationRequestNotification n) {
-        TelegramNotificationConfig cfg = configService.get(businessId);
-        String token = cfg.getBotToken();
-        String chatId = cfg.getChatId();
-        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
-            log.info("Consultation-request Telegram alert skipped — bot token or chat id not configured for business {}", businessId);
-            return false;
-        }
-
-        String text = businessLabel(businessId) + formatConsultationRequestMessage(n);
-        try {
-            // No link preview: the message now carries the booking page's URL, and a big preview card
-            // of our own page would push the actual lead details off screen.
-            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text, "disable_web_page_preview", true);
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
-                    .timeout(Duration.ofSeconds(5))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
-                    .build();
-            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (res.statusCode() < 200 || res.statusCode() >= 300) {
-                log.warn("Consultation-request Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
-                return false;
-            }
-            return true;
-        } catch (Exception e) {
-            log.warn("Consultation-request Telegram alert send failed (caller unaffected): {}", e.getMessage());
-            return false;
-        }
+        LeadAlertContext ctx = leadContext(businessId, n.phoneNumber(), null);
+        return sendLeadAlert(businessId, formatConsultationRequestMessage(n, ctx), leadUrl(ctx, n.phoneNumber(), businessId));
     }
 
     /** Plain-text staff alert (online booking health checks, BookingHealthCheckScheduler). Same
@@ -645,6 +738,12 @@ public class TelegramNotificationService {
     /** {@link #sendPlainAlert(Long, String)} plus one URL button under the message (skipped when
      * {@code buttonUrl} is null), e.g. the academy lead "Stop follow-ups" link. */
     public boolean sendPlainAlert(Long businessId, String text, String buttonText, String buttonUrl) {
+        return sendPlainAlert(businessId, text, buttonText, buttonUrl, null, null);
+    }
+
+    /** Same, with an optional second button on the same row (skipped when its URL is null). */
+    public boolean sendPlainAlert(Long businessId, String text, String buttonText, String buttonUrl,
+                                  String button2Text, String button2Url) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
@@ -655,10 +754,10 @@ public class TelegramNotificationService {
         try {
             Map<String, Object> reqBody = new java.util.HashMap<>(Map.of("chat_id", chatId, "text", businessLabel(businessId) + text,
                     "disable_web_page_preview", true));
-            if (buttonUrl != null) {
-                Map<String, Object> button = Map.of("text", buttonText, "url", buttonUrl);
-                reqBody.put("reply_markup", Map.of("inline_keyboard", java.util.List.of(java.util.List.of(button))));
-            }
+            java.util.List<Map<String, Object>> row = new java.util.ArrayList<>();
+            if (buttonUrl != null) row.add(Map.of("text", buttonText, "url", buttonUrl));
+            if (button2Url != null) row.add(Map.of("text", button2Text, "url", button2Url));
+            if (!row.isEmpty()) reqBody.put("reply_markup", Map.of("inline_keyboard", java.util.List.of(row)));
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
                     .timeout(Duration.ofSeconds(5))
@@ -747,45 +846,21 @@ public class TelegramNotificationService {
      * page line always renders ("—" if unknown), the ad line only when the visit came from an ad.
      * The heading no longer says "free" for the in-person one: that consultation is paid ($50).
      * Package-private for direct unit testing. */
-    static String formatConsultationRequestMessage(ConsultationRequestNotification n) {
-        String client = n.customerName() == null || n.customerName().isBlank() ? "—" : n.customerName();
-        String artist = n.artistName() == null || n.artistName().isBlank() ? "—" : n.artistName();
-        String phone = n.phoneNumber() == null || n.phoneNumber().isBlank() ? "—" : n.phoneNumber();
-        String when = formatPreferredTime(n.startAt());
-        boolean hasAddress = n.locationAddress() != null && !n.locationAddress().isBlank();
-
-        String page = formatSourcePage(n.sourcePageTitle(), n.sourcePageUrl());
+    static String formatConsultationRequestMessage(ConsultationRequestNotification n, LeadAlertContext ctx) {
+        StringBuilder sb = new StringBuilder("🆕 <b>New consultation</b> · ");
+        sb.append(n.online() ? "online call" : "in studio");
+        sb.append('\n').append(whoLine(n.customerName(), n.phoneNumber()));
+        sb.append("\n🕐 ").append(escapeHtml(formatCompactTime(n.startAt())));
+        if (n.artistName() != null && !n.artistName().isBlank()) sb.append(" · ").append(escapeHtml(n.artistName().strip()));
         boolean hasAd = n.adCampaign() != null && !n.adCampaign().isBlank();
-        boolean hasLocation = n.location() != null && !n.location().isBlank();
-        // The client's own words from the booking form (2026-10-04 owner request: the note was
-        // never shown, so staff called without knowing what the client had already told them).
-        boolean hasNote = n.note() != null && !n.note().isBlank();
-        String typeEn = n.online() ? "Online (phone call)" : hasAddress ? "In person — " + n.locationAddress() : "In person";
-        String typeRu = n.online() ? "Онлайн (по телефону)" : hasAddress ? "Очно — " + n.locationAddress() : "Очно";
-
-        String en = (n.online() ? "🆕 New free consultation booked\n" : "🆕 New in-studio consultation booked\n")
-                + "👤 Client: " + client + "\n"
-                + "💇 Artist: " + artist + "\n"
-                + "📱 Phone: " + phone + "\n"
-                + "🕐 Appointment: " + when + "\n"
-                + "📍 Format: " + typeEn + "\n"
-                + "📄 Page: " + page
-                + (hasLocation ? "\n🌍 From: " + n.location().strip() : "")
-                + (hasAd ? "\n📣 Ad: " + n.adCampaign().strip() : "")
-                + (hasNote ? "\n💬 Client's note: " + n.note().strip() : "");
-
-        String ru = (n.online() ? "🆕 Забронирована бесплатная консультация\n" : "🆕 Забронирована консультация в студии\n")
-                + "👤 Клиент: " + client + "\n"
-                + "💇 Мастер: " + artist + "\n"
-                + "📱 Телефон: " + phone + "\n"
-                + "🕐 Запись: " + when + "\n"
-                + "📍 Формат: " + typeRu + "\n"
-                + "📄 Страница: " + page
-                + (hasLocation ? "\n🌍 Откуда: " + n.location().strip() : "")
-                + (hasAd ? "\n📣 Реклама: " + n.adCampaign().strip() : "")
-                + (hasNote ? "\n💬 Комментарий клиента: " + n.note().strip() : "");
-
-        return en + "\n\n—\n\n" + ru;
+        sb.append(tagsTail(ctx, hasAd ? "Ad: " + n.adCampaign() : null));
+        boolean hasTitle = n.sourcePageTitle() != null && !n.sourcePageTitle().isBlank();
+        if (hasTitle) sb.append("\n📄 ").append(escapeHtml(n.sourcePageTitle().strip()));
+        if (n.note() != null && !n.note().isBlank()) {
+            String note = n.note().strip();
+            sb.append("\n💬 ").append(escapeHtml(note.length() > 160 ? note.substring(0, 157) + "..." : note));
+        }
+        return sb.toString();
     }
 
     /** "Permanent Lips — https://…" when both are known, whichever one is known otherwise, "—" if
