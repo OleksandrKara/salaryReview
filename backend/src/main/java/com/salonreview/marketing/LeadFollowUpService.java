@@ -784,6 +784,13 @@ public class LeadFollowUpService {
                 sorted.isEmpty() ? null : sorted.get(sorted.size() - 1).toString(), next);
     }
 
+    /** This submission's own source: a Google click id wins, then the source classified when the form arrived, then the UTM source. */
+    static String academySource(String gclid, String classified, String utmSource) {
+        if (gclid != null && !gclid.isBlank()) return "Google Ads";
+        if (classified != null && !classified.isBlank() && !"Unknown".equalsIgnoreCase(classified.trim())) return classified;
+        return utmSource;
+    }
+
     private static void put(java.util.Map<String, String> m, String k, String v) {
         if (v != null && !v.isBlank()) m.put(k, v.trim());
     }
@@ -797,9 +804,11 @@ public class LeadFollowUpService {
         String[] mailArr = emailsOf(lead).toArray(new String[0]);
         String tail = phoneTail(lead);
         out.addAll(jdbc.query("""
-                SELECT id, kind, created_at, name, phone, email, course_name, message, source_page_url, utm_source, utm_medium,
-                       utm_campaign, gclid, sms_consent, email_consent, status
-                FROM academy_lead WHERE id IN (""" + ACADEMY_OF_LEAD + ") ORDER BY created_at",
+                SELECT a.id, a.kind, a.created_at, a.name, a.phone, a.email, a.course_name, a.message, a.source_page_url, a.utm_source,
+                       a.utm_medium, a.utm_campaign, a.gclid, a.sms_consent, a.email_consent, a.status,
+                       (SELECT li.traffic_source FROM lead_intake li WHERE li.business_id = a.business_id
+                          AND li.external_id = 'academy:' || a.id LIMIT 1) AS submission_source
+                FROM academy_lead a WHERE a.id IN (""" + ACADEMY_OF_LEAD + ") ORDER BY a.created_at",
                 (rs, i) -> {
                     java.util.Map<String, String> f = new java.util.LinkedHashMap<>();
                     boolean course = "course_request".equals(rs.getString("kind"));
@@ -810,7 +819,7 @@ public class LeadFollowUpService {
                     put(f, "Course", rs.getString("course_name"));
                     put(f, "Message", rs.getString("message"));
                     put(f, "Page", rs.getString("source_page_url"));
-                    put(f, "Source", rs.getString("gclid") != null && !rs.getString("gclid").isBlank() ? "Google Ads" : rs.getString("utm_source"));
+                    put(f, "Source", academySource(rs.getString("gclid"), rs.getString("submission_source"), rs.getString("utm_source")));
                     put(f, "UTM medium", rs.getString("utm_medium"));
                     put(f, "UTM campaign", rs.getString("utm_campaign"));
                     put(f, "OK to text", yesNo(rs.getBoolean("sms_consent")));
