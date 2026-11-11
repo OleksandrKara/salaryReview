@@ -2661,3 +2661,45 @@ export type LeadOwnersView = {
   mine: number[];
 };
 export type LeadOwnerCard = { owner: LeadOwner; candidates: OwnerCandidate[]; academyDefault: number | null; meId: number };
+
+// --- Manager response speed (com.salonreview.metrics.ManagerMetricsService) ---
+
+export interface ManagerResponseRow {
+  userId: number;
+  username: string;
+  replies: number;
+  medianSeconds: number | null;
+  averageSeconds: number | null;
+  within5Percent: number | null;
+  within15Percent: number | null;
+  leadsProcessed: number;
+  shiftHours: number;
+  inferredReplies: number;
+}
+
+export interface ResponseLeaderboard {
+  period: 'today' | '7d' | '30d';
+  from: string;
+  to: string;
+  managers: ManagerResponseRow[];
+  team: { replies: number; medianSeconds: number | null; averageSeconds: number | null; within5Percent: number | null; within15Percent: number | null };
+  unknownReplies: number;
+  offShiftReplies: number;
+  unansweredNow: number;
+  oldestUnansweredSeconds: number | null;
+}
+
+export interface ShiftSummaryData {
+  onShift: boolean;
+  shiftStart: string | null;
+  shiftEnd: string | null;
+  leadsProcessed: number;
+  replies: number;
+  medianSeconds: number | null;
+  within5Percent: number | null;
+  newLeadsWaiting: number;
+  oldestNewLeadAt: string | null;
+  unansweredCount: number;
+  oldestUnansweredSeconds: number | null;
+  oldestUnansweredSince: string | null;
+}

@@ -94,7 +94,7 @@ export default function Landing() {
       // layout and briefly show the home page before the gate mounts.
       window.location.assign(
         role === 'PROVIDER' ? '/me'
-          : role === 'MANAGER' ? '/manager'
+          : role === 'MANAGER' ? '/admin/leads'
           : role === 'ADS_MANAGER' ? '/owner/marketing'
           // OWNER: through `/` rather than straight to `/reports` — its own redirect already
           // checks whether this business's salon_config exists yet (see ownerBusinessConfigured

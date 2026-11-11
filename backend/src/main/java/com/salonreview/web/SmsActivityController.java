@@ -353,8 +353,8 @@ public class SmsActivityController {
     /** A manager/owner's freeform reply — bypasses templates and automation/consent gating
      * entirely (design.md D9). */
     @PostMapping("/reply")
-    public ReplyResult reply(@RequestBody ReplyRequest request) {
-        var result = smsService.sendManual(currentBusinessContext.id(), request.phoneNumber(), request.body());
+    public ReplyResult reply(@RequestBody ReplyRequest request, @AuthenticationPrincipal AppUserPrincipal me) {
+        var result = smsService.sendManual(currentBusinessContext.id(), request.phoneNumber(), request.body(), me == null ? null : me.getUserId());
         return new ReplyResult(result.sent(), result.reason());
     }
 
@@ -365,8 +365,9 @@ public class SmsActivityController {
     @PostMapping(value = "/reply-with-media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ReplyResult replyWithMedia(@RequestParam String phoneNumber,
                                        @RequestParam(required = false) String body,
-                                       @RequestParam("files") List<MultipartFile> files) throws IOException {
-        var result = smsService.sendManualWithMedia(currentBusinessContext.id(), phoneNumber, body, files);
+                                       @RequestParam("files") List<MultipartFile> files,
+                                       @AuthenticationPrincipal AppUserPrincipal me) throws IOException {
+        var result = smsService.sendManualWithMedia(currentBusinessContext.id(), phoneNumber, body, files, me == null ? null : me.getUserId());
         return new ReplyResult(result.sent(), result.reason());
     }
 

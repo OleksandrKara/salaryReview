@@ -21,6 +21,8 @@ export default async function Home() {
         const me = (await res.json()) as { role?: string };
         if (me.role === 'PROVIDER') {
           target = '/me';
+        } else if (me.role === 'MANAGER') {
+          target = '/admin/leads';
         } else if (me.role === 'ADS_MANAGER') {
           target = '/owner/marketing';
         } else if (me.role === 'OWNER' && !(await ownerBusinessConfigured(sid))) {

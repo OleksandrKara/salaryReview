@@ -130,29 +130,33 @@ public class TwilioSmsService {
      * gating entirely — see openspec/changes/lead-followup-and-manager-inbox design.md D9. A
      * manager replying to a customer who just texted the salon is a direct conversational reply,
      * not a marketing send, so it's sendable regardless of {@code sms_marketing_consent}. */
-    public SmsSendResult sendManual(Long businessId, String phoneNumber, String body) {
+    public SmsSendResult sendManual(Long businessId, String phoneNumber, String body, Long sentByUserId) {
         if (isBlocked(phoneNumber)) {
             log.info("Manual reply skipped — number is blocked");
-            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "blocked", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "blocked", null, sentByUserId);
             return SmsSendResult.skipped("blocked");
         }
 
         TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
             log.info("Manual reply skipped — Twilio credentials not configured");
-            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "not_configured", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "not_configured", null, sentByUserId);
             return SmsSendResult.skipped("not_configured");
         }
 
         try {
             String twilioMessageSid = client.send(config, phoneNumber, body);
-            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, true, null, twilioMessageSid);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, true, null, twilioMessageSid, sentByUserId);
             return SmsSendResult.ok();
         } catch (Exception e) {
             log.warn("Manual reply send failed (caller unaffected): {}", e.getMessage());
-            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "send_failed", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "send_failed", null, sentByUserId);
             return SmsSendResult.skipped("send_failed");
         }
+    }
+
+    public SmsSendResult sendManual(Long businessId, String phoneNumber, String body) {
+        return sendManual(businessId, phoneNumber, body, null);
     }
 
     /** Same as {@link #sendManual}, with one or more photo attachments — a manager sending an MMS
@@ -163,21 +167,25 @@ public class TwilioSmsService {
      * is known. {@code files} is never empty — a caller with no photos should use {@link #sendManual}
      * instead. */
     public SmsSendResult sendManualWithMedia(Long businessId, String phoneNumber, String body, List<MultipartFile> files) throws IOException {
+        return sendManualWithMedia(businessId, phoneNumber, body, files, null);
+    }
+
+    public SmsSendResult sendManualWithMedia(Long businessId, String phoneNumber, String body, List<MultipartFile> files, Long sentByUserId) throws IOException {
         String safeBody = body == null ? "" : body;
         if (isBlocked(phoneNumber)) {
             log.info("Manual MMS reply skipped — number is blocked");
-            messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "blocked", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "blocked", null, sentByUserId);
             return SmsSendResult.skipped("blocked");
         }
 
         TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
             log.info("Manual MMS reply skipped — Twilio credentials not configured");
-            messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "not_configured", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "not_configured", null, sentByUserId);
             return SmsSendResult.skipped("not_configured");
         }
 
-        SmsMessage reserved = messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "pending", null);
+        SmsMessage reserved = messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "pending", null, sentByUserId);
         List<String> mediaUrls = new ArrayList<>();
         for (MultipartFile file : files) {
             SmsMessageMedia media = mediaService.store(reserved.getId(), file.getContentType(), file.getBytes());
