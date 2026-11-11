@@ -55,6 +55,13 @@ public class SmsWebsiteLeadService {
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
+    private Ga4SmsSentService smsSent;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setSmsSent(Ga4SmsSentService smsSent) {
+        this.smsSent = smsSent;
+    }
+
     public SmsWebsiteLeadService(JdbcTemplate jdbcTemplate, @Value("${marketing.ga4-mp-targets:}") String ga4MpTargets) {
         this.jdbcTemplate = jdbcTemplate;
         this.ga4Targets = parseTargets(ga4MpTargets);
@@ -177,8 +184,9 @@ public class SmsWebsiteLeadService {
 
     private String recordLead(Long businessId, String phoneNumber, Map<String, Object> row) {
         JsonNode meta = readMeta(row);
+        String googleClick = firstNonNull(text(meta, "gclid"), text(meta, "gbraid"), text(meta, "wbraid"));
         String source = classifyTrafficSource(text(meta, "utm_source"), text(meta, "utm_medium"),
-                text(meta, "utm_campaign"), text(meta, "referrer"), text(meta, "gclid"), text(meta, "fbclid"));
+                text(meta, "utm_campaign"), text(meta, "referrer"), googleClick, text(meta, "fbclid"));
 
         int inserted = jdbcTemplate.update(
                 """
@@ -197,6 +205,14 @@ public class SmsWebsiteLeadService {
         }
 
         sendGa4SmsLead(businessId, text(meta, "ga_client_id"), (String) row.get("visitor_id"), text(meta, "path"), source);
+        if (smsSent != null) {
+            smsSent.record(businessId, (String) row.get("event_id"), new Ga4SmsSentService.Tap(
+                    text(meta, "ga_client_id"), text(meta, "ga_session_id"), (String) row.get("visitor_id"),
+                    text(meta, "gclid"), text(meta, "gbraid"), text(meta, "wbraid"), source, text(meta, "utm_source"),
+                    text(meta, "utm_medium"), text(meta, "utm_campaign"), text(meta, "referrer"),
+                    (String) row.get("landing_page_slug"), text(meta, "landing_path"), text(meta, "path"),
+                    firstNonNull(text(meta, "source"), text(meta, "link_location")), text(meta, "topic")), java.time.Instant.now());
+        }
 
         String page = text(meta, "path");
         return "🌐 From the website" + (page != null ? ": " + page : "") + " · " + source
@@ -226,6 +242,11 @@ public class SmsWebsiteLeadService {
         } catch (Exception e) {
             log.warn("GA4 sms_lead send failed: {}", e.getMessage());
         }
+    }
+
+    private static String firstNonNull(String... values) {
+        for (String v : values) if (v != null) return v;
+        return null;
     }
 
     private static String text(JsonNode node, String field) {
