@@ -59,6 +59,16 @@ final class TrafficSourceSql {
                     + "|chatgpt-user|paloaltonetworks|palo alto networks|censysinspect|zgrab|facebookexternalhit"
                     + "|^mozilla/5\\.0( \\(compatible\\))?$";
 
+    /** Same rule as LandingTracking.isGoogleToolReferrer (shared regex): Tag Assistant, GA, Ads, Search Console... referrers count as no referrer. */
+    static String googleToolReferrerSql(String alias) {
+        return "COALESCE(" + alias + ".referrer, '') ~* '" + com.salonreview.landing.LandingTracking.GOOGLE_TOOL_HOST_REGEX.replace("'", "''") + "'";
+    }
+
+    /** Expands @TOOL_REF@ (alias %1$s kept for the later formatted(alias) call). */
+    private static String withToolRef(String caseSql) {
+        return caseSql.replace("@TOOL_REF@", googleToolReferrerSql("%1$s"));
+    }
+
     static final String PROVEN_AUTOMATED_IPS = "'3.139.178.29', '18.220.161.95', '18.220.214.226'";
 
     /** Default ("Ads only") selection — mani runs ads, so this is the more useful default view there. */
@@ -68,18 +78,19 @@ final class TrafficSourceSql {
      * matches none of these (e.g. a referrer from some other site, or fbclid with no medium at
      * all) classifies NULL — visible under "All traffic" but not selectable as its own bucket,
      * the same tradeoff already accepted for edge cases elsewhere in this schema. */
-    private static final String VISIT_CASE = """
+    private static final String VISIT_CASE = withToolRef("""
             CASE
                 WHEN %1$s.gclid IS NOT NULL THEN 'google_ads'
                 WHEN %1$s.fbclid IS NOT NULL AND COALESCE(%1$s.utm_medium, '') <> 'social' THEN 'meta_ads'
                 WHEN %1$s.utm_source ILIKE 'ig' AND COALESCE(%1$s.utm_medium, '') IN ('', 'social') THEN 'instagram_organic'
                 WHEN %1$s.referrer ILIKE '%%instagram.com%%' THEN 'instagram_organic'
                 WHEN %1$s.utm_source ILIKE 'yelp%%' OR %1$s.referrer ~* '^https?://([a-z0-9-]+\\.)*yelp\\.' THEN 'yelp'
-                WHEN %1$s.utm_source IS NULL AND %1$s.referrer ILIKE '%%google.%%' THEN 'google_organic'
+                WHEN %1$s.utm_source IS NULL AND %1$s.referrer ILIKE '%%google.%%'
+                     AND NOT (@TOOL_REF@) THEN 'google_organic'
                 WHEN %1$s.utm_source IS NULL AND %1$s.fbclid IS NULL AND %1$s.gclid IS NULL
-                     AND (%1$s.referrer IS NULL OR %1$s.referrer = '') THEN 'direct'
+                     AND (%1$s.referrer IS NULL OR %1$s.referrer = '' OR (@TOOL_REF@)) THEN 'direct'
                 ELSE NULL
-            END""";
+            END""");
 
     /** Classifies a marketing.contacts row. marketing.contacts has no fbclid/gclid columns — only
      * the already-classified label (computed by salonLandings' classify_traffic_source(), which
@@ -87,7 +98,7 @@ final class TrafficSourceSql {
      * So this trusts the label for "is this a recognized ad platform at all", but *additionally*
      * requires a real placement medium before accepting "Meta Ads" — the same fix as VISIT_CASE,
      * applied without needing a click-id column. %1$s is the table alias (e.g. "c"). */
-    private static final String CONTACT_CASE = """
+    private static final String CONTACT_CASE = withToolRef("""
             CASE
                 WHEN %1$s.marketing_traffic_source LIKE 'Google Ads%%' OR %1$s.original_traffic_source LIKE 'Google Ads%%'
                      THEN 'google_ads'
@@ -97,10 +108,11 @@ final class TrafficSourceSql {
                 WHEN %1$s.referrer ILIKE '%%instagram.com%%' THEN 'instagram_organic'
                 WHEN %1$s.utm_source ILIKE 'yelp%%' OR %1$s.referrer ~* '^https?://([a-z0-9-]+\\.)*yelp\\.'
                      OR %1$s.marketing_traffic_source ILIKE '%%yelp.%%' THEN 'yelp'
-                WHEN %1$s.utm_source IS NULL AND %1$s.referrer ILIKE '%%google.%%' THEN 'google_organic'
-                WHEN %1$s.utm_source IS NULL AND (%1$s.referrer IS NULL OR %1$s.referrer = '') THEN 'direct'
+                WHEN %1$s.utm_source IS NULL AND %1$s.referrer ILIKE '%%google.%%'
+                     AND NOT (@TOOL_REF@) THEN 'google_organic'
+                WHEN %1$s.utm_source IS NULL AND (%1$s.referrer IS NULL OR %1$s.referrer = '' OR (@TOOL_REF@)) THEN 'direct'
                 ELSE NULL
-            END""";
+            END""");
 
     /** True iff a marketing.visits row joined on visitorColumn (e.g. "e.session_id") classifies
      * into one of the given sources. sources must already be validated against {@link #ALL} by
@@ -124,6 +136,10 @@ final class TrafficSourceSql {
      * (as opposed to the boolean "is it in this set" checks above). %1$s is the contacts alias. */
     static String contactChannelCase(String contactAlias) {
         return CONTACT_CASE.formatted(contactAlias);
+    }
+
+    static String visitChannelCase(String visitAlias) {
+        return VISIT_CASE.formatted(visitAlias);
     }
 
     private static String inList(Set<String> sources) {
