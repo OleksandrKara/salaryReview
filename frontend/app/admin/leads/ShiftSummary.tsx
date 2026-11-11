@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { Language, ShiftSummaryData } from '../../lib/types';
 import { t, tf } from '../../lib/i18n';
@@ -96,6 +97,16 @@ export default function ShiftSummary({ language }: { language: Language | null }
           ? `${t(language, 'shiftUnanswered')}: ${data.unansweredCount} (${tf(language, 'shiftUnansweredOldest', { wait: formatWait(data.oldestUnansweredSeconds, language) })})`
           : t(language, 'shiftAllClear')}
       </p>
+      {data.myMedian7dSeconds != null ? (
+        <p className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-zinc-100 pt-2 text-xs text-zinc-600">
+          <span className="font-medium">{t(language, 'shiftWeek')}</span>
+          <span>{tf(language, 'shiftWeekYou', { you: formatWait(data.myMedian7dSeconds, language), team: formatWait(data.teamMedian7dSeconds, language) })}</span>
+          {data.rank7d != null && data.ranked7d > 1 ? <span>{tf(language, 'shiftWeekRank', { rank: data.rank7d, n: data.ranked7d })}</span> : null}
+          <Link href="/admin/response-times" className="underline">{t(language, 'shiftAllManagers')}</Link>
+        </p>
+      ) : (
+        <p className="mt-2 border-t border-zinc-100 pt-2 text-xs"><Link href="/admin/response-times" className="underline text-zinc-600">{t(language, 'shiftAllManagers')}</Link></p>
+      )}
       {data.shiftStart ? <p className="mt-1 text-xs text-zinc-400">{t(language, 'shiftHow')}</p> : null}
     </section>
   );

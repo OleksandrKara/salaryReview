@@ -2675,6 +2675,7 @@ export interface ManagerResponseRow {
   leadsProcessed: number;
   shiftHours: number;
   inferredReplies: number;
+  slowest: { phoneLast4: string; inboundAt: string; replyAt: string; seconds: number }[];
 }
 
 export interface ResponseLeaderboard {
@@ -2687,6 +2688,7 @@ export interface ResponseLeaderboard {
   offShiftReplies: number;
   unansweredNow: number;
   oldestUnansweredSeconds: number | null;
+  waiting: { phoneLast4: string; since: string; seconds: number }[];
 }
 
 export interface ShiftSummaryData {
@@ -2702,4 +2704,8 @@ export interface ShiftSummaryData {
   unansweredCount: number;
   oldestUnansweredSeconds: number | null;
   oldestUnansweredSince: string | null;
+  myMedian7dSeconds: number | null;
+  teamMedian7dSeconds: number | null;
+  rank7d: number | null;
+  ranked7d: number;
 }

@@ -90,6 +90,28 @@ class ManagerMetricsServiceTest {
     }
 
     @Test
+    void shiftSummaryShowsWeekRankAgainstTeam() {
+        shift(anna, "2026-11-11T16:00:00Z", null);
+        shift(bob, "2026-11-11T16:00:00Z", null);
+        sms("INBOUND", "2026-11-11T18:00:00Z", "q1", null, null);
+        sms("OUTBOUND", "2026-11-11T18:03:00Z", "a1", anna.getId(), null);
+        sms("INBOUND", "2026-11-11T19:00:00Z", "q2", null, null);
+        sms("OUTBOUND", "2026-11-11T19:10:00Z", "a2", bob.getId(), null);
+
+        var s = service.shiftSummary(b, bob.getId(), bob.getUsername());
+        assertThat(s.myMedian7dSeconds()).isEqualTo(600);
+        assertThat(s.rank7d()).isEqualTo(2);
+        assertThat(s.ranked7d()).isEqualTo(2);
+        assertThat(s.teamMedian7dSeconds()).isEqualTo(390);
+
+        var board = service.leaderboard(b, "7d");
+        var bobRow = board.managers().stream().filter(r -> r.userId() == bob.getId()).findFirst().orElseThrow();
+        assertThat(bobRow.slowest()).hasSize(1);
+        assertThat(bobRow.slowest().get(0).seconds()).isEqualTo(600);
+        assertThat(bobRow.slowest().get(0).phoneLast4()).hasSizeLessThanOrEqualTo(4);
+    }
+
+    @Test
     void rejectsUnknownPeriod() {
         org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
                 () -> service.leaderboard(b, "year"));
