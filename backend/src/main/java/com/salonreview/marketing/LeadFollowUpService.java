@@ -42,6 +42,10 @@ public class LeadFollowUpService {
     private static final String KEY = key("l");
 
     /** Phone digits, else the phone of the same email's earliest phone-bearing row, else the email. */
+    public static String personKey(String alias) {
+        return key(alias);
+    }
+
     private static String key(String a) {
         return "COALESCE(NULLIF(regexp_replace(COALESCE(" + a + ".phone_number, ''), '\\D', '', 'g'), ''), "
                 + "(SELECT NULLIF(regexp_replace(x.phone_number, '\\D', '', 'g'), '') FROM lead_intake x "

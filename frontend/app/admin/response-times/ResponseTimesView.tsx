@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { Language, ManagerResponseRow, ResponseLeaderboard } from '../../lib/types';
+import type { BusinessResponseReport, Language, ManagerResponseRow, ResponseOverview, ResponseStats } from '../../lib/types';
 import { t, tf } from '../../lib/i18n';
 import { formatWait, rankManagers, speedTone } from '../../lib/responseTime';
 
@@ -107,30 +107,164 @@ function ManagerCard({ m, place, open, onToggle, language }: { m: ManagerRespons
   );
 }
 
-export default function ResponseTimesView({ language, businessName }: { language: Language | null; businessName: string | null }) {
+function Kpi({ title, stats, waiting, waitingLabel, language, testId }: { title: string; stats: ResponseStats; waiting: number; waitingLabel: string; language: Lang; testId: string }) {
+  const tone = speedTone(stats.medianSeconds);
+  return (
+    <section className="relative min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 pl-4" data-testid={testId}>
+      <span className={`absolute inset-y-0 left-0 w-1 ${TONE_STRIPE[tone]}`} aria-hidden="true" />
+      <h2 className="mb-1 !font-sans text-xs font-medium text-zinc-600">{title}</h2>
+      <p className="flex items-baseline gap-1.5">
+        <span className={`text-2xl font-semibold tabular-nums ${TONE_TEXT[tone]}`}>{stats.replies === 0 ? '-' : formatWait(stats.medianSeconds, language)}</span>
+        <span className="text-[11px] text-zinc-500">{t(language, 'rtMedian')}</span>
+      </p>
+      <dl className="mt-2 grid grid-cols-3 gap-1.5">
+        <Stat label={t(language, 'rtWithin5')} value={pct(stats.within5Percent)} />
+        <Stat label={t(language, 'rtReplies')} value={stats.replies} />
+        <Stat label={waitingLabel} value={waiting} />
+      </dl>
+    </section>
+  );
+}
+
+function Waiting({ title, rows, language, testId }: { title: string; rows: { key: string; label: string; seconds: number }[]; language: Lang; testId: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <section className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-amber-900" data-testid={testId}>
+      <h3 className="mb-1.5 !font-sans text-sm font-semibold">{title}</h3>
+      <ul className="divide-y divide-amber-200/70">
+        {rows.map((w) => (
+          <li key={w.key} className="flex min-h-9 items-center justify-between gap-3 py-1.5 text-sm">
+            <span className="min-w-0 break-words text-xs">{w.label}</span>
+            <span className="shrink-0 font-semibold tabular-nums">{formatWait(w.seconds, language)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function LeadsBlock({ r, language }: { r: BusinessResponseReport; language: Lang }) {
+  const nl = r.newLeads;
+  const tone = speedTone(nl.firstTouch.medianSeconds);
+  return (
+    <div className="mb-4" data-testid={`rt-leads-${r.businessId}`}>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h3 className="!font-sans text-sm font-semibold text-zinc-900">{t(language, 'rtLeadsTitle')}</h3>
+        {nl.firstTouch.replies > 0 ? (
+          <p className="text-right">
+            <span className={`rounded-md px-2 py-0.5 text-base font-semibold tabular-nums ${TONE_BADGE[tone]}`}>{formatWait(nl.firstTouch.medianSeconds, language)}</span>
+            <span className="ml-1.5 text-[11px] text-zinc-500">{t(language, 'rtMedian')}</span>
+          </p>
+        ) : null}
+      </div>
+      <Waiting
+        title={t(language, 'rtLeadsWaitingTitle')}
+        testId={`rt-leads-waiting-${r.businessId}`}
+        language={language}
+        rows={nl.waiting.map((w, k) => ({ key: String(k), label: `${t(language, 'rtLeadNumber')} ${w.phoneLast4}`, seconds: w.seconds }))}
+      />
+      {nl.created === 0 && nl.pending === 0 ? (
+        <p className="rounded-lg border border-dashed border-zinc-300 px-3 py-3 text-center text-xs text-zinc-500">{t(language, 'rtLeadsNone')}</p>
+      ) : (
+        <dl className="grid grid-cols-2 gap-1.5 min-[480px]:grid-cols-4">
+          <Stat label={t(language, 'rtLeadsCreated')} value={nl.created} />
+          <Stat label={t(language, 'rtWithin5')} value={pct(nl.firstTouch.within5Percent)} />
+          <Stat label={t(language, 'rtWithin15')} value={pct(nl.firstTouch.within15Percent)} />
+          <Stat label={t(language, 'rtLeadsPending')} value={nl.pending} />
+        </dl>
+      )}
+      {nl.managers.length > 0 ? (
+        <div className="mt-3">
+          <p className="mb-1 text-xs font-medium text-zinc-600">{t(language, 'rtLeadsManagers')}</p>
+          <ul className="divide-y divide-zinc-100 rounded-lg border border-zinc-200">
+            {[...nl.managers].sort((a, b) => (a.medianSeconds ?? Infinity) - (b.medianSeconds ?? Infinity)).map((m) => (
+              <li key={m.userId} className="flex min-h-11 items-center gap-3 px-3 py-2">
+                <span className="min-w-0 flex-1 break-words text-sm font-medium text-zinc-900 [overflow-wrap:anywhere]">{m.username}</span>
+                <span className="shrink-0 text-[11px] text-zinc-500">{tf(language, 'rtLeadsTouches', { n: m.touches })}</span>
+                <span className={`shrink-0 rounded-md px-2 py-0.5 text-sm font-semibold tabular-nums ${TONE_BADGE[speedTone(m.medianSeconds)]}`}>{formatWait(m.medianSeconds, language)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <ul className="mt-2 space-y-1 text-xs text-zinc-500">
+        {nl.closedWithoutContact > 0 ? <li>{tf(language, 'rtLeadsClosed', { n: nl.closedWithoutContact })}</li> : null}
+        {nl.offShiftTouches > 0 ? <li>{tf(language, 'rtLeadsOffShift', { n: nl.offShiftTouches })}</li> : null}
+      </ul>
+    </div>
+  );
+}
+
+function TextsBlock({ r, language, open, setOpen }: { r: BusinessResponseReport; language: Lang; open: number | null; setOpen: (id: number | null) => void }) {
+  const data = r.texts;
+  const rows = rankManagers(data.managers);
+  const places = new Map<number, number>();
+  rows.forEach((m) => { if (m.replies > 0) places.set(m.userId, places.size + 1); });
+  const inferred = data.managers.reduce((n, m) => n + m.inferredReplies, 0);
+  return (
+    <div data-testid={`rt-texts-${r.businessId}`}>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h3 className="!font-sans text-sm font-semibold text-zinc-900">{t(language, 'rtTextsTitle')}</h3>
+        {data.team.replies > 0 ? (
+          <p className="text-right">
+            <span className={`rounded-md px-2 py-0.5 text-base font-semibold tabular-nums ${TONE_BADGE[speedTone(data.team.medianSeconds)]}`}>{formatWait(data.team.medianSeconds, language)}</span>
+            <span className="ml-1.5 text-[11px] text-zinc-500">{t(language, 'rtMedian')}</span>
+          </p>
+        ) : null}
+      </div>
+      <Waiting
+        title={t(language, 'rtWaitingTitle')}
+        testId={`rt-waiting-${r.businessId}`}
+        language={language}
+        rows={data.waiting.map((w, k) => ({ key: String(k), label: `${t(language, 'rtThread')} ${w.phoneLast4}`, seconds: w.seconds }))}
+      />
+      {rows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-zinc-300 px-3 py-3 text-center text-xs text-zinc-500" data-testid={`rt-empty-${r.businessId}`}>
+          {tf(language, 'rtEmptyBusiness', { business: r.name })}
+        </p>
+      ) : (
+        <>
+          <div className="mb-3"><StatsGrid m={data.team} language={language} withWork={false} /></div>
+          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {rows.map((m) => (
+              <ManagerCard key={m.userId} m={m} place={places.get(m.userId) ?? null} open={open === m.userId} onToggle={() => setOpen(open === m.userId ? null : m.userId)} language={language} />
+            ))}
+          </ul>
+        </>
+      )}
+      <ul className="mt-2 space-y-1 text-xs text-zinc-500">
+        {inferred > 0 ? <li>{tf(language, 'rtInferred', { n: inferred })}</li> : null}
+        {data.unknownReplies > 0 ? <li>{tf(language, 'rtUnknown', { n: data.unknownReplies })}</li> : null}
+        {data.offShiftReplies > 0 ? <li>{tf(language, 'rtOffShift', { n: data.offShiftReplies })}</li> : null}
+      </ul>
+    </div>
+  );
+}
+
+export default function ResponseTimesView({ language }: { language: Language | null }) {
   const [period, setPeriod] = useState<Period>('7d');
-  const [data, setData] = useState<ResponseLeaderboard | null>(null);
+  const [scope, setScope] = useState<number | 'all'>('all');
+  const [data, setData] = useState<ResponseOverview | null>(null);
   const [error, setError] = useState(false);
-  const [open, setOpen] = useState<number | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    fetch(`/api/metrics/response?period=${period}`, { cache: 'no-store' })
-      .then((res) => (res.ok ? (res.json() as Promise<ResponseLeaderboard>) : Promise.reject(new Error(String(res.status)))))
+    fetch(`/api/metrics/overview?period=${period}`, { cache: 'no-store' })
+      .then((res) => (res.ok ? (res.json() as Promise<ResponseOverview>) : Promise.reject(new Error(String(res.status)))))
       .then((body) => { if (alive) { setData(body); setError(false); } })
       .catch(() => { if (alive) setError(true); });
     return () => { alive = false; };
   }, [period]);
 
   const ready = data !== null && data.period === period;
-  const rows = data ? rankManagers(data.managers) : [];
-  const inferred = data ? data.managers.reduce((n, m) => n + m.inferredReplies, 0) : 0;
-  const places = new Map<number, number>();
-  rows.forEach((m) => { if (m.replies > 0) places.set(m.userId, places.size + 1); });
+  const shown = data ? data.businesses.filter((b) => scope === 'all' || b.businessId === scope) : [];
+  const multi = (data?.businesses.length ?? 0) > 1;
+  const nobodyWaiting = data ? data.total.unansweredNow === 0 && data.total.pendingLeads === 0 : false;
 
   return (
     <div className="min-w-0">
-      <div role="tablist" className="mb-4 grid w-full grid-cols-4 gap-1 rounded-xl border border-zinc-200 bg-white p-1 sm:inline-grid sm:w-auto">
+      <div role="tablist" className="mb-3 grid w-full grid-cols-4 gap-1 rounded-xl border border-zinc-200 bg-white p-1 sm:inline-grid sm:w-auto">
         {PERIODS.map((p) => (
           <button
             key={p.id}
@@ -149,49 +283,40 @@ export default function ResponseTimesView({ language, businessName }: { language
 
       {ready && data ? (
         <>
-          {data.waiting.length > 0 ? (
-            <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-amber-900" data-testid="rt-waiting">
-              <h2 className="mb-2 !font-sans text-sm font-semibold">{t(language, 'rtWaitingTitle')}</h2>
-              <ul className="divide-y divide-amber-200/70">
-                {data.waiting.map((w, k) => (
-                  <li key={k} className="flex min-h-9 items-center justify-between gap-3 py-1.5 text-sm">
-                    <span className="text-xs">{`${t(language, 'rtThread')} ${w.phoneLast4}`}</span>
-                    <span className="font-semibold tabular-nums">{formatWait(w.seconds, language)}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+          {multi ? (
+            <div role="group" aria-label={t(language, 'rtScopeLabel')} className="-mx-1 mb-4 flex gap-1.5 overflow-x-auto px-1 pb-1">
+              {[{ id: 'all' as const, name: t(language, 'rtAllBusinesses') }, ...data.businesses.map((b) => ({ id: b.businessId, name: b.name }))].map((o) => (
+                <button
+                  key={String(o.id)}
+                  type="button"
+                  aria-pressed={scope === o.id}
+                  onClick={() => setScope(o.id)}
+                  className={`min-h-10 shrink-0 whitespace-nowrap rounded-full border px-3.5 text-[13px] font-medium ${scope === o.id ? 'border-zinc-900 bg-zinc-900 text-white' : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'}`}
+                >
+                  {o.name}
+                </button>
+              ))}
+            </div>
           ) : null}
 
-          {rows.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-6 text-center text-sm text-zinc-500" data-testid="rt-empty">
-              {businessName ? tf(language, 'rtEmptyBusiness', { business: businessName }) : t(language, 'rtEmpty')}
-            </p>
-          ) : (
-            <>
-              <section className="mb-4 rounded-xl border border-zinc-200 bg-white p-3">
-                <div className="mb-2 flex items-baseline justify-between gap-3">
-                  <h2 className="!font-sans text-sm font-semibold text-zinc-900">{t(language, 'rtTeam')}</h2>
-                  <p className="text-right">
-                    <span className={`text-lg font-semibold tabular-nums ${TONE_TEXT[speedTone(data.team.medianSeconds)]}`}>{formatWait(data.team.medianSeconds, language)}</span>
-                    <span className="ml-1.5 text-[11px] text-zinc-500">{t(language, 'rtMedian')}</span>
-                  </p>
-                </div>
-                <StatsGrid m={data.team} language={language} withWork={false} />
-              </section>
-              <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {rows.map((m) => (
-                  <ManagerCard key={m.userId} m={m} place={places.get(m.userId) ?? null} open={open === m.userId} onToggle={() => setOpen(open === m.userId ? null : m.userId)} language={language} />
-                ))}
-              </ul>
-            </>
-          )}
+          {scope === 'all' ? (
+            <div className="mb-4 grid grid-cols-1 gap-3 min-[560px]:grid-cols-2">
+              <Kpi title={t(language, 'rtLeadsTitle')} stats={data.total.firstTouch} waiting={data.total.pendingLeads} waitingLabel={t(language, 'rtLeadsPending')} language={language} testId="rt-kpi-leads" />
+              <Kpi title={t(language, 'rtTextsTitle')} stats={data.total.texts} waiting={data.total.unansweredNow} waitingLabel={t(language, 'rtLeadsPending')} language={language} testId="rt-kpi-texts" />
+            </div>
+          ) : null}
+          {scope === 'all' && nobodyWaiting ? <p className="mb-4 text-xs text-emerald-700" data-testid="rt-all-clear">{t(language, 'rtAllClear')}</p> : null}
 
-          <ul className="mt-4 space-y-1 text-xs text-zinc-500">
-            {inferred > 0 ? <li>{tf(language, 'rtInferred', { n: inferred })}</li> : null}
-            {data.unknownReplies > 0 ? <li>{tf(language, 'rtUnknown', { n: data.unknownReplies })}</li> : null}
-            {data.offShiftReplies > 0 ? <li>{tf(language, 'rtOffShift', { n: data.offShiftReplies })}</li> : null}
-          </ul>
+          <div className="space-y-4">
+            {shown.map((b) => (
+              <section key={b.businessId} className="rounded-2xl border border-zinc-200 bg-white p-3 sm:p-4" data-testid={`rt-business-${b.businessId}`}>
+                <h2 className="mb-3 !font-sans text-base font-semibold text-zinc-900">{b.name}</h2>
+                <LeadsBlock r={b} language={language} />
+                <TextsBlock r={b} language={language} open={open !== null && open.startsWith(`${b.businessId}:`) ? Number(open.split(':')[1]) : null} setOpen={(id) => setOpen(id === null ? null : `${b.businessId}:${id}`)} />
+              </section>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-zinc-500">{t(language, 'rtLegend')}</p>
         </>
       ) : null}
     </div>

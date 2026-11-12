@@ -15,8 +15,10 @@ public class ManagerMetricsController {
 
     private final ManagerMetricsService service;
     private final CurrentBusinessContext business;
+    private final ResponseOverviewService overview;
 
-    public ManagerMetricsController(ManagerMetricsService service, CurrentBusinessContext business) {
+    public ManagerMetricsController(ManagerMetricsService service, CurrentBusinessContext business, ResponseOverviewService overview) {
+        this.overview = overview;
         this.service = service;
         this.business = business;
     }
@@ -29,5 +31,11 @@ public class ManagerMetricsController {
     @GetMapping("/shift")
     public ManagerMetricsService.ShiftSummary shift(@AuthenticationPrincipal AppUserPrincipal me) {
         return service.shiftSummary(business.id(), me.getUserId(), me.getUsername());
+    }
+
+    @GetMapping("/overview")
+    public ResponseOverviewService.Overview overview(@AuthenticationPrincipal AppUserPrincipal me,
+                                                     @RequestParam(defaultValue = "7d") String period) {
+        return overview.overview(me.getUserId(), period);
     }
 }
