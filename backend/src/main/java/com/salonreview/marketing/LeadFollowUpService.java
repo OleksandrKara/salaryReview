@@ -182,7 +182,10 @@ public class LeadFollowUpService {
 
     public record LostRow(String reason, String source, int count) {}
 
-    public record LostReport(int days, int total, List<LostRow> byReason, List<LostRow> bySource) {}
+    public record LostLead(long id, String name, String phoneLast4, String channel, String source, String reason,
+                           String comment, String lostAt) {}
+
+    public record LostReport(int days, int total, List<LostRow> byReason, List<LostRow> bySource, List<LostLead> leads) {}
 
     public record EventRequest(String type, String text) {}
 
@@ -1438,15 +1441,25 @@ public class LeadFollowUpService {
         int d = Math.max(1, Math.min(days, 730));
         List<LostRow> byReason = jdbc.query("""
                 SELECT lost_reason, count(*) FROM lead_intake
-                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND lost_at >= now() - make_interval(days => ?)
+                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND outcome <> 'DUPLICATE' AND lost_at >= now() - make_interval(days => ?)
                 GROUP BY lost_reason ORDER BY count(*) DESC
                 """, (rs, i) -> new LostRow(rs.getString(1), null, rs.getInt(2)), business.id(), d);
         List<LostRow> bySource = jdbc.query("""
                 SELECT lost_reason, source, count(*) FROM lead_intake
-                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND lost_at >= now() - make_interval(days => ?)
+                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND outcome <> 'DUPLICATE' AND lost_at >= now() - make_interval(days => ?)
                 GROUP BY lost_reason, source ORDER BY count(*) DESC, source
                 """, (rs, i) -> new LostRow(rs.getString(1), rs.getString(2), rs.getInt(3)), business.id(), d);
-        return new LostReport(d, byReason.stream().mapToInt(LostRow::count).sum(), byReason, bySource);
+        List<LostLead> lostLeads = jdbc.query("""
+                SELECT id, name, right(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), 4) AS last4, channel, source,
+                       lost_reason, lost_comment, lost_at
+                FROM lead_intake
+                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND outcome <> 'DUPLICATE'
+                  AND lost_at >= now() - make_interval(days => ?)
+                ORDER BY lost_at DESC, id DESC LIMIT 1000
+                """, (rs, i) -> new LostLead(rs.getLong("id"), rs.getString("name"), rs.getString("last4"),
+                rs.getString("channel"), rs.getString("source"), rs.getString("lost_reason"), rs.getString("lost_comment"),
+                iso(rs.getTimestamp("lost_at"))), business.id(), d);
+        return new LostReport(d, byReason.stream().mapToInt(LostRow::count).sum(), byReason, bySource, lostLeads);
     }
 
     public void addManualEvent(long id, EventRequest req, String by) {

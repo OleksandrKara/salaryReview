@@ -2603,7 +2603,8 @@ export interface Lead {
   adFirstAt: string | null;
 }
 export interface LostRow { reason: string; source: string | null; count: number }
-export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }
+export interface LostLead { id: number; name: string | null; phoneLast4: string | null; channel: string | null; source: string | null; reason: string; comment: string | null; lostAt: string }
+export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[]; leads: LostLead[] }
 export interface LeadTouch { id: number; channel: string; source: string | null; detail: string | null; createdAt: string; payload: Record<string, string> | null; attribution?: Record<string, string> | null }
 export interface LeadVisit { at: string; landing: string | null; trafficSource: string | null; referrer: string | null; utm: string | null; adClick: string | null; device: string | null; first: boolean }
 export interface LeadPageView { at: string; path: string }

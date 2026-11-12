@@ -65,7 +65,8 @@ class LeadReminderDigestTest {
     }
 
     private static ZonedDateTime at(int hour, int minute) {
-        return ZonedDateTime.of(2026, 11, 12, hour, minute, 0, 0, PT);
+        java.time.LocalDate tomorrow = java.time.LocalDate.now(PT).plusDays(1);
+        return ZonedDateTime.of(tomorrow.getYear(), tomorrow.getMonthValue(), tomorrow.getDayOfMonth(), hour, minute, 0, 0, PT);
     }
 
     @Test
