@@ -12,7 +12,7 @@ export default async function ResponseTimesPage() {
     <main className="mx-auto w-full min-w-0 max-w-4xl p-4 sm:p-8">
       <PageHeader title={t(lang, 'rtTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mb-5 text-xs text-zinc-500">{t(lang, 'rtDesc')}</p>
-      <ResponseTimesView language={lang} />
+      <ResponseTimesView key={me.activeBusinessId} language={lang} businessName={me.businesses.find((b) => b.id === me.activeBusinessId)?.name ?? null} />
     </main>
   );
 }

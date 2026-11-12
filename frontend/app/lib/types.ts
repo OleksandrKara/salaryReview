@@ -2679,7 +2679,7 @@ export interface ManagerResponseRow {
 }
 
 export interface ResponseLeaderboard {
-  period: 'today' | '7d' | '30d';
+  period: 'today' | '7d' | '30d' | 'all';
   from: string;
   to: string;
   managers: ManagerResponseRow[];
@@ -2704,8 +2704,13 @@ export interface ShiftSummaryData {
   unansweredCount: number;
   oldestUnansweredSeconds: number | null;
   oldestUnansweredSince: string | null;
-  myMedian7dSeconds: number | null;
-  teamMedian7dSeconds: number | null;
-  rank7d: number | null;
-  ranked7d: number;
+  comparisons: ShiftComparison[];
+}
+
+export interface ShiftComparison {
+  period: '7d' | '30d' | 'all';
+  myMedianSeconds: number | null;
+  teamMedianSeconds: number | null;
+  rank: number | null;
+  ranked: number;
 }

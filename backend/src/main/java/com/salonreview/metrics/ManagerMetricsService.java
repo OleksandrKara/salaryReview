@@ -70,15 +70,44 @@ public class ManagerMetricsService {
     public record ShiftSummary(boolean onShift, Instant shiftStart, Instant shiftEnd, int leadsProcessed, int replies,
                                Long medianSeconds, Integer within5Percent, int newLeadsWaiting, Instant oldestNewLeadAt,
                                int unansweredCount, Long oldestUnansweredSeconds, Instant oldestUnansweredSince,
-                               Long myMedian7dSeconds, Long teamMedian7dSeconds, Integer rank7d, int ranked7d) {}
+                               List<Comparison> comparisons) {}
+
+    /** One manager against the team for a period. Rank counts only managers who answered at least once. */
+    public record Comparison(String period, Long myMedianSeconds, Long teamMedianSeconds, Integer rank, int ranked) {}
+
+    /** 30d and all-time scan a lot of texts, so repeated polls within this window reuse one result. */
+    private static final Duration CACHE_TTL = Duration.ofMinutes(2);
+    private final Map<String, Cached> cache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record Cached(Instant at, Leaderboard board) {}
 
     public Leaderboard leaderboard(long businessId, String period) {
+        if (!"30d".equals(period) && !"all".equals(period)) return computeLeaderboard(businessId, period);
+        Instant now = clock.instant();
+        String key = businessId + ":" + period;
+        Cached hit = cache.get(key);
+        if (hit != null && Duration.between(hit.at(), now).compareTo(CACHE_TTL) < 0) return hit.board();
+        Leaderboard fresh = computeLeaderboard(businessId, period);
+        cache.put(key, new Cached(now, fresh));
+        return fresh;
+    }
+
+    /** Start of the first recorded shift in this business: before that nobody could be answering as a manager. */
+    private Instant firstShiftStart(long businessId, Instant now) {
+        java.sql.Timestamp first = jdbc.queryForObject(
+                "SELECT min(e.start_at) FROM manager_time_entry e JOIN app_user u ON u.id = e.user_id WHERE u.business_id = ?",
+                java.sql.Timestamp.class, businessId);
+        return first == null ? now : first.toInstant();
+    }
+
+    private Leaderboard computeLeaderboard(long businessId, String period) {
         Instant now = clock.instant();
         Instant from = switch (period) {
             case "today" -> now.atZone(PT).toLocalDate().atStartOfDay(PT).toInstant();
             case "7d" -> now.minus(Duration.ofDays(7));
             case "30d" -> now.minus(Duration.ofDays(30));
-            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "period must be today, 7d or 30d");
+            case "all" -> firstShiftStart(businessId, now);
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "period must be today, 7d, 30d or all");
         };
         Data d = load(businessId, from, now);
         List<AppUser> managers = users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(businessId, List.of(Role.MANAGER));
@@ -89,6 +118,7 @@ public class ManagerMetricsService {
         for (AppUser m : managers) {
             List<Reply> mine = inWindow.stream().filter(r -> r.onShift() && m.getId().equals(r.userId())).toList();
             var st = ResponseTimes.stats(mine.stream().map(Reply::effectiveSeconds).toList());
+            if (st.replies() == 0 && processed.getOrDefault(m.getUsername(), Set.of()).isEmpty()) continue;
             double hours = ResponseTimes.shiftSeconds(d.shifts, m.getId(), from, now, now) / 3600.0;
             rows.add(new ManagerRow(m.getId(), m.getUsername(), st.replies(), st.medianSeconds(), st.averageSeconds(),
                     st.within5Percent(), st.within15Percent(), processed.getOrDefault(m.getUsername(), Set.of()).size(),
@@ -118,16 +148,11 @@ public class ManagerMetricsService {
         Long oldestSec = unanswered.stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
         Instant oldestSince = unanswered.stream().max((a, b) -> Long.compare(a.effectiveSeconds(), b.effectiveSeconds()))
                 .map(ResponseTimes.Unanswered::since).orElse(null);
-        Leaderboard week = leaderboard(businessId, "7d");
-        var ranked = week.managers().stream().filter(r -> r.replies() > 0)
-                .sorted(java.util.Comparator.comparingLong(ManagerRow::medianSeconds)).toList();
-        ManagerRow mineRow = week.managers().stream().filter(r -> r.userId() == userId).findFirst().orElse(null);
-        Long myMedian = mineRow == null ? null : mineRow.medianSeconds();
-        Integer rank = myMedian == null ? null : ranked.indexOf(mineRow) + 1;
-        Long teamMedian = week.team().medianSeconds();
+        List<Comparison> comparisons = List.of(comparison(businessId, userId, "7d"), comparison(businessId, userId, "30d"),
+                comparison(businessId, userId, "all"));
         if (last.isEmpty()) {
             return new ShiftSummary(false, null, null, 0, 0, null, null, fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince,
-                    myMedian, teamMedian, rank, ranked.size());
+                    comparisons);
         }
         Instant start = last.get(0)[0];
         Instant end = last.get(0)[1];
@@ -143,7 +168,16 @@ public class ManagerMetricsService {
         me.setUsername(username);
         int processed = processed(businessId, start, to, mine, List.of(me)).getOrDefault(username, Set.of()).size();
         return new ShiftSummary(open, start, open ? null : to, processed, st.replies(), st.medianSeconds(), st.within5Percent(),
-                fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince, myMedian, teamMedian, rank, ranked.size());
+                fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince, comparisons);
+    }
+
+    private Comparison comparison(long businessId, long userId, String period) {
+        Leaderboard board = leaderboard(businessId, period);
+        var ranked = board.managers().stream().filter(r -> r.replies() > 0)
+                .sorted(java.util.Comparator.comparingLong(ManagerRow::medianSeconds)).toList();
+        ManagerRow mine = board.managers().stream().filter(r -> r.userId() == userId && r.replies() > 0).findFirst().orElse(null);
+        return new Comparison(period, mine == null ? null : mine.medianSeconds(), board.team().medianSeconds(),
+                mine == null ? null : ranked.indexOf(mine) + 1, ranked.size());
     }
 
     private static String last4(String phone) {

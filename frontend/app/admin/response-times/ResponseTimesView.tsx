@@ -5,11 +5,12 @@ import type { Language, ManagerResponseRow, ResponseLeaderboard } from '../../li
 import { t, tf } from '../../lib/i18n';
 import { formatWait, rankManagers, speedTone } from '../../lib/responseTime';
 
-type Period = 'today' | '7d' | '30d';
-const PERIODS: { id: Period; key: 'rtToday' | 'rt7d' | 'rt30d' }[] = [
+type Period = 'today' | '7d' | '30d' | 'all';
+const PERIODS: { id: Period; key: 'rtToday' | 'rt7d' | 'rt30d' | 'rtAll' }[] = [
   { id: 'today', key: 'rtToday' },
   { id: '7d', key: 'rt7d' },
   { id: '30d', key: 'rt30d' },
+  { id: 'all', key: 'rtAll' },
 ];
 const TONE_TEXT: Record<string, string> = { good: 'text-emerald-700', ok: 'text-amber-700', slow: 'text-red-700', none: 'text-zinc-500' };
 const TONE_BADGE: Record<string, string> = {
@@ -42,6 +43,18 @@ function StatsGrid({ m, language, withWork }: { m: Pick<ManagerResponseRow, 'ave
       {withWork ? <Stat label={t(language, 'rtLeads')} value={m.leadsProcessed ?? 0} /> : null}
       {withWork ? <Stat label={t(language, 'rtHours')} value={m.shiftHours ?? 0} /> : null}
     </dl>
+  );
+}
+
+function Skeleton() {
+  return (
+    <div aria-busy="true" data-testid="rt-skeleton" className="space-y-3">
+      <div className="h-24 animate-pulse rounded-xl bg-zinc-100" />
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="h-44 animate-pulse rounded-xl bg-zinc-100" />
+        <div className="h-44 animate-pulse rounded-xl bg-zinc-100" />
+      </div>
+    </div>
   );
 }
 
@@ -94,7 +107,7 @@ function ManagerCard({ m, place, open, onToggle, language }: { m: ManagerRespons
   );
 }
 
-export default function ResponseTimesView({ language }: { language: Language | null }) {
+export default function ResponseTimesView({ language, businessName }: { language: Language | null; businessName: string | null }) {
   const [period, setPeriod] = useState<Period>('7d');
   const [data, setData] = useState<ResponseLeaderboard | null>(null);
   const [error, setError] = useState(false);
@@ -109,6 +122,7 @@ export default function ResponseTimesView({ language }: { language: Language | n
     return () => { alive = false; };
   }, [period]);
 
+  const ready = data !== null && data.period === period;
   const rows = data ? rankManagers(data.managers) : [];
   const inferred = data ? data.managers.reduce((n, m) => n + m.inferredReplies, 0) : 0;
   const places = new Map<number, number>();
@@ -116,14 +130,14 @@ export default function ResponseTimesView({ language }: { language: Language | n
 
   return (
     <div className="min-w-0">
-      <div role="tablist" className="mb-4 grid w-full grid-cols-3 gap-1 rounded-xl border border-zinc-200 bg-white p-1 sm:inline-grid sm:w-auto">
+      <div role="tablist" className="mb-4 grid w-full grid-cols-4 gap-1 rounded-xl border border-zinc-200 bg-white p-1 sm:inline-grid sm:w-auto">
         {PERIODS.map((p) => (
           <button
             key={p.id}
             role="tab"
             aria-selected={period === p.id}
             onClick={() => setPeriod(p.id)}
-            className={`min-h-11 rounded-lg px-4 text-sm font-medium ${period === p.id ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-50'}`}
+            className={`min-h-11 whitespace-nowrap rounded-lg px-1 text-[13px] font-medium sm:px-4 sm:text-sm ${period === p.id ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-50'}`}
           >
             {t(language, p.key)}
           </button>
@@ -131,9 +145,9 @@ export default function ResponseTimesView({ language }: { language: Language | n
       </div>
 
       {error ? <p className="text-sm text-red-700">{t(language, 'rtLoadError')}</p> : null}
-      {!data && !error ? <p className="text-sm text-zinc-500">...</p> : null}
+      {!ready && !error ? <Skeleton /> : null}
 
-      {data ? (
+      {ready && data ? (
         <>
           {data.waiting.length > 0 ? (
             <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-amber-900" data-testid="rt-waiting">
@@ -150,7 +164,9 @@ export default function ResponseTimesView({ language }: { language: Language | n
           ) : null}
 
           {rows.length === 0 ? (
-            <p className="text-sm text-zinc-500">{t(language, 'rtEmpty')}</p>
+            <p className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-6 text-center text-sm text-zinc-500" data-testid="rt-empty">
+              {businessName ? tf(language, 'rtEmptyBusiness', { business: businessName }) : t(language, 'rtEmpty')}
+            </p>
           ) : (
             <>
               <section className="mb-4 rounded-xl border border-zinc-200 bg-white p-3">
