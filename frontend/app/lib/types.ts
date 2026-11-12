@@ -1769,6 +1769,8 @@ export interface FunnelAnalysisResult {
 export interface MarketingLandingPage {
   slug: string;
   name: string;
+  /** False for a retired page: listed last and labelled inactive, never the default. */
+  active?: boolean;
 }
 
 // --- Marketing analytics (com.salonreview.web.MarketingAnalyticsController) ---

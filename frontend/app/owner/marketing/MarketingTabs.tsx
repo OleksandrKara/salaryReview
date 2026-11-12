@@ -6,6 +6,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { api } from '../../lib/api';
 import type { MarketingLandingPage } from '../../lib/types';
 import { Spinner } from '../../components/Spinner';
+import { firstActiveSlug, pageOptionLabel } from '../../lib/marketingPages';
 
 const BASE_TABS = [
   { href: '/owner/marketing', label: 'Overview' },
@@ -101,7 +102,9 @@ export default function MarketingTabs() {
   // 2026-10-12: the selector showed one site while the table listed every site's contacts). The
   // other tabs need one page and keep DEFAULT_SLUG.
   const isContactsTab = pathname === '/owner/marketing/contacts';
-  const currentSlug = searchParams.get('slug') ?? (isContactsTab ? ALL_SITES : DEFAULT_SLUG);
+  // Matches the backend default (its first active page); falls back to DEFAULT_SLUG until pages load.
+  const defaultSlug = firstActiveSlug(pages) ?? DEFAULT_SLUG;
+  const currentSlug = searchParams.get('slug') ?? (isContactsTab ? ALL_SITES : defaultSlug);
 
   // Preserves every other param already on the URL (period/from/to, most importantly — see
   // PeriodFilter) rather than rebuilding the query string from just slug, which would otherwise
@@ -109,7 +112,7 @@ export default function MarketingTabs() {
   function hrefWithSlug(pathnameOrTab: string, slug: string): string {
     const params = new URLSearchParams(searchParams.toString());
     // Tab links: "All sites" only exists on Contacts, so leaving it drops back to each tab's default.
-    if (slug === DEFAULT_SLUG || slug === ALL_SITES) params.delete('slug'); else params.set('slug', slug);
+    if (slug === defaultSlug || slug === ALL_SITES) params.delete('slug'); else params.set('slug', slug);
     const qs = params.toString();
     return qs ? `${pathnameOrTab}?${qs}` : pathnameOrTab;
   }
@@ -190,7 +193,7 @@ export default function MarketingTabs() {
             >
               {isContactsTab && <option value={ALL_SITES}>All sites ({pages.length})</option>}
               {pages.map((p) => (
-                <option key={p.slug} value={p.slug}>{p.name}</option>
+                <option key={p.slug} value={p.slug}>{pageOptionLabel(p)}</option>
               ))}
             </select>
             {pageChangePending && <Spinner className="h-4 w-4 text-zinc-400" />}
