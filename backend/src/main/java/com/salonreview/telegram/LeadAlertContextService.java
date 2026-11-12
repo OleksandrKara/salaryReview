@@ -88,14 +88,9 @@ public class LeadAlertContextService {
 
     private String userName(long userId) {
         List<String> r = jdbc.query("""
-                SELECT a.role, p.display_name, a.username FROM app_user a LEFT JOIN providers p ON p.id = a.provider_id
+                SELECT a.role, p.display_name AS provider_name, a.display_name AS account_name, a.username FROM app_user a LEFT JOIN providers p ON p.id = a.provider_id
                 WHERE a.id = ? AND a.active
-                """, (rs, i) -> label(rs.getString("role"), rs.getString("display_name"), rs.getString("username")), userId);
+                """, (rs, i) -> com.salonreview.marketing.OwnerLabels.label(rs.getString("role"), rs.getString("provider_name"), rs.getString("account_name"), rs.getString("username")), userId);
         return r.isEmpty() ? null : r.get(0);
-    }
-
-    static String label(String role, String displayName, String username) {
-        if (displayName != null && !displayName.isBlank()) return displayName.trim();
-        return "OWNER".equals(role) ? "Owner (" + username + ")" : username;
     }
 }
