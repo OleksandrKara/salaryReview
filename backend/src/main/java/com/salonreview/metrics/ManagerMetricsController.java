@@ -16,8 +16,11 @@ public class ManagerMetricsController {
     private final ManagerMetricsService service;
     private final CurrentBusinessContext business;
     private final ResponseOverviewService overview;
+    private final NeedsReplyService needsReply;
 
-    public ManagerMetricsController(ManagerMetricsService service, CurrentBusinessContext business, ResponseOverviewService overview) {
+    public ManagerMetricsController(ManagerMetricsService service, CurrentBusinessContext business, ResponseOverviewService overview,
+                                    NeedsReplyService needsReply) {
+        this.needsReply = needsReply;
         this.overview = overview;
         this.service = service;
         this.business = business;
@@ -31,6 +34,11 @@ public class ManagerMetricsController {
     @GetMapping("/shift")
     public ManagerMetricsService.ShiftSummary shift(@AuthenticationPrincipal AppUserPrincipal me) {
         return service.shiftSummary(business.id(), me.getUserId(), me.getUsername());
+    }
+
+    @GetMapping("/needs-reply")
+    public NeedsReplyService.Queue needsReply() {
+        return needsReply.queue(business.id());
     }
 
     @GetMapping("/overview")

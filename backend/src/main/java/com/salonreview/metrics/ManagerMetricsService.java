@@ -60,7 +60,7 @@ public class ManagerMetricsService {
 
     public record ManagerRow(long userId, String username, int replies, Long medianSeconds, Long averageSeconds,
                              Integer within5Percent, Integer within15Percent, int leadsProcessed, double shiftHours,
-                             int inferredReplies, List<SlowReply> slowest) {}
+                             int inferredReplies, List<SlowReply> slowest, int automationFirst) {}
 
     /** Phone is reduced to its last 4 digits: enough to find the thread, not enough to leak the number into a report. */
     public record SlowReply(String phoneLast4, Instant inboundAt, Instant replyAt, long seconds) {}
@@ -71,7 +71,7 @@ public class ManagerMetricsService {
 
     public record Leaderboard(String period, Instant from, Instant to, List<ManagerRow> managers, ResponseTimes.Stats team,
                               int unknownReplies, int offShiftReplies, int unansweredNow, Long oldestUnansweredSeconds,
-                              List<WaitingNow> waiting) {}
+                              List<WaitingNow> waiting, int automationFirst) {}
 
     public record ShiftSummary(boolean onShift, Instant shiftStart, Instant shiftEnd, int leadsProcessed, int replies,
                                Long medianSeconds, Integer within5Percent, int newLeadsWaiting, Instant oldestNewLeadAt,
@@ -151,16 +151,19 @@ public class ManagerMetricsService {
                     st.within5Percent(), st.within15Percent(), processed.getOrDefault(m.getUsername(), Set.of()).size(),
                     Math.round(hours * 10) / 10.0, (int) mine.stream().filter(r -> r.attribution() == Attribution.INFERRED).count(),
                     mine.stream().sorted(java.util.Comparator.comparingLong(Reply::effectiveSeconds).reversed()).limit(3)
-                            .map(r -> new SlowReply(last4(r.phone()), r.inboundAt(), r.replyAt(), r.effectiveSeconds())).toList()));
+                            .map(r -> new SlowReply(last4(r.phone()), r.inboundAt(), r.replyAt(), r.effectiveSeconds())).toList(),
+                    (int) inWindow.stream().filter(r -> m.getId().equals(r.userId()) && r.attribution() != Attribution.UNKNOWN && r.automationFirst()).count()));
         }
         var team = ResponseTimes.stats(inWindow.stream().filter(Reply::onShift).map(Reply::effectiveSeconds).toList());
         int unknown = (int) inWindow.stream().filter(r -> r.onShift() && r.attribution() == Attribution.UNKNOWN).count();
         int off = (int) inWindow.stream().filter(r -> !r.onShift()).count();
-        Long oldest = d.result.unanswered().stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
-        List<WaitingNow> waiting = d.result.unanswered().stream()
+        List<ResponseTimes.Unanswered> pendingNow = d.result.unanswered().stream().filter(ResponseTimes.Unanswered::needsReply).toList();
+        Long oldest = pendingNow.stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
+        List<WaitingNow> waiting = pendingNow.stream()
                 .sorted(java.util.Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()).limit(5)
                 .map(u -> waitingNow(businessId, u)).toList();
-        return new Board(new Leaderboard(period, from, now, rows, team, unknown, off, d.result.unanswered().size(), oldest, waiting),
+        return new Board(new Leaderboard(period, from, now, rows, team, unknown, off, pendingNow.size(), oldest, waiting,
+                (int) inWindow.stream().filter(Reply::automationFirst).count()),
                 inWindow.stream().filter(Reply::onShift).map(Reply::effectiveSeconds).toList());
     }
 
@@ -172,7 +175,7 @@ public class ManagerMetricsService {
         List<LeadFollowUpService.LeadView> fresh = leads.listFor(businessId, "NEW");
         Instant oldestNew = fresh.stream().map(l -> Instant.parse(l.createdAt())).min(Instant::compareTo).orElse(null);
         Data now0 = load(businessId, now.minus(Duration.ofHours(1)), now);
-        var unanswered = now0.result.unanswered();
+        var unanswered = now0.result.unanswered().stream().filter(ResponseTimes.Unanswered::needsReply).toList();
         Long oldestSec = unanswered.stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
         List<WaitingNow> waiting = unanswered.stream()
                 .sorted(java.util.Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()).limit(5)
@@ -265,7 +268,7 @@ public class ManagerMetricsService {
         List<Shift> shifts = shifts(businessId, lookFrom, to);
         Map<String, Instant> lastAutomated = new HashMap<>();
         List<Msg> msgs = jdbc.query("""
-                SELECT id, phone_number, direction, created_at, automation_key, template_key, status, sent_by_user_id, body
+                SELECT id, phone_number, direction, created_at, automation_key, template_key, status, sent_by_user_id, body, read_at
                 FROM sms_message WHERE business_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at, id
                 """, (rs, i) -> {
             boolean in = "INBOUND".equals(rs.getString(3));
@@ -279,8 +282,10 @@ public class ManagerMetricsService {
             boolean optOut = in && OPT_OUT.contains(word);
             boolean human = !in && auto == null && rs.getString(6) == null && "SENT".equals(rs.getString(7));
             boolean answersAuto = in && ResponseTimes.answersAutomation(auto != null, lastAutomated.get(phone), at, body);
+            boolean automated = !in && (auto != null || rs.getString(6) != null);
             return new Msg(rs.getLong(1), phone, in, at, human,
-                    (Long) rs.getObject(8), in && (answersAuto || keyword || ResponseTimes.isCourtesy(body)), optOut);
+                    (Long) rs.getObject(8), in && (answersAuto || keyword || ResponseTimes.isCourtesy(body)), optOut,
+                    in && ResponseTimes.isAsk(body), rs.getTimestamp(10) != null, automated);
         }, businessId, java.sql.Timestamp.from(lookFrom), java.sql.Timestamp.from(to));
         return new Data(shifts, ResponseTimes.compute(msgs, shifts, to));
     }

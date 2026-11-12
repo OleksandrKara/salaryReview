@@ -66,3 +66,12 @@ export function sinceLabel(iso: string, lang: Lang | null): string {
     timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   });
 }
+
+/** Rows for the "Needs reply" queue; the business is the active one, so no switch link is needed. */
+export function needsReplyRows(q: { items: { phone: string; phoneLast4: string; since: string; waitSeconds: number; ask: boolean; name: string | null; leadId: number | null; leadStatus: string | null; preview: string | null; automationKey: string | null; automationAt: string | null }[] }) {
+  return q.items.map((i) => ({
+    key: i.phone, name: i.name, last4: i.phoneLast4, phone: i.phone, businessId: null as number | null, preview: i.preview,
+    since: i.since, seconds: i.waitSeconds, leadId: i.leadId, leadStatus: i.leadStatus,
+    lastAutoKey: i.automationKey, lastAutoAt: i.automationAt, ask: i.ask,
+  }));
+}

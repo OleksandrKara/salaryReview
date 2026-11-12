@@ -30,9 +30,11 @@ public class LeadsController {
     private final UserPermissionService permissions;
     private final CurrentBusinessContext business;
     private final LeadOwnerService owners;
+    private final com.salonreview.marketing.LeadIntakeService intake;
 
     public LeadsController(LeadFollowUpService leads, com.salonreview.marketing.LeadFunnelService funnels, UserPermissionService permissions,
-                           CurrentBusinessContext business, LeadOwnerService owners) {
+                           CurrentBusinessContext business, LeadOwnerService owners, com.salonreview.marketing.LeadIntakeService intake) {
+        this.intake = intake;
         this.owners = owners;
         this.leads = leads;
         this.funnels = funnels;
@@ -97,6 +99,23 @@ public class LeadsController {
         Long id = leads.lookupByPhone(phone);
         if (id != null && academyOnly(me) && !leads.isAcademy(id)) id = null;
         return id == null ? Map.of() : Map.of("id", id);
+    }
+
+    public record FromChatRequest(String phone) {}
+
+    /** "Create lead" from a chat nobody has a lead for: reuses the intake path, so Square gets the profile and source and nothing is duplicated. */
+    @PostMapping("/from-chat")
+    public Map<String, Long> fromChat(@RequestBody FromChatRequest req, @AuthenticationPrincipal AppUserPrincipal me) {
+        if (academyOnly(me)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not allowed");
+        if (req == null || req.phone() == null || req.phone().isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "phone is required");
+        Long existing = leads.lookupByPhone(req.phone());
+        if (existing == null) {
+            intake.capture(new com.salonreview.marketing.LeadIntakeService.Lead(business.id(), "Chat", null, req.phone(), null, null,
+                    "Created from the needs-reply queue", null));
+            existing = leads.lookupByPhone(req.phone());
+        }
+        if (existing == null) throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "lead could not be created");
+        return Map.of("id", existing);
     }
 
     @GetMapping("/{id}")

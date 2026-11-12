@@ -2675,6 +2675,7 @@ export interface ManagerResponseRow {
   leadsProcessed: number;
   shiftHours: number;
   inferredReplies: number;
+  automationFirst: number;
   slowest: { phoneLast4: string; inboundAt: string; replyAt: string; seconds: number }[];
 }
 
@@ -2686,6 +2687,7 @@ export interface ResponseLeaderboard {
   team: { replies: number; medianSeconds: number | null; averageSeconds: number | null; within5Percent: number | null; within15Percent: number | null };
   unknownReplies: number;
   offShiftReplies: number;
+  automationFirst: number;
   unansweredNow: number;
   oldestUnansweredSeconds: number | null;
   waiting: WaitingText[];
@@ -2759,3 +2761,19 @@ export interface ShiftComparison {
   rank: number | null;
   ranked: number;
 }
+
+export interface NeedsReplyItem {
+  phone: string;
+  phoneLast4: string;
+  since: string;
+  waitSeconds: number;
+  ask: boolean;
+  name: string | null;
+  leadId: number | null;
+  leadStatus: string | null;
+  preview: string | null;
+  automationKey: string | null;
+  automationAt: string | null;
+}
+
+export interface NeedsReplyQueue { count: number; oldestSeconds: number | null; items: NeedsReplyItem[] }
