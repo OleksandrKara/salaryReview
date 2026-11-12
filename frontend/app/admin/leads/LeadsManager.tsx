@@ -121,7 +121,13 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const [funnels, setFunnels] = useState<Record<number, LeadFunnel[]>>({});
   const [badges, setBadges] = useState<Record<number, LeadListBadge>>({});
   const [ownerView, setOwnerView] = useState<LeadOwnersView | null>(null);
-  const [mineOnly, setMineOnly] = useState(false);
+  const [mineChoice, setMineChoice] = useState<boolean | null>(() => {
+    try { const v = sessionStorage.getItem('leadsMine'); return v === null ? null : v === '1'; } catch { return null; }
+  });
+  const setMineOnly = (on: boolean) => {
+    setMineChoice(on);
+    try { sessionStorage.setItem('leadsMine', on ? '1' : '0'); } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     fetch('/api/leads/owners', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOwnerView(d); }).catch(() => undefined);
@@ -162,6 +168,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   }, [restricted]);
 
   const sources = useMemo(() => Array.from(new Set(leads.map((l) => l.source))).sort(), [leads]);
+  const mineOnly = ownerView != null && (mineChoice ?? !ownerView.canSetDefault);
   const mineSet = useMemo(() => new Set(ownerView?.mine ?? []), [ownerView]);
   const base = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -169,6 +176,9 @@ export default function LeadsManager({ initialLeads, language = null, restricted
       (!source || l.source === source) && (!academyOnly || l.academy) && (!mineOnly || mineSet.has(l.id)) &&
       (!needle || [l.name, l.phoneNumber, l.email, l.source, l.lastNote].some((v) => v?.toLowerCase().includes(needle))));
   }, [leads, q, source, academyOnly, mineOnly, mineSet]);
+  const othersWaiting = useMemo(
+    () => (ownerView && mineOnly ? leads.filter((l) => !mineSet.has(l.id) && isActive(l) && needsAction(l, now)).length : 0),
+    [leads, ownerView, mineOnly, mineSet, now]);
   const hasAcademy = useMemo(() => leads.some((l) => l.academy), [leads]);
   const hasConsult = useMemo(() => leads.some((l) => l.consultState), [leads]);
   const hasLapsed = useMemo(() => leads.some((l) => isLapsed(l, now)), [leads, now]);
