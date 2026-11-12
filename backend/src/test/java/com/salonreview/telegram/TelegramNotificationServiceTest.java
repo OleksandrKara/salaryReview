@@ -172,6 +172,20 @@ class TelegramNotificationServiceTest {
     }
 
     @Test
+    @DisplayName("inbound alert says Need to reply and links the name, Open lead and the needs-reply list to the lead")
+    void inboundAlertLinksNameToLeadAndSaysNeedToReply() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        String text = service.formatInboundSmsAlert("+18585550100", "Ivonna Client", "Hi", null, null, 1L, 0, java.util.List.of(), 25129L);
+
+        assertThat(text).contains("<b>New message from <a href=\"https://salon.akluxnails.com/admin/leads/25129?business=1\">Ivonna Client</a></b>");
+        assertThat(text).contains("⏳ <b>Need to reply</b>");
+        assertThat(text).contains("<a href=\"https://salon.akluxnails.com/admin/leads/25129?business=1\">🧲 Open lead</a>");
+        assertThat(text).contains("tab=needs-reply\">📋 Need to reply</a>");
+        assertThat(service.formatInboundSmsAlert("+18585550100", "Jane Doe", "Hi", null)).contains("⏳ <b>Need to reply</b>");
+    }
+
+    @Test
     @DisplayName("inbound alert shows a friendly automation label when the reply matched one")
     void inboundAlertShowsAutomationLabel() {
         TelegramNotificationService service = service(mock(TelegramConfigService.class));

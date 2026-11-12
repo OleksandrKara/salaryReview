@@ -301,8 +301,8 @@ class NeedsReplyServiceTest {
 
     private void escalationSetup() {
         telegram = mock(TelegramNotificationService.class);
-        when(telegram.sendPlainAlert(anyLong(), any(), any(), any())).thenReturn(true);
-        when(telegram.sendOwnerAlert(anyLong(), any())).thenReturn(true);
+        when(telegram.sendHtmlAlert(anyLong(), any(), any(), any())).thenReturn(true);
+        when(telegram.sendOwnerHtmlAlert(anyLong(), any())).thenReturn(true);
         jdbc.update("UPDATE needs_reply_escalation_start SET started_at = '2026-01-01T00:00:00Z'");
         escalation = new NeedsReplyEscalation(service, telegram, jdbc, "https://x.test", Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -312,21 +312,21 @@ class NeedsReplyServiceTest {
         escalationSetup();
         in("2026-11-11T19:50:00Z", "Can I book?");
         escalation.process(b);
-        verify(telegram, never()).sendPlainAlert(anyLong(), any(), any(), any());
+        verify(telegram, never()).sendHtmlAlert(anyLong(), any(), any(), any());
 
         jdbc.update("DELETE FROM sms_message");
         in("2026-11-11T19:40:00Z", "Can I book?");
         escalation.process(b);
         escalation.process(b);
-        verify(telegram, times(1)).sendPlainAlert(eq(b), contains("···1111"), any(), any());
-        verify(telegram, never()).sendOwnerAlert(anyLong(), any());
+        verify(telegram, times(1)).sendHtmlAlert(eq(b), contains("···1111"), any(), any());
+        verify(telegram, never()).sendOwnerHtmlAlert(anyLong(), any());
 
         jdbc.update("DELETE FROM sms_message");
         in("2026-11-11T19:20:00Z", "Can I book?");
         escalation.process(b);
         escalation.process(b);
-        verify(telegram, times(2)).sendPlainAlert(eq(b), any(), any(), any());
-        verify(telegram, times(1)).sendOwnerAlert(eq(b), any());
+        verify(telegram, times(2)).sendHtmlAlert(eq(b), any(), any(), any());
+        verify(telegram, times(1)).sendOwnerHtmlAlert(eq(b), any());
     }
 
     @Test
@@ -336,8 +336,8 @@ class NeedsReplyServiceTest {
         shift("2026-11-11T08:00:00Z", "2026-11-11T09:00:00Z");
         in("2026-11-11T08:55:00Z", "Can I book?");
         escalation.process(b);
-        verify(telegram, never()).sendPlainAlert(anyLong(), any(), any(), any());
-        verify(telegram, never()).sendOwnerAlert(anyLong(), any());
+        verify(telegram, never()).sendHtmlAlert(anyLong(), any(), any(), any());
+        verify(telegram, never()).sendOwnerHtmlAlert(anyLong(), any());
 
         jdbc.update("DELETE FROM manager_time_entry");
         shift("2026-11-11T16:00:00Z", null);
@@ -345,7 +345,7 @@ class NeedsReplyServiceTest {
         jdbc.update("DELETE FROM sms_message");
         in("2026-11-11T19:00:00Z", "Can I book?");
         escalation.process(b);
-        verify(telegram, never()).sendPlainAlert(anyLong(), any(), any(), any());
+        verify(telegram, never()).sendHtmlAlert(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -357,16 +357,16 @@ class NeedsReplyServiceTest {
         sms(b, PHONE, "INBOUND", "2026-11-11T07:00:00Z", "Can I book?", null, false);
         escalation.process(b);
         escalation.process(b);
-        verify(telegram, times(1)).sendPlainAlert(eq(b), contains("Начало смены: ждут ответа чатов 1"), any(), any());
+        verify(telegram, times(1)).sendHtmlAlert(eq(b), contains("Начало смены: ждут ответа чатов 1"), any(), any());
     }
 
     @Test
     void failedSendIsRetried() {
         escalationSetup();
-        when(telegram.sendPlainAlert(anyLong(), any(), any(), any())).thenReturn(false, true);
+        when(telegram.sendHtmlAlert(anyLong(), any(), any(), any())).thenReturn(false, true);
         in("2026-11-11T19:40:00Z", "Can I book?");
         escalation.process(b);
         escalation.process(b);
-        verify(telegram, times(2)).sendPlainAlert(eq(b), any(), any(), any());
+        verify(telegram, times(2)).sendHtmlAlert(eq(b), any(), any(), any());
     }
 }

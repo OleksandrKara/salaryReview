@@ -79,13 +79,13 @@ public class NeedsReplyEscalation {
             if (wait.compareTo(OWNER_AFTER) >= 0 && claim(businessId, "OWNER", key(it))) forOwner.add(it);
         }
         if (!forManager.isEmpty()) {
-            String text = "Клиенты ждут ответа на смене дольше 15 минут: " + forManager.size() + "\n" + lines(forManager)
+            String text = "Клиенты ждут ответа на смене дольше 15 минут: " + forManager.size() + "\n" + lines(forManager, businessId)
                     + "\nОтветьте или откройте чат.";
-            if (!telegram.sendPlainAlert(businessId, text, "Нужен ответ", url)) forManager.forEach(it -> release(businessId, "MANAGER", key(it)));
+            if (!telegram.sendHtmlAlert(businessId, text, "Нужен ответ", url)) forManager.forEach(it -> release(businessId, "MANAGER", key(it)));
         }
         if (!forOwner.isEmpty()) {
-            String text = "Без ответа уже больше 30 минут на смене: " + forOwner.size() + "\n" + lines(forOwner) + "\n" + url;
-            if (!telegram.sendOwnerAlert(businessId, text)) forOwner.forEach(it -> release(businessId, "OWNER", key(it)));
+            String text = "Без ответа уже больше 30 минут на смене: " + forOwner.size() + "\n" + lines(forOwner, businessId) + "\n" + TelegramNotificationService.escapeHtml(url);
+            if (!telegram.sendOwnerHtmlAlert(businessId, text)) forOwner.forEach(it -> release(businessId, "OWNER", key(it)));
         }
         shiftStartDigest(businessId, now, q, url);
     }
@@ -100,15 +100,15 @@ public class NeedsReplyEscalation {
         if (started.isEmpty()) return;
         String ref = "shift:" + started.get(0);
         if (!claim(businessId, "DIGEST", ref)) return;
-        String text = "Начало смены: ждут ответа чатов " + q.count() + ".\n" + lines(q.items());
-        if (!telegram.sendPlainAlert(businessId, text, "Нужен ответ", url)) release(businessId, "DIGEST", ref);
+        String text = "Начало смены: ждут ответа чатов " + q.count() + ".\n" + lines(q.items(), businessId);
+        if (!telegram.sendHtmlAlert(businessId, text, "Нужен ответ", url)) release(businessId, "DIGEST", ref);
     }
 
     private static String key(NeedsReplyService.Item it) {
         return it.phone() + "|" + it.since().getEpochSecond();
     }
 
-    private static String lines(List<NeedsReplyService.Item> items) {
+    private String lines(List<NeedsReplyService.Item> items, long businessId) {
         StringBuilder sb = new StringBuilder();
         int n = 0;
         for (NeedsReplyService.Item it : items) {
@@ -116,7 +116,14 @@ public class NeedsReplyEscalation {
                 sb.append("и ещё ").append(items.size() - MAX_LINES).append("\n");
                 break;
             }
-            sb.append("···").append(it.phoneLast4()).append(" · ").append(Math.max(1, it.waitSeconds() / 60)).append(" мин")
+            String last4 = "···" + TelegramNotificationService.escapeHtml(it.phoneLast4());
+            boolean named = it.name() != null && !it.name().isBlank();
+            String label = named ? TelegramNotificationService.escapeHtml(it.name().strip()) : last4;
+            if (it.leadId() != null) {
+                label = "<a href=\"" + TelegramNotificationService.escapeHtml(publicBaseUrl + "/admin/leads/" + it.leadId() + "?business=" + businessId)
+                        + "\">" + label + "</a>";
+            }
+            sb.append(label).append(named ? " " + last4 : "").append(" · ").append(Math.max(1, it.waitSeconds() / 60)).append(" мин")
                     .append(it.ask() ? " · вопрос" : "").append("\n");
         }
         return sb.toString();
