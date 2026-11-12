@@ -7,13 +7,15 @@ import LeadActions from './LeadActions';
 import { DAY, LAPSED_AFTER_DAYS, hasNextStep, isActive, isLapsed, isOverdue, lacksNextStep } from './leadActions';
 import LeadIcons from './LeadIcons';
 import ReminderSheet, { type ReachedOutBody } from './ReminderSheet';
+import NeedsReplyPanel from './NeedsReplyPanel';
 import OutdatedPanel, { LockIcon } from './OutdatedPanel';
 import { t, tf } from '../../lib/i18n';
-import type { Language, Lead, LeadFunnel, LeadListBadge, LeadOwnersView } from '../../lib/types';
+import type { Language, Lead, LeadFunnel, LeadListBadge, LeadOwnersView, NeedsReplyQueue } from '../../lib/types';
 
 type Tab = 'ACTION' | 'CONSULT' | 'LAPSED' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
 const OUTDATED = 'OUTDATED' as const;
-type AnyTab = Tab | typeof OUTDATED;
+const REPLY = 'REPLY' as const;
+type AnyTab = Tab | typeof OUTDATED | typeof REPLY;
 const TABS: Tab[] = ['ACTION', 'CONSULT', 'LAPSED', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM', 'ALL'];
 const COLD_AFTER_DAYS = 7;
 const STATUS_STYLE: Record<string, string> = {
@@ -104,9 +106,11 @@ function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | nu
   return sorted.length ? [{ key: 'all', title: '', tone: '', leads: sorted }] : [];
 }
 
-export default function LeadsManager({ initialLeads, language = null, restricted = false }: { initialLeads: Lead[]; language?: Language | null; restricted?: boolean }) {
+export default function LeadsManager({ initialLeads, language = null, restricted = false, initialTab = null }: { initialLeads: Lead[]; language?: Language | null; restricted?: boolean; initialTab?: string | null }) {
   const [leads, setLeads] = useState(initialLeads);
-  const [tab, setTab] = useState<AnyTab | null>(null);
+  const [tab, setTab] = useState<AnyTab | null>(initialTab === 'needs-reply' && !restricted ? REPLY : null);
+  const [queue, setQueue] = useState<NeedsReplyQueue | null>(null);
+  const [queueFailed, setQueueFailed] = useState(false);
   const [outdatedTotal, setOutdatedTotal] = useState<number | null>(null);
   const [q, setQ] = useState('');
   const [source, setSource] = useState('');
@@ -138,6 +142,20 @@ export default function LeadsManager({ initialLeads, language = null, restricted
     fetch('/api/leads/badges', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).then(setBadges).catch(() => undefined);
   }, []);
 
+  const loadQueue = useMemo(() => () => {
+    fetch('/api/metrics/needs-reply', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('queue'))))
+      .then((d: NeedsReplyQueue) => { setQueue(d); setQueueFailed(false); })
+      .catch(() => setQueueFailed(true));
+  }, []);
+
+  useEffect(() => {
+    if (restricted) return undefined;
+    loadQueue();
+    const id = setInterval(loadQueue, 30_000);
+    return () => clearInterval(id);
+  }, [restricted, loadQueue]);
+
   useEffect(() => {
     if (restricted) return;
     fetch('/api/leads/outdated?page=0', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOutdatedTotal(d.total); }).catch(() => undefined);
@@ -167,9 +185,11 @@ export default function LeadsManager({ initialLeads, language = null, restricted
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [base],
   );
-  const activeTab: AnyTab = tab ?? (counts.ACTION > 0 ? 'ACTION' : 'ALL');
+  const replyCount = queue?.count ?? 0;
+  const activeTab: AnyTab = tab ?? (replyCount > 0 ? REPLY : counts.ACTION > 0 ? 'ACTION' : 'ALL');
+  const reply = activeTab === REPLY;
   const archive = activeTab === OUTDATED;
-  const sections = archive ? [] : buildSections(base.filter((l) => inTab(l, activeTab as Tab)), activeTab as Tab, now, language);
+  const sections = archive || reply ? [] : buildSections(base.filter((l) => inTab(l, activeTab as Tab)), activeTab as Tab, now, language);
 
   async function noAnswer(l: Lead) {
     setBusyId(l.id);
@@ -220,7 +240,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
 
   return (
     <div className="flex min-w-0 max-w-full flex-col gap-4 overflow-x-clip">
-      <div className={`flex flex-col gap-2 sm:flex-row ${archive ? 'hidden' : ''}`}>
+      <div className={`flex flex-col gap-2 sm:flex-row ${archive || reply ? 'hidden' : ''}`}>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -239,6 +259,17 @@ export default function LeadsManager({ initialLeads, language = null, restricted
       </div>
 
       <div className="flex flex-wrap gap-2">
+        {!restricted && (
+          <button
+            onClick={() => setTab(REPLY)}
+            aria-pressed={reply}
+            data-testid="tab-needs-reply"
+            className={`flex min-h-11 items-center gap-2 rounded-full px-3 py-1 text-sm ring-1 sm:min-h-0 ${reply ? 'bg-zinc-900 text-white ring-zinc-900' : 'text-zinc-700 ring-zinc-300 hover:bg-zinc-50'}`}
+          >
+            {t(language, 'nrTab')}
+            <span className={`rounded-full px-1.5 text-xs tabular-nums ${reply ? 'bg-white/20' : replyCount > 0 ? 'bg-red-600 text-white' : 'bg-zinc-100 text-zinc-600'}`}>{replyCount}</span>
+          </button>
+        )}
         {TABS.filter((x) => (x !== 'CONSULT' || hasConsult) && (x !== 'LAPSED' || hasLapsed)).map((x) => (
           <button
             key={x}
@@ -295,6 +326,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
         </label>
       )}
 
+      {reply && <NeedsReplyPanel queue={queue} failed={queueFailed} language={language} onChanged={loadQueue} />}
       {archive && <OutdatedPanel language={language} onTotal={setOutdatedTotal} />}
 
       {activeTab === 'ACTION' && (
@@ -303,7 +335,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
       {activeTab === 'ACTION' && counts.ACTION === 0 && (
         <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{t(language, 'crmAllDone')}</p>
       )}
-      {sections.length === 0 && !archive && activeTab !== 'ACTION' && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
+      {sections.length === 0 && !archive && !reply && activeTab !== 'ACTION' && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
 
       {(() => {
         const todo = sections.filter((x) => x.group === 'todo');

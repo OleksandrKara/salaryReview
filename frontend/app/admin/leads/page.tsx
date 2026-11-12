@@ -7,11 +7,11 @@ import PageHeader from '../../components/PageHeader';
 import LeadsManager from './LeadsManager';
 import ShiftSummary from './ShiftSummary';
 
-export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ business?: string }> }) {
-  const { business } = await searchParams;
+export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ business?: string; tab?: string }> }) {
+  const { business, tab } = await searchParams;
   const me = await serverApi.getMe();
   const wanted = parseBusinessParam(business);
-  if (needsSwitch(wanted, me.activeBusinessId)) redirect(enterBusinessUrl(wanted, '/admin/leads'));
+  if (needsSwitch(wanted, me.activeBusinessId)) redirect(enterBusinessUrl(wanted, tab === 'needs-reply' ? '/admin/leads?tab=needs-reply' : '/admin/leads'));
   const lang = me.preferredLanguage;
   const perms = me.permissions ?? [];
   const staff = me.role === 'OWNER' || me.role === 'MANAGER';
@@ -25,7 +25,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       {me.role === 'MANAGER' ? <ShiftSummary language={lang} /> : null}
       <p className="mb-6 text-xs text-zinc-500">{t(lang, 'leadsDesc')}</p>
       {academyOnly ? null : <Link href="/admin/leads/lost-report" className="mb-4 inline-block text-sm text-zinc-600 underline">{t(lang, 'leadLostReport')}</Link>}
-      <LeadsManager initialLeads={leads} language={lang} restricted={academyOnly} />
+      <LeadsManager initialLeads={leads} language={lang} restricted={academyOnly} initialTab={tab ?? null} />
     </main>
   );
 }

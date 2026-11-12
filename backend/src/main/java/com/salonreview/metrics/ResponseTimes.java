@@ -32,8 +32,14 @@ public final class ResponseTimes {
 
     private ResponseTimes() {}
 
+    /** {@code ask}: inbound is a question or request. {@code read}: staff opened the inbound. {@code automated}: outbound sent by automation. */
     public record Msg(long id, String phone, boolean inbound, Instant at, boolean human, Long senderUserId, boolean ignorable,
-                      boolean optOut) {
+                      boolean optOut, boolean ask, boolean read, boolean automated) {
+        public Msg(long id, String phone, boolean inbound, Instant at, boolean human, Long senderUserId, boolean ignorable,
+                   boolean optOut) {
+            this(id, phone, inbound, at, human, senderUserId, ignorable, optOut, false, false, false);
+        }
+
         public Msg(long id, String phone, boolean inbound, Instant at, boolean human, Long senderUserId, boolean ignorable) {
             this(id, phone, inbound, at, human, senderUserId, ignorable, false);
         }
@@ -93,10 +99,26 @@ public final class ResponseTimes {
 
     public enum Attribution { DIRECT, INFERRED, UNKNOWN }
 
+    /** {@code automationFirst}: an automated text went to the client after the wait began and before the human reply. */
     public record Reply(String phone, Instant inboundAt, Instant replyAt, long effectiveSeconds, boolean onShift,
-                        Long userId, Attribution attribution) {}
+                        Long userId, Attribution attribution, boolean automationFirst) {
+        public Reply(String phone, Instant inboundAt, Instant replyAt, long effectiveSeconds, boolean onShift,
+                     Long userId, Attribution attribution) {
+            this(phone, inboundAt, replyAt, effectiveSeconds, onShift, userId, attribution, false);
+        }
+    }
 
-    public record Unanswered(String phone, Instant since, long effectiveSeconds) {}
+    /** {@code ask}: some text of the wait is a question or request. {@code allRead}: staff opened every text of the wait. */
+    public record Unanswered(String phone, Instant since, long effectiveSeconds, boolean ask, boolean allRead) {
+        public Unanswered(String phone, Instant since, long effectiveSeconds) {
+            this(phone, since, effectiveSeconds, false, false);
+        }
+
+        /** The one definition of "needs a human reply": a question or request, or a text nobody has looked at yet. */
+        public boolean needsReply() {
+            return ask || !allRead;
+        }
+    }
 
     public record Result(List<Reply> replies, List<Unanswered> unanswered) {}
 
@@ -118,23 +140,35 @@ public final class ResponseTimes {
             List<Msg> list = new ArrayList<>(e.getValue());
             list.sort(Comparator.comparing(Msg::at).thenComparingLong(Msg::id));
             Instant pending = null;
+            boolean ask = false, allRead = true, autoFirst = false;
             for (Msg m : list) {
                 if (m.inbound()) {
                     if (m.optOut()) pending = null;
-                    else if (!m.ignorable() && pending == null) pending = m.at();
+                    else if (!m.ignorable()) {
+                        if (pending == null) {
+                            pending = m.at();
+                            ask = false;
+                            allRead = true;
+                            autoFirst = false;
+                        }
+                        ask |= m.ask();
+                        allRead &= m.read();
+                    }
                 } else if (m.human() && pending != null) {
-                    replies.add(reply(e.getKey(), pending, m, closed, coverage));
+                    replies.add(reply(e.getKey(), pending, m, closed, coverage, autoFirst));
                     pending = null;
+                } else if (m.automated() && pending != null) {
+                    autoFirst = true;
                 }
             }
-            if (pending != null) open.add(new Unanswered(e.getKey(), pending, overlap(coverage, pending, now)));
+            if (pending != null) open.add(new Unanswered(e.getKey(), pending, overlap(coverage, pending, now), ask, allRead));
         }
         replies.sort(Comparator.comparing(Reply::replyAt));
         open.sort(Comparator.comparing(Unanswered::since));
         return new Result(replies, open);
     }
 
-    private static Reply reply(String phone, Instant inboundAt, Msg m, List<Shift> shifts, List<long[]> coverage) {
+    private static Reply reply(String phone, Instant inboundAt, Msg m, List<Shift> shifts, List<long[]> coverage, boolean autoFirst) {
         Set<Long> on = new HashSet<>();
         for (Shift s : shifts) if (!m.at().isBefore(s.start()) && m.at().isBefore(s.end())) on.add(s.userId());
         boolean onShift = !on.isEmpty();
@@ -147,7 +181,7 @@ public final class ResponseTimes {
             user = on.iterator().next();
             how = Attribution.INFERRED;
         }
-        return new Reply(phone, inboundAt, m.at(), overlap(coverage, inboundAt, m.at()), onShift, user, how);
+        return new Reply(phone, inboundAt, m.at(), overlap(coverage, inboundAt, m.at()), onShift, user, how, autoFirst);
     }
 
     /** Seconds of [from, to] during which someone was clocked in. */

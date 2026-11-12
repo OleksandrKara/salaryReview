@@ -198,4 +198,33 @@ class ResponseTimesTest {
         var question = ResponseTimes.compute(List.of(reply("a", -5, 1L), in("a", 0), auto("a", 3)), shifts, NOW);
         assertThat(question.unanswered()).hasSize(1);
     }
+
+    private static Msg inFlags(String phone, long min, boolean ask, boolean read) {
+        return new Msg(++ids, phone, true, at(min), false, null, false, false, ask, read, false);
+    }
+    private static Msg autoSent(String phone, long min) { return new Msg(++ids, phone, false, at(min), false, null, false, false, false, false, true); }
+
+    @Test
+    @DisplayName("needsReply: question always, statement only until read")
+    void needsReplyFlags() {
+        var shifts = List.of(shift(1, -60, 6000));
+        var q = ResponseTimes.compute(List.of(inFlags("a", 0, true, true)), shifts, NOW).unanswered().get(0);
+        var unread = ResponseTimes.compute(List.of(inFlags("a", 0, false, false)), shifts, NOW).unanswered().get(0);
+        var read = ResponseTimes.compute(List.of(inFlags("a", 0, false, true)), shifts, NOW).unanswered().get(0);
+        var mixed = ResponseTimes.compute(List.of(inFlags("a", 0, false, true), inFlags("a", 1, true, true)), shifts, NOW).unanswered().get(0);
+        assertThat(q.needsReply()).isTrue();
+        assertThat(unread.needsReply()).isTrue();
+        assertThat(read.needsReply()).isFalse();
+        assertThat(mixed.needsReply()).isTrue();
+    }
+
+    @Test
+    @DisplayName("automationFirst: an automated text between the wait start and the human reply is flagged")
+    void automationFirst() {
+        var shifts = List.of(shift(1, -60, 6000));
+        var late = ResponseTimes.compute(List.of(in("a", 0), autoSent("a", 2), reply("a", 40, 1L)), shifts, NOW);
+        assertThat(late.replies().get(0).automationFirst()).isTrue();
+        var fast = ResponseTimes.compute(List.of(autoSent("b", -5), in("b", 0), reply("b", 3, 1L)), shifts, NOW);
+        assertThat(fast.replies().get(0).automationFirst()).isFalse();
+    }
 }

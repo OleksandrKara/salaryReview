@@ -84,6 +84,7 @@ function ManagerCard({ m, place, open, onToggle, language }: { m: ManagerRespons
       </button>
       <div className="pb-3 pl-4 pr-3">
         <StatsGrid m={m} language={language} withWork />
+        {m.automationFirst > 0 ? <p className="mt-2 text-xs text-amber-700" data-testid={`rt-autofirst-${m.userId}`}>{`${t(language, 'rtAutomationFirst')}: ${m.automationFirst}`}</p> : null}
       </div>
       {open ? (
         <div className="border-t border-zinc-100 bg-zinc-50 py-3 pl-4 pr-3 text-sm text-zinc-700" data-testid={`rt-detail-${m.userId}`}>
@@ -234,6 +235,7 @@ function TextsBlock({ r, language, activeBusinessId, open, setOpen }: { r: Busin
         </>
       )}
       <ul className="mt-2 space-y-1 text-xs text-zinc-500">
+        {data.automationFirst > 0 ? <li data-testid={`rt-autofirst-team-${r.businessId}`}>{tf(language, 'rtAutomationFirstTeam', { n: data.automationFirst })}</li> : null}
         {inferred > 0 ? <li>{tf(language, 'rtInferred', { n: inferred })}</li> : null}
         {data.unknownReplies > 0 ? <li>{tf(language, 'rtUnknown', { n: data.unknownReplies })}</li> : null}
         {data.offShiftReplies > 0 ? <li>{tf(language, 'rtOffShift', { n: data.offShiftReplies })}</li> : null}

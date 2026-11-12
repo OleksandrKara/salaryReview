@@ -38,7 +38,7 @@ test('every /api/leads call in the leads UI has a proxy route with that method',
   assert.ok(calls.length > 10, `found only ${calls.length} calls`);
   for (const c of calls) {
     const segs = c.url.split('/').slice(2);
-    const route = routes.find((r) => matches(r.segs, segs.map((s) => (s === '[x]' ? '[x]' : s))));
+    const route = routes.filter((r) => matches(r.segs, segs)).sort((a, b) => a.segs.filter((s) => s.startsWith('[')).length - b.segs.filter((s) => s.startsWith('[')).length)[0];
     assert.ok(route, `${c.f}: no proxy route for ${c.method} ${c.url}`);
     assert.ok(route.methods.includes(c.method), `${c.f}: route for ${c.url} lacks ${c.method}`);
   }

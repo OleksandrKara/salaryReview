@@ -75,6 +75,21 @@ class ManagerMetricsServiceTest {
     }
 
     @Test
+    void leaderboardCountsAutomationThatAnsweredBeforeTheHuman() {
+        shift(anna, "2026-11-11T16:00:00Z", null);
+        sms("INBOUND", "2026-11-11T18:00:00Z", "hi, do you have a slot?", null, null);
+        sms("OUTBOUND", "2026-11-11T18:01:00Z", "auto ack", null, "auto_ack");
+        sms("OUTBOUND", "2026-11-11T18:40:00Z", "Yes!", anna.getId(), null);
+        sms("INBOUND", "2026-11-11T19:00:00Z", "and parking?", null, null);
+        sms("OUTBOUND", "2026-11-11T19:02:00Z", "Free lot behind", anna.getId(), null);
+
+        var lb = service.leaderboard(b, "today");
+
+        assertThat(lb.automationFirst()).isEqualTo(1);
+        assertThat(lb.managers().get(0).automationFirst()).isEqualTo(1);
+    }
+
+    @Test
     void shiftSummaryCountsUnansweredAndEmptyState() {
         var empty = service.shiftSummary(b, bob.getId(), bob.getUsername());
         assertThat(empty.onShift()).isFalse();
