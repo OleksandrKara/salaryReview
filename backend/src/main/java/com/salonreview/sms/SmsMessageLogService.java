@@ -261,12 +261,14 @@ public class SmsMessageLogService {
      * {@link com.salonreview.domain.SmsReplyFlow} (i.e. every automation except
      * {@code checkout_review_request}) — the automation key of this phone number's single most
      * recent outbound message, or {@code null} if there isn't one or it was a manual (non-
-     * automated) send. Used by {@code TwilioInboundSmsController} so a reply to, say, the
+     * automated) send, only if it went out within the last 24 hours. Used by {@code TwilioInboundSmsController} so a reply to, say, the
      * repeat-customer win-back nudge shows up as a "reply" for that automation on the owner's
      * automations panel instead of silently going untracked. */
     public String mostRecentAutomationKey(Long businessId, String phoneNumber) {
         return repository.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(
                         businessId, PhoneNumbers.normalize(phoneNumber), "OUTBOUND")
+                .filter(m -> m.getCreatedAt() != null
+                        && m.getCreatedAt().isAfter(Instant.now().minus(com.salonreview.metrics.ResponseTimes.AUTOMATION_ANSWER_WINDOW)))
                 .map(SmsMessage::getAutomationKey)
                 .orElse(null);
     }

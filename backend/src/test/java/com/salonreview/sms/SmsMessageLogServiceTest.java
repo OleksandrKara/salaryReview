@@ -54,6 +54,19 @@ class SmsMessageLogServiceTest {
     }
 
     @Test
+    @DisplayName("mostRecentAutomationKey ignores a send older than 24 hours")
+    void mostRecentAutomationKeyWindow() {
+        SmsMessage old = SmsMessage.builder().automationKey("same_day_rebooking_discount")
+                .createdAt(java.time.Instant.now().minus(java.time.Duration.ofDays(7))).build();
+        SmsMessage fresh = SmsMessage.builder().automationKey("lead_follow_up")
+                .createdAt(java.time.Instant.now().minus(java.time.Duration.ofHours(2))).build();
+        when(repository.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, "+15551234567", "OUTBOUND"))
+                .thenReturn(java.util.Optional.of(old), java.util.Optional.of(fresh));
+        assertThat(service.mostRecentAutomationKey(BUSINESS_ID, "+15551234567")).isNull();
+        assertThat(service.mostRecentAutomationKey(BUSINESS_ID, "+15551234567")).isEqualTo("lead_follow_up");
+    }
+
+    @Test
     @DisplayName("unreadCount delegates to the repository's unread-inbound count")
     void unreadCountDelegates() {
         when(repository.countByBusinessIdAndDirectionAndReadAtIsNull(BUSINESS_ID, "INBOUND")).thenReturn(3L);

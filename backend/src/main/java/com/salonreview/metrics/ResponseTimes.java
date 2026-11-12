@@ -18,7 +18,7 @@ import java.util.Set;
  *   <li>A conversation (one phone) is "waiting" from the first countable inbound text after the last
  *       human reply. Several inbound texts in a row are ONE wait, measured from the first.</li>
  *   <li>A reply is a human outbound text (no automation or template key). Automated sends never answer.</li>
- *   <li>Automation answers (inbound already tied to an automation), STOP/START/HELP keywords and closing
+ *   <li>Automation answers (inbound tied to an automation sent within 24 h, and not a question or request), STOP/START/HELP keywords and closing
  *       courtesies ("Thank you!", "Ok") are not countable inbound texts.</li>
  *   <li>An opt-out (STOP, UNSUBSCRIBE...) closes the wait: we may not text that client any more.</li>
  *   <li>The wait only ticks while at least one manager is clocked in (union of shifts), so a text at
@@ -55,6 +55,26 @@ public final class ResponseTimes {
      * reply and starts no wait. Short, no question mark, and every word is gratitude or agreement; "yes" and "no"
      * alone are answers to our question, so they are not on the list.
      */
+    /** An inbound text is an answer to our automation only within a day of that send. */
+    public static final Duration AUTOMATION_ANSWER_WINDOW = Duration.ofHours(24);
+
+    private static final java.util.regex.Pattern ASK = java.util.regex.Pattern.compile(
+            "(?i)\\b(call|can|could|would|when|where|how|what|why|who|which|please|pls|do you|are you|is there|available|appointment|book|price|cost)\\b");
+
+    /** A question or request needs a person even when it follows an automated text. */
+    public static boolean isAsk(String body) {
+        return body != null && (body.indexOf('?') >= 0 || ASK.matcher(body).find());
+    }
+
+    /**
+     * True when an inbound text just answers an automation: it carries an automation key, the last automated send
+     * to that phone was at most {@link #AUTOMATION_ANSWER_WINDOW} earlier, and it is not a question or request.
+     */
+    public static boolean answersAutomation(boolean hasKey, Instant lastAutomatedAt, Instant inboundAt, String body) {
+        if (!hasKey || lastAutomatedAt == null || isAsk(body)) return false;
+        return !inboundAt.isAfter(lastAutomatedAt.plus(AUTOMATION_ANSWER_WINDOW));
+    }
+
     public static boolean isCourtesy(String body) {
         if (body == null || body.isBlank()) return false;
         String raw = body.trim();
