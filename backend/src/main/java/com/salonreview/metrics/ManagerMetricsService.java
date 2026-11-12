@@ -65,7 +65,9 @@ public class ManagerMetricsService {
     /** Phone is reduced to its last 4 digits: enough to find the thread, not enough to leak the number into a report. */
     public record SlowReply(String phoneLast4, Instant inboundAt, Instant replyAt, long seconds) {}
 
-    public record WaitingNow(String phoneLast4, String phone, Instant since, long seconds) {}
+    /** A chat nobody answered: who (name and CRM lead when known), what they wrote, and how long it has waited on shift. */
+    public record WaitingNow(String phoneLast4, String phone, Instant since, long seconds, String name, Long leadId, String leadStatus,
+                             String preview, String lastAutoKey, Instant lastAutoAt) {}
 
     public record Leaderboard(String period, Instant from, Instant to, List<ManagerRow> managers, ResponseTimes.Stats team,
                               int unknownReplies, int offShiftReplies, int unansweredNow, Long oldestUnansweredSeconds,
@@ -157,7 +159,7 @@ public class ManagerMetricsService {
         Long oldest = d.result.unanswered().stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
         List<WaitingNow> waiting = d.result.unanswered().stream()
                 .sorted(java.util.Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()).limit(5)
-                .map(u -> new WaitingNow(last4(u.phone()), u.phone(), u.since(), u.effectiveSeconds())).toList();
+                .map(u -> waitingNow(businessId, u)).toList();
         return new Board(new Leaderboard(period, from, now, rows, team, unknown, off, d.result.unanswered().size(), oldest, waiting),
                 inWindow.stream().filter(Reply::onShift).map(Reply::effectiveSeconds).toList());
     }
@@ -174,7 +176,7 @@ public class ManagerMetricsService {
         Long oldestSec = unanswered.stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
         List<WaitingNow> waiting = unanswered.stream()
                 .sorted(java.util.Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()).limit(5)
-                .map(u -> new WaitingNow(last4(u.phone()), u.phone(), u.since(), u.effectiveSeconds())).toList();
+                .map(u -> waitingNow(businessId, u)).toList();
         Instant oldestSince = unanswered.stream().max((a, b) -> Long.compare(a.effectiveSeconds(), b.effectiveSeconds()))
                 .map(ResponseTimes.Unanswered::since).orElse(null);
         List<Comparison> comparisons = List.of(comparison(businessId, userId, "7d"), comparison(businessId, userId, "30d"),
@@ -207,6 +209,34 @@ public class ManagerMetricsService {
         ManagerRow mine = board.managers().stream().filter(r -> r.userId() == userId && r.replies() > 0).findFirst().orElse(null);
         return new Comparison(period, mine == null ? null : mine.medianSeconds(), board.team().medianSeconds(),
                 mine == null ? null : ranked.indexOf(mine) + 1, ranked.size());
+    }
+
+    private static final int PREVIEW_MAX = 140;
+
+    /** Adds the CRM lead (name, id, status) and the text that started the wait, so the row says why it is waiting. */
+    WaitingNow waitingNow(long businessId, ResponseTimes.Unanswered u) {
+        String digits = u.phone() == null ? "" : u.phone().replaceAll("\\D", "");
+        String key = digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
+        Object[] lead = digits.length() < 7 ? null : jdbc.query("""
+                SELECT id, name, status FROM lead_intake WHERE business_id = ? AND outcome <> 'DUPLICATE'
+                AND right(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), 10) = ? ORDER BY created_at DESC LIMIT 1
+                """, rs -> rs.next() ? new Object[]{rs.getLong(1), rs.getString(2), rs.getString(3)} : null, businessId, key);
+        String body = jdbc.query("""
+                SELECT body FROM sms_message WHERE business_id = ? AND phone_number = ? AND direction = 'INBOUND' AND created_at >= ?
+                ORDER BY created_at LIMIT 1
+                """, rs -> rs.next() ? rs.getString(1) : null, businessId, u.phone(), java.sql.Timestamp.from(u.since()));
+        String preview = body == null ? null : body.replaceAll("\\s+", " ").trim();
+        if (preview != null && preview.length() > PREVIEW_MAX) preview = preview.substring(0, PREVIEW_MAX - 1) + "\u2026";
+        Object[] auto = jdbc.query("""
+                SELECT COALESCE(template_key, automation_key), created_at FROM sms_message
+                WHERE business_id = ? AND phone_number = ? AND direction = 'OUTBOUND' AND created_at >= ?
+                AND (automation_key IS NOT NULL OR template_key IS NOT NULL) ORDER BY created_at DESC LIMIT 1
+                """, rs -> rs.next() ? new Object[]{rs.getString(1), rs.getTimestamp(2).toInstant()} : null,
+                businessId, u.phone(), java.sql.Timestamp.from(u.since()));
+        String name = lead == null || lead[1] == null || ((String) lead[1]).isBlank() ? null : ((String) lead[1]).trim();
+        return new WaitingNow(last4(u.phone()), u.phone(), u.since(), u.effectiveSeconds(), name,
+                lead == null ? null : (Long) lead[0], lead == null ? null : (String) lead[2], preview,
+                auto == null ? null : (String) auto[0], auto == null ? null : (Instant) auto[1]);
     }
 
     static String last4(String phone) {

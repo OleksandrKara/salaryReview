@@ -34,3 +34,9 @@ export function nextBusinessToTry(businessIds: number[], tried: number[]): numbe
 export function parseTried(v: string | undefined): number[] {
   return (v ?? '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 10);
 }
+
+/** Wraps a path so it switches the session to `businessId` first when that is not the active business. */
+export function inBusiness(path: string, businessId: number | null | undefined, activeBusinessId: number | null | undefined): string {
+  if (businessId == null || !needsSwitch(businessId, activeBusinessId ?? undefined)) return path;
+  return enterBusinessUrl(businessId, path);
+}

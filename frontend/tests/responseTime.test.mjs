@@ -58,9 +58,26 @@ test('chatHref deep-links into the messages thread and escapes the plus sign', (
   assert.equal(m.SLOW_WAIT_SECONDS, 900);
 });
 
-test('shift card lists every waiting chat as a link, red past the slow threshold', () => {
-  const src = fs.readFileSync(new URL('../app/admin/leads/ShiftSummary.tsx', import.meta.url), 'utf8');
+test('leadHref and sinceLabel', () => {
+  assert.equal(m.leadHref(42), '/admin/leads/42');
+  assert.match(m.sinceLabel('2026-11-07T02:45:00Z', 'EN'), /Nov 6/);
+});
+
+test('inBusiness only routes through the switcher for another business', async () => {
+  const b = await loadTs('../app/lib/businessLinks.ts');
+  assert.equal(b.inBusiness('/admin/leads/42', 1, 1), '/admin/leads/42');
+  assert.equal(b.inBusiness('/admin/leads/42', null, 1), '/admin/leads/42');
+  assert.equal(b.inBusiness('/admin/leads/42', 2, 1), '/api/business/enter?business=2&next=%2Fadmin%2Fleads%2F42');
+});
+
+test('waiting rows offer chat and lead links, and flag chats that are not leads', () => {
+  const src = fs.readFileSync(new URL('../app/components/WaitingRows.tsx', import.meta.url), 'utf8');
   assert.match(src, /chatHref\(w\.phone\)/);
+  assert.match(src, /leadHref\(w\.leadId\)/);
+  assert.match(src, /rtNoLead/);
+  assert.match(src, /min-h-11/);
   assert.match(src, /SLOW_WAIT_SECONDS/);
-  assert.match(src, /bg-red-50/);
+  for (const f of ['../app/admin/leads/ShiftSummary.tsx', '../app/admin/response-times/ResponseTimesView.tsx']) {
+    assert.match(fs.readFileSync(new URL(f, import.meta.url), 'utf8'), /WaitingRows/);
+  }
 });

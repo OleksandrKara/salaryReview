@@ -62,7 +62,7 @@ public class ResponseOverviewService {
 
     public record SlowLead(String phoneLast4, Instant createdAt, Instant touchedAt, long seconds) {}
 
-    public record WaitingLead(String phoneLast4, Instant createdAt, long seconds) {}
+    public record WaitingLead(long leadId, String phoneLast4, String phone, String name, String channel, Instant createdAt, long seconds) {}
 
     public record LeadManager(long userId, String username, int touches, Long medianSeconds, Integer within5Percent) {}
 
@@ -151,8 +151,15 @@ public class ResponseOverviewService {
                 (int) inPeriod.stream().filter(t -> !t.onShift()).count(), managers,
                 measured.stream().sorted(Comparator.comparingLong(LeadFirstTouch.Touched::effectiveSeconds).reversed()).limit(3)
                         .map(t -> new SlowLead(ManagerMetricsService.last4(t.phone()), t.createdAt(), t.touchAt(), t.effectiveSeconds())).toList(),
-                waiting.stream().limit(5).map(p -> new WaitingLead(ManagerMetricsService.last4(p.phone()), p.createdAt(), p.effectiveSeconds())).toList());
+                waiting.stream().limit(5).map(p -> waitingLead(businessId, p)).toList());
         return new Computed(summary, seconds);
+    }
+
+    private WaitingLead waitingLead(long businessId, LeadFirstTouch.Pending p) {
+        String[] info = jdbc.query("SELECT name, channel FROM lead_intake WHERE id = ? AND business_id = ?",
+                rs -> rs.next() ? new String[]{rs.getString(1), rs.getString(2)} : new String[]{null, null}, p.leadId(), businessId);
+        String name = info[0] == null || info[0].isBlank() ? null : info[0].trim();
+        return new WaitingLead(p.leadId(), ManagerMetricsService.last4(p.phone()), p.phone(), name, info[1], p.createdAt(), p.effectiveSeconds());
     }
 
     private final Map<String, Long> idsByName = new java.util.concurrent.ConcurrentHashMap<>();

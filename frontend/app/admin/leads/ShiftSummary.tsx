@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { Language, ShiftComparison, ShiftSummaryData } from '../../lib/types';
 import { t, tf } from '../../lib/i18n';
-import { chatHref, formatWait, shiftState, SLOW_WAIT_SECONDS, speedTone } from '../../lib/responseTime';
+import WaitingRows from '../../components/WaitingRows';
+import { formatWait, shiftState, SLOW_WAIT_SECONDS, speedTone } from '../../lib/responseTime';
 
 const POLL_MS = 30_000;
 const TZ = 'America/Los_Angeles';
@@ -103,19 +104,14 @@ export default function ShiftSummary({ language }: { language: Language | null }
           data-slow={data.waiting.some((w) => w.seconds > SLOW_WAIT_SECONDS) ? 'true' : 'false'}
         >
           <p className="px-3 pt-2 text-xs font-semibold">{tf(language, 'shiftWaitingChip', { n: data.unansweredCount })}</p>
-          <ul className="px-3 pb-1">
-            {data.waiting.map((w) => {
-              const hot = w.seconds > SLOW_WAIT_SECONDS;
-              return (
-                <li key={w.phone}>
-                  <Link href={chatHref(w.phone)} className="flex min-h-11 items-center justify-between gap-3 text-sm underline-offset-2 hover:underline">
-                    <span className="min-w-0 break-words text-xs">{t(language, 'rtThread')} {w.phoneLast4}</span>
-                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 font-semibold tabular-nums ${hot ? 'bg-red-600 text-white' : ''}`}>{formatWait(w.seconds, language)}</span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="px-3 pb-1">
+            <WaitingRows
+              testId="shift-waiting"
+              language={language}
+              activeBusinessId={null}
+              rows={data.waiting.map((w) => ({ key: w.phone, name: w.name, last4: w.phoneLast4, phone: w.phone, businessId: null, preview: w.preview, since: w.since, seconds: w.seconds, leadId: w.leadId, leadStatus: w.leadStatus, lastAutoKey: w.lastAutoKey, lastAutoAt: w.lastAutoAt }))}
+            />
+          </div>
           {data.unansweredCount > data.waiting.length ? <p className="px-3 pb-2 text-xs opacity-80">{tf(language, 'rtMoreWaiting', { n: data.unansweredCount - data.waiting.length })}</p> : null}
         </div>
       ) : null}

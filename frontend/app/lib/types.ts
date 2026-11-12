@@ -2691,7 +2691,7 @@ export interface ResponseLeaderboard {
   waiting: WaitingText[];
 }
 
-export interface WaitingText { phoneLast4: string; phone: string; since: string; seconds: number }
+export interface WaitingText { phoneLast4: string; phone: string; since: string; seconds: number; name: string | null; leadId: number | null; leadStatus: string | null; preview: string | null; lastAutoKey: string | null; lastAutoAt: string | null }
 
 export interface ResponseStats {
   replies: number;
@@ -2710,7 +2710,7 @@ export interface NewLeadsReport {
   offShiftTouches: number;
   managers: { userId: number; username: string; touches: number; medianSeconds: number | null; within5Percent: number | null }[];
   slowest: { phoneLast4: string; createdAt: string; touchedAt: string; seconds: number }[];
-  waiting: { phoneLast4: string; createdAt: string; seconds: number }[];
+  waiting: { leadId: number; phoneLast4: string; phone: string; name: string | null; channel: string | null; createdAt: string; seconds: number }[];
 }
 
 export interface BusinessResponseReport {

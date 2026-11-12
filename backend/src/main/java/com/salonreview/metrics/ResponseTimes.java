@@ -44,14 +44,29 @@ public final class ResponseTimes {
             "perfect", "great", "awesome", "will do", "noted", "see you then", "see you soon", "you too", "ok thanks",
             "ok thank you", "okay thanks", "okay thank you", "thanks you too", "thank you you too");
 
-    /** A closing courtesy ("Thank you!", "Ok", a thumbs-up or tapback) needs no reply and starts no wait. */
+    private static final Set<String> COURTESY_WORDS = Set.of("ok", "okay", "k", "kk", "thanks", "thank", "thx", "ty", "you", "u", "so",
+            "much", "very", "a", "lot", "many", "got", "it", "sounds", "good", "great", "perfect", "awesome", "wonderful", "nice",
+            "cool", "noted", "will", "do", "see", "then", "soon", "too", "same", "noproblem", "at", "all", "appreciate", "appreciated",
+            "have", "day", "weekend", "evening", "morning", "night", "love", "that", "works", "fine", "alright", "right", "np",
+            "welcome", "your", "help", "again", "for", "everything", "and", "i", "to", "later", "tomorrow", "bye");
+
+    /**
+     * A closing courtesy ("Thank you!", "Sounds good. No problem at all. Thank you!", a thumbs-up or tapback) needs no
+     * reply and starts no wait. Short, no question mark, and every word is gratitude or agreement; "yes" and "no"
+     * alone are answers to our question, so they are not on the list.
+     */
     public static boolean isCourtesy(String body) {
         if (body == null || body.isBlank()) return false;
         String raw = body.trim();
         if (raw.matches("(?is)^(liked|loved|disliked|laughed at|emphasized|questioned)\\s+[\\u201c\"].*")) return true;
+        if (raw.indexOf('?') >= 0) return false;
         String norm = raw.toLowerCase().replaceAll("[^a-z\\s]", " ").replaceAll("\\s+", " ").trim();
         if (norm.isEmpty()) return raw.codePoints().noneMatch(Character::isLetterOrDigit);
-        return COURTESY.contains(norm);
+        if (COURTESY.contains(norm)) return true;
+        String[] words = norm.replace("no problem", "noproblem").split(" ");
+        if (words.length > 10) return false;
+        for (String w : words) if (!COURTESY_WORDS.contains(w)) return false;
+        return true;
     }
 
     public record Shift(long userId, Instant start, Instant end) {}

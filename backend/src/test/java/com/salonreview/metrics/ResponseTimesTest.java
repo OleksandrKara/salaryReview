@@ -153,7 +153,35 @@ class ResponseTimesTest {
         assertThat(ResponseTimes.isCourtesy("Thanks, what time is it?")).isFalse();
         assertThat(ResponseTimes.isCourtesy("Too far ...sorry")).isFalse();
         assertThat(ResponseTimes.isCourtesy("Where r u located?")).isFalse();
+        assertThat(ResponseTimes.isCourtesy("Sounds good. No problem at all. Thank you!")).isTrue();
+        assertThat(ResponseTimes.isCourtesy("Perfect, see you then. Thanks!")).isTrue();
+        assertThat(ResponseTimes.isCourtesy("Thanks, what time is it")).isFalse();
+        assertThat(ResponseTimes.isCourtesy("Thank you, can I move it to 5")).isFalse();
+        assertThat(ResponseTimes.isCourtesy("Yes")).isFalse();
+        assertThat(ResponseTimes.isCourtesy("No")).isFalse();
         assertThat(ResponseTimes.isCourtesy(null)).isFalse();
         assertThat(ResponseTimes.isCourtesy("")).isFalse();
+    }
+
+    @Test
+    @DisplayName("automated messages never close a wait, a human text without a known sender does")
+    void automationDoesNotCloseButHumanDoes() {
+        var shifts = List.of(shift(1, -60, 600));
+        var onlyAuto = ResponseTimes.compute(List.of(in("a", 0), auto("a", 5), auto("a", 20)), shifts, NOW);
+        assertThat(onlyAuto.unanswered()).hasSize(1);
+        assertThat(onlyAuto.replies()).isEmpty();
+        var human = ResponseTimes.compute(List.of(in("a", 0), auto("a", 5), reply("a", 30, null)), shifts, NOW);
+        assertThat(human.unanswered()).isEmpty();
+        assertThat(human.replies()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a human reply after a courtesy-only text leaves nothing waiting, a real question keeps waiting")
+    void courtesyThenAutomation() {
+        var shifts = List.of(shift(1, -60, 6000));
+        var thanks = ResponseTimes.compute(List.of(reply("a", -5, 1L), ignoredIn("a", 0), auto("a", 3)), shifts, NOW);
+        assertThat(thanks.unanswered()).isEmpty();
+        var question = ResponseTimes.compute(List.of(reply("a", -5, 1L), in("a", 0), auto("a", 3)), shifts, NOW);
+        assertThat(question.unanswered()).hasSize(1);
     }
 }
