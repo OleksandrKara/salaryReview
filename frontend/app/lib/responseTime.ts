@@ -54,3 +54,15 @@ export const SLOW_WAIT_SECONDS = 900;
 export function chatHref(phone: string): string {
   return `/admin/messages?phone=${encodeURIComponent(phone)}`;
 }
+
+/** Route that opens the lead card. */
+export function leadHref(leadId: number): string {
+  return `/admin/leads/${leadId}`;
+}
+
+/** "Nov 7, 2:45 AM" in salon time: when the unanswered text arrived (wall clock, not shift time). */
+export function sinceLabel(iso: string, lang: Lang | null): string {
+  return new Date(iso).toLocaleString(lang === 'RU' ? 'ru-RU' : 'en-US', {
+    timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+}
