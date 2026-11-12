@@ -3,6 +3,7 @@ package com.salonreview.marketing;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.marketing.LeadFollowUpService.LeadView;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +76,24 @@ public class LeadOwnerService {
         return m;
     }
 
+    /** Candidates plus anyone a lead was explicitly handed to, so the label never depends on who is looking. */
+    private Map<Long, String> names(Long meId, Collection<Long> assigned) {
+        Map<Long, String> m = names(meId);
+        List<Long> missing = assigned.stream().filter(id -> id != null && !m.containsKey(id)).distinct().toList();
+        if (!missing.isEmpty()) m.putAll(assignedLabels(missing));
+        return m;
+    }
+
+    protected Map<Long, String> assignedLabels(List<Long> ids) {
+        String marks = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        Map<Long, String> out = new HashMap<>();
+        jdbc.query("SELECT a.id, a.role, p.display_name, a.username FROM app_user a LEFT JOIN providers p ON p.id = a.provider_id "
+                + "WHERE a.active AND a.role IN ('OWNER', 'MANAGER') AND a.id IN (" + marks + ")", rs -> {
+            out.put(rs.getLong("id"), label(rs.getString("role"), rs.getString("display_name"), rs.getString("username")));
+        }, ids.toArray());
+        return out;
+    }
+
     private Owner resolve(Long explicit, boolean academy, Long academyDefault, Map<Long, String> names) {
         if (explicit != null && names.containsKey(explicit)) return new Owner(explicit, names.get(explicit), "ASSIGNED");
         if (academy && academyDefault != null && names.containsKey(academyDefault)) {
@@ -90,7 +109,7 @@ public class LeadOwnerService {
     public Map<Long, Owner> forLeads(List<LeadView> list, Long meId) {
         Map<Long, Long> explicit = leads.explicitOwners();
         Long def = academyDefault();
-        Map<Long, String> names = names(meId);
+        Map<Long, String> names = names(meId, explicit.values());
         Map<Long, Owner> out = new HashMap<>();
         for (LeadView l : list) out.put(l.id(), resolve(explicit.get(l.id()), l.academy(), def, names));
         return out;
@@ -100,7 +119,8 @@ public class LeadOwnerService {
         LeadView lead = leads.lead(leadId);
         Long explicit = leads.explicitOwners().get(leadId);
         Long def = academyDefault();
-        return new Info(resolve(explicit, lead.academy(), def, names(meId)), candidates(meId), def);
+        Map<Long, String> names = names(meId, explicit == null ? List.of() : List.of(explicit));
+        return new Info(resolve(explicit, lead.academy(), def, names), candidates(meId), def);
     }
 
     /** userId null hands the lead back to the default (Academy default or the team). */

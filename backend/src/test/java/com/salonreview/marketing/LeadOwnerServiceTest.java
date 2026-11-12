@@ -26,6 +26,9 @@ class LeadOwnerServiceTest {
                 return List.of(new Candidate(31, "Alex", "OWNER"), new Candidate(42, "Anastasiia", "MANAGER"), new Candidate(17, "Manager", "MANAGER"));
             }
             @Override public Long academyDefault() { return 42L; }
+            @Override protected Map<Long, String> assignedLabels(List<Long> ids) {
+                return ids.contains(1L) ? Map.of(1L, "Owner (owner)") : Map.of();
+            }
         };
     }
 
@@ -43,6 +46,17 @@ class LeadOwnerServiceTest {
         assertEquals(42L, o.get(1L).userId());
         assertEquals("ASSIGNED", o.get(2L).kind());
         assertEquals("Alex", o.get(2L).name());
+    }
+
+    @Test
+    void assignedOwnerOutsideTheViewersCandidatesStillWins() {
+        when(leads.explicitOwners()).thenReturn(Map.of(1L, 1L));
+        Owner o = svc.forLeads(List.of(lead(1, true)), 42L).get(1L);
+        assertEquals("ASSIGNED", o.kind());
+        assertEquals(1L, o.userId());
+        assertEquals("Owner (owner)", o.name());
+        when(leads.lead(1L)).thenReturn(lead(1, true));
+        assertEquals(1L, svc.info(1L, 42L).owner().userId());
     }
 
     @Test
