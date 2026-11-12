@@ -140,7 +140,9 @@ public class LeadsController {
     public ResponseEntity<Void> update(@PathVariable long id, @RequestBody UpdateRequest req,
                                        @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
+        boolean takeOutOfArchive = academyOnly(me) && business.id() == 2L && leads.isOutdated(id) && req.status() != null;
         leads.update(id, req, me == null ? null : me.getUsername());
+        if (takeOutOfArchive) leads.setAcademy(id, true);
         return ResponseEntity.noContent().build();
     }
 
@@ -148,7 +150,10 @@ public class LeadsController {
 
     @PutMapping("/{id}/academy")
     public ResponseEntity<Void> setAcademy(@PathVariable long id, @RequestBody AcademyRequest req, @AuthenticationPrincipal AppUserPrincipal me) {
-        if (academyOnly(me)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not available");
+        if (academyOnly(me)) {
+            guard(id, me);
+            if (!Boolean.TRUE.equals(req.value())) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not available");
+        }
         leads.setAcademy(id, req.value());
         return ResponseEntity.noContent().build();
     }
