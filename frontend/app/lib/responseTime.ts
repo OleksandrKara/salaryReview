@@ -47,3 +47,10 @@ export function shiftState(d: { shiftStart: string | null; replies: number; lead
   if (!d.shiftStart) return 'none';
   return d.replies > 0 || d.leadsProcessed > 0 ? 'active' : 'quiet';
 }
+
+/** Waiting longer than this on shift is shown red: it matches the "slow" band of speedTone. */
+export const SLOW_WAIT_SECONDS = 900;
+
+export function chatHref(phone: string): string {
+  return `/admin/messages?phone=${encodeURIComponent(phone)}`;
+}

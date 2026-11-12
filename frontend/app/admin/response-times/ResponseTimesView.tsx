@@ -1,9 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { BusinessResponseReport, Language, ManagerResponseRow, ResponseOverview, ResponseStats } from '../../lib/types';
 import { t, tf } from '../../lib/i18n';
-import { formatWait, rankManagers, speedTone } from '../../lib/responseTime';
+import { chatHref, formatWait, rankManagers, SLOW_WAIT_SECONDS, speedTone } from '../../lib/responseTime';
 
 type Period = 'today' | '7d' | '30d' | 'all';
 const PERIODS: { id: Period; key: 'rtToday' | 'rt7d' | 'rt30d' | 'rtAll' }[] = [
@@ -126,19 +127,36 @@ function Kpi({ title, stats, waiting, waitingLabel, language, testId }: { title:
   );
 }
 
-function Waiting({ title, rows, language, testId }: { title: string; rows: { key: string; label: string; seconds: number }[]; language: Lang; testId: string }) {
+function Waiting({ title, rows, total, language, testId }: { title: string; rows: { key: string; label: string; seconds: number; href?: string }[]; total?: number; language: Lang; testId: string }) {
   if (rows.length === 0) return null;
+  const slow = rows.some((w) => w.seconds > SLOW_WAIT_SECONDS);
+  const box = slow ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-200 bg-amber-50 text-amber-900';
+  const divide = slow ? 'divide-red-200/70' : 'divide-amber-200/70';
+  const more = total != null && total > rows.length ? total - rows.length : 0;
   return (
-    <section className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-amber-900" data-testid={testId}>
-      <h3 className="mb-1.5 !font-sans text-sm font-semibold">{title}</h3>
-      <ul className="divide-y divide-amber-200/70">
-        {rows.map((w) => (
-          <li key={w.key} className="flex min-h-9 items-center justify-between gap-3 py-1.5 text-sm">
-            <span className="min-w-0 break-words text-xs">{w.label}</span>
-            <span className="shrink-0 font-semibold tabular-nums">{formatWait(w.seconds, language)}</span>
-          </li>
-        ))}
+    <section className={`mb-3 rounded-xl border px-3 py-3 ${box}`} data-testid={testId} data-slow={slow ? 'true' : 'false'}>
+      <h3 className="mb-1.5 !font-sans text-sm font-semibold">{title}{total != null ? ` · ${total}` : ''}</h3>
+      <ul className={`divide-y ${divide}`}>
+        {rows.map((w) => {
+          const hot = w.seconds > SLOW_WAIT_SECONDS;
+          const inner = (
+            <>
+              <span className="min-w-0 break-words text-xs">{w.label}</span>
+              <span className={`shrink-0 rounded-md px-1.5 py-0.5 font-semibold tabular-nums ${hot ? 'bg-red-600 text-white' : ''}`}>{formatWait(w.seconds, language)}</span>
+            </>
+          );
+          return (
+            <li key={w.key}>
+              {w.href ? (
+                <Link href={w.href} className="flex min-h-11 items-center justify-between gap-3 py-1.5 text-sm underline-offset-2 hover:underline">{inner}</Link>
+              ) : (
+                <div className="flex min-h-9 items-center justify-between gap-3 py-1.5 text-sm">{inner}</div>
+              )}
+            </li>
+          );
+        })}
       </ul>
+      {more > 0 ? <p className="mt-1 text-xs opacity-80">{tf(language, 'rtMoreWaiting', { n: more })}</p> : null}
     </section>
   );
 }
@@ -216,7 +234,8 @@ function TextsBlock({ r, language, open, setOpen }: { r: BusinessResponseReport;
         title={t(language, 'rtWaitingTitle')}
         testId={`rt-waiting-${r.businessId}`}
         language={language}
-        rows={data.waiting.map((w, k) => ({ key: String(k), label: `${t(language, 'rtThread')} ${w.phoneLast4}`, seconds: w.seconds }))}
+        total={data.unansweredNow}
+        rows={data.waiting.map((w, k) => ({ key: String(k), label: `${t(language, 'rtThread')} ${w.phoneLast4}`, seconds: w.seconds, href: chatHref(w.phone) }))}
       />
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed border-zinc-300 px-3 py-3 text-center text-xs text-zinc-500" data-testid={`rt-empty-${r.businessId}`}>

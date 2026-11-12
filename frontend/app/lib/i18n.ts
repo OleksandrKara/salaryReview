@@ -501,6 +501,7 @@ const STRINGS = {
   rtSlowest: { EN: 'Slowest replies in this period', RU: 'Самые долгие ответы за период' },
   rtSlowestNone: { EN: 'No replies in this period.', RU: 'Нет ответов за этот период.' },
   rtWaitingTitle: { EN: 'Waiting for a reply right now', RU: 'Ждут ответа прямо сейчас' },
+  rtMoreWaiting: { EN: '+{n} more', RU: 'и ещё {n}' },
   rtThread: { EN: 'Chat ending in', RU: 'Чат на номер ...' },
   rtDetails: { EN: 'Details', RU: 'Подробнее' },
   rtCardTitle: { EN: 'Manager response speed', RU: 'Скорость ответа менеджеров' },

@@ -87,6 +87,18 @@ class ManagerMetricsServiceTest {
         assertThat(s.onShift()).isTrue();
         assertThat(s.unansweredCount()).isEqualTo(1);
         assertThat(s.oldestUnansweredSeconds()).isEqualTo(1800);
+        assertThat(s.waiting()).hasSize(1);
+        assertThat(s.waiting().get(0).seconds()).isEqualTo(1800);
+    }
+
+    @Test
+    void optOutAndThanksAreNotWaiting() {
+        shift(bob, "2026-11-11T17:00:00Z", null);
+        sms("INBOUND", "2026-11-11T19:30:00Z", "Too far ...sorry", null, null);
+        sms("INBOUND", "2026-11-11T19:31:00Z", "STOP", null, null);
+        var s = service.shiftSummary(b, bob.getId(), bob.getUsername());
+        assertThat(s.unansweredCount()).isZero();
+        assertThat(s.waiting()).isEmpty();
     }
 
     @Test
