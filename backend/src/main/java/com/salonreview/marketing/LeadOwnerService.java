@@ -48,20 +48,15 @@ public class LeadOwnerService {
     /** meId: the signed-in owner or manager is always a candidate, even without a membership row for this business. */
     public List<Candidate> candidates(Long meId) {
         return jdbc.query("""
-                SELECT a.id, a.role, p.display_name, a.username FROM app_user a
+                SELECT a.id, a.role, p.display_name AS provider_name, a.display_name AS account_name, a.username FROM app_user a
                 LEFT JOIN providers p ON p.id = a.provider_id
                 WHERE a.active AND (
                     (a.id = ? AND a.role IN ('OWNER', 'MANAGER'))
                     OR a.id IN (SELECT m.user_id FROM business_membership m WHERE m.business_id = ? AND m.role IN ('OWNER', 'MANAGER'))
                     OR a.id IN (SELECT up.user_id FROM user_permission up WHERE up.business_id = ? AND up.permission IN ('LEADS_ACADEMY', 'LEADS_ALL')))
                 ORDER BY CASE a.role WHEN 'OWNER' THEN 0 ELSE 1 END, a.username
-                """, (rs, i) -> new Candidate(rs.getLong("id"), label(rs.getString("role"), rs.getString("display_name"), rs.getString("username")),
+                """, (rs, i) -> new Candidate(rs.getLong("id"), OwnerLabels.label(rs.getString("role"), rs.getString("provider_name"), rs.getString("account_name"), rs.getString("username")),
                 rs.getString("role")), meId == null ? -1L : meId, business.id(), business.id());
-    }
-
-    private static String label(String role, String displayName, String username) {
-        if (displayName != null && !displayName.isBlank()) return displayName.trim();
-        return "OWNER".equals(role) ? "Owner (" + username + ")" : username;
     }
 
     public Long academyDefault() {
@@ -87,9 +82,9 @@ public class LeadOwnerService {
     protected Map<Long, String> assignedLabels(List<Long> ids) {
         String marks = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
         Map<Long, String> out = new HashMap<>();
-        jdbc.query("SELECT a.id, a.role, p.display_name, a.username FROM app_user a LEFT JOIN providers p ON p.id = a.provider_id "
+        jdbc.query("SELECT a.id, a.role, p.display_name AS provider_name, a.display_name AS account_name, a.username FROM app_user a LEFT JOIN providers p ON p.id = a.provider_id "
                 + "WHERE a.active AND a.role IN ('OWNER', 'MANAGER') AND a.id IN (" + marks + ")", rs -> {
-            out.put(rs.getLong("id"), label(rs.getString("role"), rs.getString("display_name"), rs.getString("username")));
+            out.put(rs.getLong("id"), OwnerLabels.label(rs.getString("role"), rs.getString("provider_name"), rs.getString("account_name"), rs.getString("username")));
         }, ids.toArray());
         return out;
     }
