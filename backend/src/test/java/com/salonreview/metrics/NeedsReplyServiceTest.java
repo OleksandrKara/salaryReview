@@ -205,6 +205,95 @@ class NeedsReplyServiceTest {
         assertThat(q.items().get(0).waitSeconds()).isEqualTo(600);
     }
 
+    private long leadFor(String phone, String status, String created, String channel, String customer) {
+        return jdbc.queryForObject("""
+                INSERT INTO lead_intake (business_id, channel, source, phone_number, outcome, status, created_at, square_customer_id, legacy)
+                VALUES (?, ?, 'test', ?, 'CREATED', ?, ?, ?, ?) RETURNING id
+                """, Long.class, b, channel, phone, status, Timestamp.from(Instant.parse(created)), customer, "OUTDATED".equals(status));
+    }
+
+    private void booking(String customer, String createdAt) {
+        jdbc.update("INSERT INTO square_booking (business_id, square_booking_id, square_customer_id, status, start_at, created_at) "
+                + "VALUES (?, ?, ?, 'ACCEPTED', ?, ?)", b, "bk-" + System.nanoTime(), customer,
+                Timestamp.from(Instant.parse("2026-11-25T17:00:00Z")), Timestamp.from(Instant.parse(createdAt)));
+    }
+
+    @Test
+    void devynCaseClientWhoBookedAfterTheTextIsNotRaisedDespiteDuplicateNewLead() {
+        leadFor(PHONE, "BOOKED", "2026-11-11T15:00:00Z", "SMS", "CUST1");
+        leadFor(PHONE, "NEW", "2026-11-11T19:00:00Z", "Form", "CUST1");
+        in("2026-11-11T18:20:00Z", "What do you need from me to book the appointment");
+        booking("CUST1", "2026-11-11T18:40:00Z");
+
+        assertThat(service.queue(b).count()).isZero();
+        assertThat(metrics.leaderboard(b, "today").unansweredNow()).isZero();
+    }
+
+    @Test
+    void bookingBeforeTheTextDoesNotClearAQuestion() {
+        leadFor(PHONE, "BOOKED", "2026-11-01T15:00:00Z", "SMS", "CUST1");
+        booking("CUST1", "2026-11-05T18:40:00Z");
+        in("2026-11-11T18:20:00Z", "Can I move my appointment?");
+        assertThat(service.queue(b).count()).isEqualTo(1);
+    }
+
+    @Test
+    void rebeccaCaseSpamPersonNeverAppearsAnywhere() {
+        leadFor(PHONE, "SPAM", "2026-11-04T05:16:00Z", "Academy", null);
+        leadFor(PHONE, "NEW", "2026-11-04T05:16:30Z", "Form", null);
+        leadFor(PHONE, "NEW", "2026-11-11T12:13:00Z", "Academy", null);
+        in("2026-11-11T18:00:00Z", "Hello, can you call me back?");
+
+        assertThat(service.queue(b).count()).isZero();
+        assertThat(metrics.leaderboard(b, "today").unansweredNow()).isZero();
+        assertThat(metrics.shiftSummary(b, anna.getId(), anna.getUsername()).unansweredCount()).isZero();
+    }
+
+    @Test
+    void failedOutboundIsNotAnAnswer() {
+        in("2026-11-11T18:00:00Z", "Can I book?");
+        jdbc.update("INSERT INTO sms_message (business_id, direction, phone_number, body, status, created_at) VALUES (?, 'OUTBOUND', ?, 'Sure', 'FAILED', ?)",
+                b, PHONE, Timestamp.from(Instant.parse("2026-11-11T18:05:00Z")));
+        assertThat(service.queue(b).count()).isEqualTo(1);
+    }
+
+    @Test
+    void robynCaseNumberReplyIsNotRaisedEvenOutsideTheDayWindowOrWithoutKey() {
+        sms(b, PHONE, "OUTBOUND", "2026-11-10T10:00:00Z", "How did we do? Reply 1-5", "checkout_review_request", false);
+        sms(b, PHONE, "INBOUND", "2026-11-11T18:00:00Z", "5", null, false);
+        sms(b, "+15550002222", "OUTBOUND", "2026-11-11T17:00:00Z", "How did we do? Reply 1-5", "checkout_review_request", false);
+        sms(b, "+15550002222", "INBOUND", "2026-11-11T18:00:00Z", "5!", "checkout_review_request", false);
+        assertThat(service.queue(b).count()).isZero();
+
+        sms(b, "+15550003333", "INBOUND", "2026-11-11T18:00:00Z", "5", null, false);
+        assertThat(service.queue(b).count()).as("a number from a chat we never texted automatically is a real message").isEqualTo(1);
+    }
+
+    @Test
+    void maryamCaseComplaintInsideARatingReplyIsRaisedAndViewingDoesNotClearIt() {
+        leadFor(PHONE, "OUTDATED", "2026-07-07T17:31:00Z", "Square", null);
+        sms(b, PHONE, "OUTBOUND", "2026-11-11T17:00:00Z", "How did we do? Reply 1-5", "checkout_review_request", false);
+        sms(b, PHONE, "INBOUND", "2026-11-11T17:30:00Z",
+                "I love my nails, however I started at 9:47 and did not finish until 12:51, the delay messed up my plans", "checkout_review_request", true);
+        sms(b, PHONE, "OUTBOUND", "2026-11-11T17:30:01Z", "Yay, so happy to hear that!", "checkout_review_request", false);
+
+        var q = service.queue(b);
+        assertThat(q.count()).isEqualTo(1);
+        assertThat(q.items().get(0).ask()).isTrue();
+        assertThat(q.items().get(0).leadStatus()).isEqualTo("OUTDATED");
+    }
+
+    @Test
+    void queueLinksToThePersonsFirstLeadSoTheCardOpens() {
+        long first = leadFor(PHONE, "CONTACTED", "2026-11-04T21:00:00Z", "Academy", null);
+        leadFor(PHONE, "NEW", "2026-11-05T05:00:00Z", "Academy", null);
+        leadFor(PHONE, "NEW", "2026-11-05T05:30:00Z", "Form", null);
+        in("2026-11-11T18:00:00Z", "Can I book?");
+        var it = service.queue(b).items().get(0);
+        assertThat(it.leadId()).isEqualTo(first);
+        assertThat(it.leadStatus()).isEqualTo("CONTACTED");
+    }
+
     // ---- escalation ----
 
     private TelegramNotificationService telegram;

@@ -28,6 +28,10 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
     notFound();
   }
 
+  if (detail.lead.id !== Number(id)) {
+    redirect(`/admin/leads/${detail.lead.id}${keep ? `?${keep}` : ''}`);
+  }
+
   return (
     <main className="mx-auto w-full min-w-0 max-w-3xl overflow-x-clip p-4 sm:p-8">
       <PageHeader title={t(lang, 'leadsTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />

@@ -3,7 +3,6 @@ package com.salonreview.metrics;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -23,7 +22,6 @@ import java.util.List;
 public class NeedsReplyService {
 
     public static final Duration MAX_AGE = Duration.ofDays(7);
-    private static final String HUMAN_ACTIONS = "(e.type IN ('ATTEMPT','CALL','REACHED_OUT') OR (e.type = 'STATUS' AND e.text IN ('LOST','SPAM')))";
 
     public record Item(String phone, String phoneLast4, Instant since, long waitSeconds, boolean ask, String name, Long leadId,
                        String leadStatus, String preview, String automationKey, Instant automationAt) {}
@@ -49,8 +47,8 @@ public class NeedsReplyService {
         Instant now = clock.instant();
         Instant oldestAllowed = now.minus(MAX_AGE);
         var data = metrics.load(businessId, oldestAllowed, now);
-        List<Item> items = data.result().unanswered().stream()
-                .filter(u -> !u.since().isBefore(oldestAllowed) && u.needsReply() && !handledByHuman(businessId, u))
+        List<Item> items = metrics.needsReplyNow(businessId, data.result().unanswered()).stream()
+                .filter(u -> !u.since().isBefore(oldestAllowed))
                 .sorted(Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()
                         .thenComparing(ResponseTimes.Unanswered::since))
                 .map(u -> item(businessId, u))
@@ -62,18 +60,5 @@ public class NeedsReplyService {
         var w = metrics.waitingNow(businessId, u);
         return new Item(u.phone(), w.phoneLast4(), u.since(), u.effectiveSeconds(), u.ask(), w.name(), w.leadId(), w.leadStatus(),
                 w.preview(), w.lastAutoKey(), w.lastAutoAt());
-    }
-
-    /** A person worked the lead (call, attempt, reached out) or closed it as LOST/SPAM after the client's text. */
-    boolean handledByHuman(long businessId, ResponseTimes.Unanswered u) {
-        String digits = u.phone() == null ? "" : u.phone().replaceAll("\\D", "");
-        if (digits.length() < 7) return false;
-        String key = digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
-        Boolean found = jdbc.queryForObject("""
-                SELECT EXISTS (SELECT 1 FROM lead_events e JOIN lead_intake li ON li.id = e.lead_id
-                WHERE li.business_id = ? AND right(regexp_replace(COALESCE(li.phone_number, ''), '\\D', '', 'g'), 10) = ?
-                AND e.created_by IS NOT NULL AND e.created_at > ? AND """
-                + HUMAN_ACTIONS + ")", Boolean.class, businessId, key, Timestamp.from(u.since()));
-        return Boolean.TRUE.equals(found);
     }
 }

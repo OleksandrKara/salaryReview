@@ -157,7 +157,7 @@ public class ManagerMetricsService {
         var team = ResponseTimes.stats(inWindow.stream().filter(Reply::onShift).map(Reply::effectiveSeconds).toList());
         int unknown = (int) inWindow.stream().filter(r -> r.onShift() && r.attribution() == Attribution.UNKNOWN).count();
         int off = (int) inWindow.stream().filter(r -> !r.onShift()).count();
-        List<ResponseTimes.Unanswered> pendingNow = d.result.unanswered().stream().filter(ResponseTimes.Unanswered::needsReply).toList();
+        List<ResponseTimes.Unanswered> pendingNow = needsReplyNow(businessId, d.result.unanswered());
         Long oldest = pendingNow.stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
         List<WaitingNow> waiting = pendingNow.stream()
                 .sorted(java.util.Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()).limit(5)
@@ -175,7 +175,7 @@ public class ManagerMetricsService {
         List<LeadFollowUpService.LeadView> fresh = leads.listFor(businessId, "NEW");
         Instant oldestNew = fresh.stream().map(l -> Instant.parse(l.createdAt())).min(Instant::compareTo).orElse(null);
         Data now0 = load(businessId, now.minus(Duration.ofHours(1)), now);
-        var unanswered = now0.result.unanswered().stream().filter(ResponseTimes.Unanswered::needsReply).toList();
+        var unanswered = needsReplyNow(businessId, now0.result.unanswered());
         Long oldestSec = unanswered.stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
         List<WaitingNow> waiting = unanswered.stream()
                 .sorted(java.util.Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()).limit(5)
@@ -222,7 +222,7 @@ public class ManagerMetricsService {
         String key = digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
         Object[] lead = digits.length() < 7 ? null : jdbc.query("""
                 SELECT id, name, status FROM lead_intake WHERE business_id = ? AND outcome <> 'DUPLICATE'
-                AND right(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), 10) = ? ORDER BY created_at DESC LIMIT 1
+                AND right(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), 10) = ? ORDER BY created_at, id LIMIT 1
                 """, rs -> rs.next() ? new Object[]{rs.getLong(1), rs.getString(2), rs.getString(3)} : null, businessId, key);
         String body = jdbc.query("""
                 SELECT body FROM sms_message WHERE business_id = ? AND phone_number = ? AND direction = 'INBOUND' AND created_at >= ?
@@ -240,6 +240,35 @@ public class ManagerMetricsService {
         return new WaitingNow(last4(u.phone()), u.phone(), u.since(), u.effectiveSeconds(), name,
                 lead == null ? null : (Long) lead[0], lead == null ? null : (String) lead[2], preview,
                 auto == null ? null : (String) auto[0], auto == null ? null : (Instant) auto[1]);
+    }
+
+    private static final String HUMAN_ACTIONS = "(e.type IN ('ATTEMPT','CALL','REACHED_OUT') OR (e.type = 'STATUS' AND e.text IN ('LOST','SPAM')))";
+
+    /**
+     * The one definition of "this chat needs a person now", used by the queue, the menu badge, the shift card, the
+     * leaderboard and the Telegram escalation: a question, complaint or unread text that nobody has dealt with, minus
+     * clients who are marked SPAM, clients a person already worked after the text (call, attempt, reached out, LOST),
+     * and clients who booked an appointment after the text. Leads of one phone are one person.
+     */
+    List<ResponseTimes.Unanswered> needsReplyNow(long businessId, List<ResponseTimes.Unanswered> unanswered) {
+        return unanswered.stream().filter(u -> u.needsReply() && !dealtWith(businessId, u)).toList();
+    }
+
+    boolean dealtWith(long businessId, ResponseTimes.Unanswered u) {
+        String digits = u.phone() == null ? "" : u.phone().replaceAll("\\D", "");
+        if (digits.length() < 7) return false;
+        String key = digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
+        String person = "right(regexp_replace(COALESCE(li.phone_number, ''), '\\D', '', 'g'), 10) = ?";
+        Boolean found = jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM lead_intake li WHERE li.business_id = ? AND li.outcome <> 'DUPLICATE' AND li.status = 'SPAM' AND " + person + ")"
+                + " OR EXISTS (SELECT 1 FROM lead_events e JOIN lead_intake li ON li.id = e.lead_id WHERE li.business_id = ? AND " + person
+                + " AND e.created_by IS NOT NULL AND e.created_at > ? AND " + HUMAN_ACTIONS + ")"
+                + " OR EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = ? AND b.status = 'ACCEPTED' AND b.created_at > ?"
+                + " AND b.square_customer_id IN (SELECT li.square_customer_id FROM lead_intake li WHERE li.business_id = ?"
+                + " AND li.square_customer_id IS NOT NULL AND " + person + "))",
+                Boolean.class, businessId, key, businessId, key, java.sql.Timestamp.from(u.since()),
+                businessId, java.sql.Timestamp.from(u.since()), businessId, key);
+        return Boolean.TRUE.equals(found);
     }
 
     static String last4(String phone) {
@@ -281,7 +310,8 @@ public class ManagerMetricsService {
             boolean keyword = KEYWORDS.contains(word);
             boolean optOut = in && OPT_OUT.contains(word);
             boolean human = !in && auto == null && rs.getString(6) == null && "SENT".equals(rs.getString(7));
-            boolean answersAuto = in && ResponseTimes.answersAutomation(auto != null, lastAutomated.get(phone), at, body);
+            boolean answersAuto = in && (ResponseTimes.answersAutomation(auto != null, lastAutomated.get(phone), at, body)
+                    || ResponseTimes.answersByNumber(lastAutomated.get(phone), at, body));
             boolean automated = !in && (auto != null || rs.getString(6) != null);
             return new Msg(rs.getLong(1), phone, in, at, human,
                     (Long) rs.getObject(8), in && (answersAuto || keyword || ResponseTimes.isCourtesy(body)), optOut,

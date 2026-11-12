@@ -67,9 +67,27 @@ public final class ResponseTimes {
     private static final java.util.regex.Pattern ASK = java.util.regex.Pattern.compile(
             "(?i)\\b(call|can|could|would|when|where|how|what|why|who|which|please|pls|do you|are you|is there|available|appointment|book|price|cost)\\b");
 
-    /** A question or request needs a person even when it follows an automated text. */
+    /** A complaint or a change of plan: a person must answer it, whatever it follows ("Yay, so glad" cannot). */
+    private static final java.util.regex.Pattern COMPLAINT = java.util.regex.Pattern.compile(
+            "(?i)\\b(however|unfortunately|disappoint\\w*|unhappy|upset|angry|not happy|not satisfied|problem|issue|complain\\w*|refund|"
+                    + "rude|unprofessional|wrong|ruined|messed up|terrible|horrible|worst|too long|waited|cancel\\w*|resched\\w*|delay\\w*|hurt\\w*|pain|bleed\\w*|allerg\\w*|infect\\w*|swollen|rash|burn\\w*)\\b");
+
+    /** A question, request or complaint needs a person even when it follows an automated text. */
     public static boolean isAsk(String body) {
-        return body != null && (body.indexOf('?') >= 0 || ASK.matcher(body).find());
+        return body != null && (body.indexOf('?') >= 0 || ASK.matcher(body).find() || COMPLAINT.matcher(body).find());
+    }
+
+    /** How long after an automated text a bare number ("5", "1") is still taken as the answer to it. */
+    public static final Duration NUMBER_ANSWER_WINDOW = Duration.ofHours(72);
+
+    /** A bare number ("5", "5!", "10/10", "1.") is a rating or menu choice, never a request. */
+    public static boolean isNumberReply(String body) {
+        return body != null && body.trim().matches("(?s)^\\d{1,2}(\\s*/\\s*\\d{1,2})?[\\s!.\\p{So}\\p{Sk}]*$");
+    }
+
+    /** A bare number sent within {@link #NUMBER_ANSWER_WINDOW} of any automated text answers that text. */
+    public static boolean answersByNumber(Instant lastAutomatedAt, Instant inboundAt, String body) {
+        return lastAutomatedAt != null && isNumberReply(body) && !inboundAt.isAfter(lastAutomatedAt.plus(NUMBER_ANSWER_WINDOW));
     }
 
     /**
