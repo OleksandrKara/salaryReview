@@ -29,6 +29,7 @@ import java.util.Map;
 public class TimecardController {
 
     public record ApproveRequest(String date, Long providerId, Boolean onBehalf) {}
+    public record AdjustRequest(String date, Long providerId, String start, String end, String note) {}
     public record ReopenRequest(String date, Long providerId) {}
     public record VoidRequest(String date, Long providerId, String reason) {}
     public record RestRequest(String date, Long providerId, boolean notProvided) {}
@@ -124,6 +125,12 @@ public class TimecardController {
     public DayView approve(@AuthenticationPrincipal AppUserPrincipal me, @RequestBody ApproveRequest r) {
         return reviews.approve(business.id(), me.getUserId(), me.getRole().name(), r.providerId(),
                 TimecardReviewService.parseDate(r.date()), Boolean.TRUE.equals(r.onBehalf()));
+    }
+
+    @PostMapping("/adjust")
+    public DayView adjust(@AuthenticationPrincipal AppUserPrincipal me, @RequestBody AdjustRequest r) {
+        return reviews.adjust(business.id(), me.getUserId(), me.getRole().name(), r.providerId(),
+                TimecardReviewService.parseDate(r.date()), r.start(), r.end(), r.note());
     }
 
     @PostMapping("/reopen")
