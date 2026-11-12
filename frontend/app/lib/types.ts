@@ -2688,8 +2688,10 @@ export interface ResponseLeaderboard {
   offShiftReplies: number;
   unansweredNow: number;
   oldestUnansweredSeconds: number | null;
-  waiting: { phoneLast4: string; since: string; seconds: number }[];
+  waiting: WaitingText[];
 }
+
+export interface WaitingText { phoneLast4: string; phone: string; since: string; seconds: number }
 
 export interface ResponseStats {
   replies: number;
@@ -2747,6 +2749,7 @@ export interface ShiftSummaryData {
   oldestUnansweredSeconds: number | null;
   oldestUnansweredSince: string | null;
   comparisons: ShiftComparison[];
+  waiting: WaitingText[];
 }
 
 export interface ShiftComparison {

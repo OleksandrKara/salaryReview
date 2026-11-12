@@ -52,3 +52,15 @@ test('shiftState separates never clocked in, quiet shift and active shift', () =
   assert.equal(m.shiftState({ shiftStart: '2026-11-11T16:00:00Z', replies: 0, leadsProcessed: 2 }), 'active');
   assert.equal(m.shiftState({ shiftStart: '2026-11-11T16:00:00Z', replies: 3, leadsProcessed: 0 }), 'active');
 });
+
+test('chatHref deep-links into the messages thread and escapes the plus sign', () => {
+  assert.equal(m.chatHref('+14155550123'), '/admin/messages?phone=%2B14155550123');
+  assert.equal(m.SLOW_WAIT_SECONDS, 900);
+});
+
+test('shift card lists every waiting chat as a link, red past the slow threshold', () => {
+  const src = fs.readFileSync(new URL('../app/admin/leads/ShiftSummary.tsx', import.meta.url), 'utf8');
+  assert.match(src, /chatHref\(w\.phone\)/);
+  assert.match(src, /SLOW_WAIT_SECONDS/);
+  assert.match(src, /bg-red-50/);
+});

@@ -123,4 +123,37 @@ class ResponseTimesTest {
         assertThat(s.within15Percent()).isEqualTo(75);
         assertThat(ResponseTimes.stats(List.of()).medianSeconds()).isNull();
     }
+
+    private static Msg optOut(String phone, long min) { return new Msg(++ids, phone, true, at(min), false, null, true, true); }
+
+    @Test
+    @DisplayName("a STOP after an unanswered text closes the wait: nobody may reply to an opted-out client")
+    void optOutClosesWait() {
+        var r = ResponseTimes.compute(List.of(in("a", 0), optOut("a", 1)), List.of(shift(1, -60, 600)), NOW);
+        assertThat(r.unanswered()).isEmpty();
+        assertThat(r.replies()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a STOP before a later real text does not hide that text")
+    void textAfterOptOutStillWaits() {
+        var r = ResponseTimes.compute(List.of(in("a", 0), optOut("a", 1), in("a", 5)), List.of(shift(1, -60, 600)), NOW);
+        assertThat(r.unanswered()).hasSize(1);
+        assertThat(r.unanswered().get(0).since()).isEqualTo(at(5));
+    }
+
+    @Test
+    @DisplayName("closing courtesies need no reply")
+    void courtesy() {
+        assertThat(ResponseTimes.isCourtesy("Thank you so much!")).isTrue();
+        assertThat(ResponseTimes.isCourtesy("  OK  ")).isTrue();
+        assertThat(ResponseTimes.isCourtesy("Thanks!!")).isTrue();
+        assertThat(ResponseTimes.isCourtesy("\uD83D\uDC4D")).isTrue();
+        assertThat(ResponseTimes.isCourtesy("Liked \u201cSee you Thursday\u201d")).isTrue();
+        assertThat(ResponseTimes.isCourtesy("Thanks, what time is it?")).isFalse();
+        assertThat(ResponseTimes.isCourtesy("Too far ...sorry")).isFalse();
+        assertThat(ResponseTimes.isCourtesy("Where r u located?")).isFalse();
+        assertThat(ResponseTimes.isCourtesy(null)).isFalse();
+        assertThat(ResponseTimes.isCourtesy("")).isFalse();
+    }
 }

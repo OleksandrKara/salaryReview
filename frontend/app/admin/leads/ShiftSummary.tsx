@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { Language, ShiftComparison, ShiftSummaryData } from '../../lib/types';
 import { t, tf } from '../../lib/i18n';
-import { formatWait, shiftState, speedTone } from '../../lib/responseTime';
+import { chatHref, formatWait, shiftState, SLOW_WAIT_SECONDS, speedTone } from '../../lib/responseTime';
 
 const POLL_MS = 30_000;
 const TZ = 'America/Los_Angeles';
@@ -96,16 +96,35 @@ export default function ShiftSummary({ language }: { language: Language | null }
         </div>
       )}
 
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs" data-testid="shift-unanswered">
-        {data.unansweredCount > 0 ? (
-          <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900">
-            {tf(language, 'shiftWaitingChip', { n: data.unansweredCount })} · {formatWait(data.oldestUnansweredSeconds, language)}
-          </span>
-        ) : state !== 'none' ? (
+      {data.waiting.length > 0 ? (
+        <div
+          className={`mt-2 rounded-lg border ${data.waiting.some((w) => w.seconds > SLOW_WAIT_SECONDS) ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}
+          data-testid="shift-unanswered"
+          data-slow={data.waiting.some((w) => w.seconds > SLOW_WAIT_SECONDS) ? 'true' : 'false'}
+        >
+          <p className="px-3 pt-2 text-xs font-semibold">{tf(language, 'shiftWaitingChip', { n: data.unansweredCount })}</p>
+          <ul className="px-3 pb-1">
+            {data.waiting.map((w) => {
+              const hot = w.seconds > SLOW_WAIT_SECONDS;
+              return (
+                <li key={w.phone}>
+                  <Link href={chatHref(w.phone)} className="flex min-h-11 items-center justify-between gap-3 text-sm underline-offset-2 hover:underline">
+                    <span className="min-w-0 break-words text-xs">{t(language, 'rtThread')} {w.phoneLast4}</span>
+                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 font-semibold tabular-nums ${hot ? 'bg-red-600 text-white' : ''}`}>{formatWait(w.seconds, language)}</span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+          {data.unansweredCount > data.waiting.length ? <p className="px-3 pb-2 text-xs opacity-80">{tf(language, 'rtMoreWaiting', { n: data.unansweredCount - data.waiting.length })}</p> : null}
+        </div>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+        {data.waiting.length === 0 && state !== 'none' ? (
           <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-800">{t(language, 'shiftAllClear')}</span>
         ) : null}
         {data.newLeadsWaiting > 0 ? (
-          <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-zinc-700">{tf(language, 'shiftNewChip', { n: data.newLeadsWaiting })}</span>
+          <Link href="/admin/leads" className="rounded-full bg-zinc-100 px-2.5 py-1 text-zinc-700">{tf(language, 'shiftNewChip', { n: data.newLeadsWaiting })}</Link>
         ) : null}
       </div>
 
