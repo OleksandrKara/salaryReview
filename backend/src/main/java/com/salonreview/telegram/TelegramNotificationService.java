@@ -187,13 +187,23 @@ public class TelegramNotificationService {
      * Never uses the business's staff chat, even when the owner chat is unset: then it only logs.
      * Never throws. The business label prefix tells the owner which business it is about. */
     public boolean sendOwnerAlert(Long businessId, String text) {
+        return sendOwnerAlert(businessId, text, null);
+    }
+
+    /** Owner alert in Telegram HTML (callers escape their own text). */
+    public boolean sendOwnerHtmlAlert(Long businessId, String html) {
+        return sendOwnerAlert(businessId, html, "HTML");
+    }
+
+    private boolean sendOwnerAlert(Long businessId, String text, String parseMode) {
         if (ownerBotToken == null || ownerBotToken.isBlank() || ownerChatId == null || ownerChatId.isBlank()) {
             log.warn("Owner alert skipped: OWNER_ALERT_TELEGRAM_BOT_TOKEN / OWNER_ALERT_TELEGRAM_CHAT_ID not configured");
             return false;
         }
         try {
-            Map<String, Object> body = Map.of("chat_id", ownerChatId, "text", businessLabel(businessId) + text,
-                    "disable_web_page_preview", true);
+            Map<String, Object> body = new java.util.HashMap<>(Map.of("chat_id", ownerChatId, "text", businessLabel(businessId) + text,
+                    "disable_web_page_preview", true));
+            if (parseMode != null) body.put("parse_mode", parseMode);
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + ownerBotToken + "/sendMessage"))
                     .timeout(Duration.ofSeconds(10))
@@ -327,9 +337,12 @@ public class TelegramNotificationService {
         }
 
         try {
+            LeadAlertContext ctx = leadContext(businessId, phoneNumber, null);
+            if (ctx.found() && ctx.name() != null && !ctx.name().replaceAll("[^A-Za-z\\p{L}]", "").isEmpty()) customerName = ctx.name();
+            Long leadId = ctx.found() ? ctx.leadId() : null;
             String inbound = formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId,
-                    attachmentCount, media);
-            String tags = LeadAlertFormat.tagsLine(leadContext(businessId, phoneNumber, null));
+                    attachmentCount, media, leadId);
+            String tags = LeadAlertFormat.tagsLine(ctx);
             Map<String, Object> reqBody = Map.of("chat_id", chatId,
                     "text", businessLabel(businessId) + LeadAlertFormat.insertAfterFirstLine(inbound, tags.isEmpty() ? tags : "🏷 " + tags),
                     "parse_mode", "HTML", "disable_web_page_preview", true);
@@ -380,11 +393,20 @@ public class TelegramNotificationService {
 
     String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
                                  String websiteContext, Long businessId, int attachmentCount, List<SmsMessageMedia> media) {
+        return formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId, attachmentCount, media, null);
+    }
+
+    /** With the CRM lead id: the client's name in the header links straight to that lead and the footer
+     * links to the needs-reply list. Every inbound text waits for a human, so the alert says so. */
+    String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
+                                 String websiteContext, Long businessId, int attachmentCount, List<SmsMessageMedia> media, Long leadId) {
         String displayPhone = formatPhoneDisplay(phoneNumber);
-        StringBuilder sb = new StringBuilder("📩 <b>New message from ")
-                .append(escapeHtml(customerName != null && !customerName.isBlank() ? customerName : displayPhone))
-                .append("</b>\n");
-        if (customerName != null && !customerName.isBlank()) {
+        boolean named = customerName != null && !customerName.isBlank();
+        String who = escapeHtml(named ? customerName : displayPhone);
+        if (leadId != null) who = "<a href=\"" + escapeHtml(leadLinkById(leadId, businessId)) + "\">" + who + "</a>";
+        StringBuilder sb = new StringBuilder("📩 <b>New message from ").append(who).append("</b>\n");
+        sb.append("⏳ <b>Need to reply</b>\n");
+        if (named) {
             sb.append("📱 ").append(escapeHtml(displayPhone)).append('\n');
         }
         if (automationKey != null && !automationKey.isBlank()) {
@@ -400,7 +422,9 @@ public class TelegramNotificationService {
         if (attachments != null) sb.append(body != null && !body.isBlank() ? "" : "\n").append(attachments).append('\n');
         sb.append('\n');
         sb.append("<a href=\"").append(escapeHtml(chatLink(phoneNumber, businessId))).append("\">💬 Open chat</a>");
-        sb.append("  ·  <a href=\"").append(escapeHtml(leadLink(phoneNumber, businessId))).append("\">🧲 Open lead</a>");
+        String lead = leadId != null ? leadLinkById(leadId, businessId) : leadLink(phoneNumber, businessId);
+        sb.append("  ·  <a href=\"").append(escapeHtml(lead)).append("\">🧲 Open lead</a>");
+        sb.append("  ·  <a href=\"").append(escapeHtml(needsReplyLink(businessId))).append("\">📋 Need to reply</a>");
         return sb.toString();
     }
 
@@ -416,6 +440,15 @@ public class TelegramNotificationService {
     String chatLink(String phoneNumber, Long businessId) {
         return publicBaseUrl + "/admin/messages?phone=" + URLEncoder.encode(phoneNumber, StandardCharsets.UTF_8)
                 + (businessId == null ? "" : "&business=" + businessId);
+    }
+
+    /** Direct link to one lead's card (ids of merged duplicate rows redirect to the primary lead). */
+    String leadLinkById(Long leadId, Long businessId) {
+        return publicBaseUrl + "/admin/leads/" + leadId + (businessId == null ? "" : "?business=" + businessId);
+    }
+
+    String needsReplyLink(Long businessId) {
+        return publicBaseUrl + "/admin/leads?" + (businessId == null ? "" : "business=" + businessId + "&") + "tab=needs-reply";
     }
 
     /** Leads CRM entry for this phone; the page resolves the phone to the lead (see /admin/leads/open). */
@@ -437,7 +470,7 @@ public class TelegramNotificationService {
 
     /** The handful of characters Telegram's HTML parse mode treats specially — see
      * https://core.telegram.org/bots/api#html-style. Package-private for direct unit testing. */
-    static String escapeHtml(String s) {
+    public static String escapeHtml(String s) {
         if (s == null) return "";
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
@@ -749,6 +782,16 @@ public class TelegramNotificationService {
     /** Same, with an optional second button on the same row (skipped when its URL is null). */
     public boolean sendPlainAlert(Long businessId, String text, String buttonText, String buttonUrl,
                                   String button2Text, String button2Url) {
+        return sendStaffAlert(businessId, text, buttonText, buttonUrl, button2Text, button2Url, null);
+    }
+
+    /** Staff alert in Telegram HTML (callers escape their own text), so names can be tappable links. */
+    public boolean sendHtmlAlert(Long businessId, String html, String buttonText, String buttonUrl) {
+        return sendStaffAlert(businessId, html, buttonText, buttonUrl, null, null, "HTML");
+    }
+
+    private boolean sendStaffAlert(Long businessId, String text, String buttonText, String buttonUrl,
+                                   String button2Text, String button2Url, String parseMode) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
@@ -759,6 +802,7 @@ public class TelegramNotificationService {
         try {
             Map<String, Object> reqBody = new java.util.HashMap<>(Map.of("chat_id", chatId, "text", businessLabel(businessId) + text,
                     "disable_web_page_preview", true));
+            if (parseMode != null) reqBody.put("parse_mode", parseMode);
             java.util.List<Map<String, Object>> row = new java.util.ArrayList<>();
             if (buttonUrl != null) row.add(Map.of("text", buttonText, "url", buttonUrl));
             if (button2Url != null) row.add(Map.of("text", button2Text, "url", button2Url));

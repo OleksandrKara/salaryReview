@@ -51,14 +51,14 @@ public class LeadAlertContextService {
         if (tail.isEmpty() && mail.isEmpty()) return LeadAlertContext.MISSING;
         List<Object[]> rows = new ArrayList<>();
         jdbc.query("""
-                SELECT id, channel, academy_override, owner_user_id, traffic_source FROM lead_intake
+                SELECT id, channel, academy_override, owner_user_id, traffic_source, name FROM lead_intake
                 WHERE business_id = ? AND outcome <> 'DUPLICATE'
                   AND ((? <> '' AND right(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), 10) = ?)
                     OR (? <> '' AND lower(email) = ?))
                 ORDER BY created_at DESC, id DESC
                 """, rs -> {
             rows.add(new Object[]{rs.getLong("id"), rs.getString("channel"), rs.getObject("academy_override"),
-                    rs.getObject("owner_user_id"), rs.getString("traffic_source")});
+                    rs.getObject("owner_user_id"), rs.getString("traffic_source"), rs.getString("name")});
         }, businessId, tail, tail, mail, mail);
         if (rows.isEmpty()) return LeadAlertContext.MISSING;
 
@@ -72,12 +72,15 @@ public class LeadAlertContextService {
             if (owner == null && r[3] != null) owner = ((Number) r[3]).longValue();
             if (source == null && r[4] != null && !((String) r[4]).isBlank()) source = (String) r[4];
         }
+        // Same row the CRM resolves a phone to (the earliest), so the name shown matches the lead that opens.
+        Object[] primary = rows.get(rows.size() - 1);
+        String leadName = primary[5] == null || ((String) primary[5]).isBlank() ? null : ((String) primary[5]).strip();
         boolean academy = override != null ? override : academyChannel;
         List<String> owners = new ArrayList<>();
         String name = owner != null ? userName(owner) : null;
         if (name == null && academy) name = academyDefaultName(businessId);
         if (name != null) owners.add(name);
-        return new LeadAlertContext(LeadAlertContext.State.FOUND, (Long) rows.get(0)[0], academy, owners, source);
+        return new LeadAlertContext(LeadAlertContext.State.FOUND, (Long) primary[0], academy, owners, source, leadName);
     }
 
     private String academyDefaultName(Long businessId) {
