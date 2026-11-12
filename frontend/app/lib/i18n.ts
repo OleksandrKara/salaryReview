@@ -867,6 +867,7 @@ const STRINGS = {
   ownerEvReset: { EN: '{by} returned the lead to default: {to}. Was: {from}', RU: 'Возврат к умолчанию: {to} (вернул: {by}). Был: {from}' },
   ownerEvTeam: { EN: 'the team', RU: 'команда' },
   ownerEvDefaultTag: { EN: ' (default)', RU: ' (по умолчанию)' },
+  ownersOthersWaiting: { EN: "{n} leads of other owners need action. Show all", RU: 'Лиды других ответственных ждут действия: {n}. Показать все' },
   ownersMine: { EN: 'Mine', RU: 'Мои' },
   ownerAcademyDefault: { EN: 'New Academy leads go to', RU: 'Новые лиды Academy у' },
   ownerAcademyDefaultHint: { EN: 'Applies to Academy leads nobody was assigned to.', RU: 'Для лидов Academy без назначенного ответственного.' },
