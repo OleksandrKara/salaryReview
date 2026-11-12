@@ -18,8 +18,9 @@ import java.util.Set;
  *   <li>A conversation (one phone) is "waiting" from the first countable inbound text after the last
  *       human reply. Several inbound texts in a row are ONE wait, measured from the first.</li>
  *   <li>A reply is a human outbound text (no automation or template key). Automated sends never answer.</li>
- *   <li>Automation answers (inbound already tied to an automation) and STOP/START/HELP keywords are not
- *       countable inbound texts.</li>
+ *   <li>Automation answers (inbound already tied to an automation), STOP/START/HELP keywords and closing
+ *       courtesies ("Thank you!", "Ok") are not countable inbound texts.</li>
+ *   <li>An opt-out (STOP, UNSUBSCRIBE...) closes the wait: we may not text that client any more.</li>
  *   <li>The wait only ticks while at least one manager is clocked in (union of shifts), so a text at
  *       11 pm is measured from the next morning's clock-in.</li>
  *   <li>A reply sent while nobody is clocked in is "off shift": counted separately, not in the speed stats.</li>
@@ -31,7 +32,27 @@ public final class ResponseTimes {
 
     private ResponseTimes() {}
 
-    public record Msg(long id, String phone, boolean inbound, Instant at, boolean human, Long senderUserId, boolean ignorable) {}
+    public record Msg(long id, String phone, boolean inbound, Instant at, boolean human, Long senderUserId, boolean ignorable,
+                      boolean optOut) {
+        public Msg(long id, String phone, boolean inbound, Instant at, boolean human, Long senderUserId, boolean ignorable) {
+            this(id, phone, inbound, at, human, senderUserId, ignorable, false);
+        }
+    }
+
+    private static final Set<String> COURTESY = Set.of("ok", "okay", "k", "kk", "thanks", "thank you", "thank u", "thx", "ty",
+            "thanks so much", "thank you so much", "thank you very much", "thanks a lot", "many thanks", "got it", "sounds good",
+            "perfect", "great", "awesome", "will do", "noted", "see you then", "see you soon", "you too", "ok thanks",
+            "ok thank you", "okay thanks", "okay thank you", "thanks you too", "thank you you too");
+
+    /** A closing courtesy ("Thank you!", "Ok", a thumbs-up or tapback) needs no reply and starts no wait. */
+    public static boolean isCourtesy(String body) {
+        if (body == null || body.isBlank()) return false;
+        String raw = body.trim();
+        if (raw.matches("(?is)^(liked|loved|disliked|laughed at|emphasized|questioned)\\s+[\\u201c\"].*")) return true;
+        String norm = raw.toLowerCase().replaceAll("[^a-z\\s]", " ").replaceAll("\\s+", " ").trim();
+        if (norm.isEmpty()) return raw.codePoints().noneMatch(Character::isLetterOrDigit);
+        return COURTESY.contains(norm);
+    }
 
     public record Shift(long userId, Instant start, Instant end) {}
 
@@ -64,7 +85,8 @@ public final class ResponseTimes {
             Instant pending = null;
             for (Msg m : list) {
                 if (m.inbound()) {
-                    if (!m.ignorable() && pending == null) pending = m.at();
+                    if (m.optOut()) pending = null;
+                    else if (!m.ignorable() && pending == null) pending = m.at();
                 } else if (m.human() && pending != null) {
                     replies.add(reply(e.getKey(), pending, m, closed, coverage));
                     pending = null;

@@ -33,6 +33,7 @@ public class ManagerMetricsService {
     private static final Duration LOOKBACK = Duration.ofDays(3);
     /** An open shift older than this is a forgotten clock-out; it stops counting as coverage. */
     private static final Duration MAX_OPEN_SHIFT = Duration.ofHours(14);
+    private static final Set<String> OPT_OUT = Set.of("STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT");
     private static final Set<String> KEYWORDS = Set.of("STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT",
             "START", "UNSTOP", "YES", "HELP", "INFO");
     private static final String PROCESSED_TYPES = "'STATUS','ATTEMPT','REACHED_OUT','NOTE','CALL','AGREEMENT','CALLBACK','LOST_REASON','SOURCE'";
@@ -64,7 +65,7 @@ public class ManagerMetricsService {
     /** Phone is reduced to its last 4 digits: enough to find the thread, not enough to leak the number into a report. */
     public record SlowReply(String phoneLast4, Instant inboundAt, Instant replyAt, long seconds) {}
 
-    public record WaitingNow(String phoneLast4, Instant since, long seconds) {}
+    public record WaitingNow(String phoneLast4, String phone, Instant since, long seconds) {}
 
     public record Leaderboard(String period, Instant from, Instant to, List<ManagerRow> managers, ResponseTimes.Stats team,
                               int unknownReplies, int offShiftReplies, int unansweredNow, Long oldestUnansweredSeconds,
@@ -73,7 +74,7 @@ public class ManagerMetricsService {
     public record ShiftSummary(boolean onShift, Instant shiftStart, Instant shiftEnd, int leadsProcessed, int replies,
                                Long medianSeconds, Integer within5Percent, int newLeadsWaiting, Instant oldestNewLeadAt,
                                int unansweredCount, Long oldestUnansweredSeconds, Instant oldestUnansweredSince,
-                               List<Comparison> comparisons) {}
+                               List<Comparison> comparisons, List<WaitingNow> waiting) {}
 
     /** One manager against the team for a period. Rank counts only managers who answered at least once. */
     public record Comparison(String period, Long myMedianSeconds, Long teamMedianSeconds, Integer rank, int ranked) {}
@@ -156,7 +157,7 @@ public class ManagerMetricsService {
         Long oldest = d.result.unanswered().stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
         List<WaitingNow> waiting = d.result.unanswered().stream()
                 .sorted(java.util.Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()).limit(5)
-                .map(u -> new WaitingNow(last4(u.phone()), u.since(), u.effectiveSeconds())).toList();
+                .map(u -> new WaitingNow(last4(u.phone()), u.phone(), u.since(), u.effectiveSeconds())).toList();
         return new Board(new Leaderboard(period, from, now, rows, team, unknown, off, d.result.unanswered().size(), oldest, waiting),
                 inWindow.stream().filter(Reply::onShift).map(Reply::effectiveSeconds).toList());
     }
@@ -171,13 +172,16 @@ public class ManagerMetricsService {
         Data now0 = load(businessId, now.minus(Duration.ofHours(1)), now);
         var unanswered = now0.result.unanswered();
         Long oldestSec = unanswered.stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
+        List<WaitingNow> waiting = unanswered.stream()
+                .sorted(java.util.Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()).limit(5)
+                .map(u -> new WaitingNow(last4(u.phone()), u.phone(), u.since(), u.effectiveSeconds())).toList();
         Instant oldestSince = unanswered.stream().max((a, b) -> Long.compare(a.effectiveSeconds(), b.effectiveSeconds()))
                 .map(ResponseTimes.Unanswered::since).orElse(null);
         List<Comparison> comparisons = List.of(comparison(businessId, userId, "7d"), comparison(businessId, userId, "30d"),
                 comparison(businessId, userId, "all"));
         if (last.isEmpty()) {
             return new ShiftSummary(false, null, null, 0, 0, null, null, fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince,
-                    comparisons);
+                    comparisons, waiting);
         }
         Instant start = last.get(0)[0];
         Instant end = last.get(0)[1];
@@ -193,7 +197,7 @@ public class ManagerMetricsService {
         me.setUsername(username);
         int processed = processed(businessId, start, to, mine, List.of(me)).getOrDefault(username, Set.of()).size();
         return new ShiftSummary(open, start, open ? null : to, processed, st.replies(), st.medianSeconds(), st.within5Percent(),
-                fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince, comparisons);
+                fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince, comparisons, waiting);
     }
 
     private Comparison comparison(long businessId, long userId, String period) {
@@ -236,10 +240,12 @@ public class ManagerMetricsService {
             boolean in = "INBOUND".equals(rs.getString(3));
             String auto = rs.getString(5);
             String body = rs.getString(9);
-            boolean keyword = body != null && KEYWORDS.contains(body.trim().toUpperCase().replaceAll("[^A-Z]", ""));
+            String word = body == null ? "" : body.trim().toUpperCase().replaceAll("[^A-Z]", "");
+            boolean keyword = KEYWORDS.contains(word);
+            boolean optOut = in && OPT_OUT.contains(word);
             boolean human = !in && auto == null && rs.getString(6) == null && "SENT".equals(rs.getString(7));
             return new Msg(rs.getLong(1), rs.getString(2), in, rs.getTimestamp(4).toInstant(), human,
-                    (Long) rs.getObject(8), in && (auto != null || keyword));
+                    (Long) rs.getObject(8), in && (auto != null || keyword || ResponseTimes.isCourtesy(body)), optOut);
         }, businessId, java.sql.Timestamp.from(lookFrom), java.sql.Timestamp.from(to));
         return new Data(shifts, ResponseTimes.compute(msgs, shifts, to));
     }
