@@ -1482,6 +1482,10 @@ public class LeadFollowUpService {
         return find(canonicalId(id)).academy();
     }
 
+    public boolean isOutdated(long id) {
+        return OUTDATED.equals(find(canonicalId(id)).status());
+    }
+
     /** True when the business has at least one academy lead, i.e. the Academy sub-section exists. */
     public boolean hasAcademyLeads(long businessId) {
         return Boolean.TRUE.equals(jdbc.queryForObject(
