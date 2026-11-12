@@ -164,6 +164,20 @@ class ResponseTimesTest {
     }
 
     @Test
+    @DisplayName("a text answers an automation only within a day and when it is not a question")
+    void answersAutomationWindow() {
+        Instant sent = Instant.parse("2026-10-22T10:00:00Z");
+        assertThat(ResponseTimes.answersAutomation(true, sent, sent.plusSeconds(3600), "yes")).isTrue();
+        assertThat(ResponseTimes.answersAutomation(true, sent, sent.plusSeconds(7 * 86400), "yes")).isFalse();
+        assertThat(ResponseTimes.answersAutomation(true, sent, sent.plusSeconds(60), "Can someone call me?")).isFalse();
+        assertThat(ResponseTimes.answersAutomation(true, sent, sent.plusSeconds(60), "please call me")).isFalse();
+        assertThat(ResponseTimes.answersAutomation(false, sent, sent.plusSeconds(60), "yes")).isFalse();
+        assertThat(ResponseTimes.answersAutomation(true, null, sent.plusSeconds(60), "yes")).isFalse();
+        assertThat(ResponseTimes.isAsk("I'm running 5 minutes late")).isFalse();
+        assertThat(ResponseTimes.isAsk("Hi! I have a question for AK.LUX.NAILS.")).isFalse();
+    }
+
+    @Test
     @DisplayName("automated messages never close a wait, a human text without a known sender does")
     void automationDoesNotCloseButHumanDoes() {
         var shifts = List.of(shift(1, -60, 600));

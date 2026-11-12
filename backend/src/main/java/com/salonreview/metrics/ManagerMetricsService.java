@@ -263,6 +263,7 @@ public class ManagerMetricsService {
     Data load(long businessId, Instant from, Instant to) {
         Instant lookFrom = from.minus(LOOKBACK);
         List<Shift> shifts = shifts(businessId, lookFrom, to);
+        Map<String, Instant> lastAutomated = new HashMap<>();
         List<Msg> msgs = jdbc.query("""
                 SELECT id, phone_number, direction, created_at, automation_key, template_key, status, sent_by_user_id, body
                 FROM sms_message WHERE business_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at, id
@@ -270,12 +271,16 @@ public class ManagerMetricsService {
             boolean in = "INBOUND".equals(rs.getString(3));
             String auto = rs.getString(5);
             String body = rs.getString(9);
+            Instant at = rs.getTimestamp(4).toInstant();
+            String phone = rs.getString(2);
+            if (!in && (auto != null || rs.getString(6) != null)) lastAutomated.put(phone, at);
             String word = body == null ? "" : body.trim().toUpperCase().replaceAll("[^A-Z]", "");
             boolean keyword = KEYWORDS.contains(word);
             boolean optOut = in && OPT_OUT.contains(word);
             boolean human = !in && auto == null && rs.getString(6) == null && "SENT".equals(rs.getString(7));
-            return new Msg(rs.getLong(1), rs.getString(2), in, rs.getTimestamp(4).toInstant(), human,
-                    (Long) rs.getObject(8), in && (auto != null || keyword || ResponseTimes.isCourtesy(body)), optOut);
+            boolean answersAuto = in && ResponseTimes.answersAutomation(auto != null, lastAutomated.get(phone), at, body);
+            return new Msg(rs.getLong(1), phone, in, at, human,
+                    (Long) rs.getObject(8), in && (answersAuto || keyword || ResponseTimes.isCourtesy(body)), optOut);
         }, businessId, java.sql.Timestamp.from(lookFrom), java.sql.Timestamp.from(to));
         return new Data(shifts, ResponseTimes.compute(msgs, shifts, to));
     }
