@@ -327,7 +327,8 @@ public class LeadFollowUpService {
         return new OutdatedPage(total, clients, total - clients, p, pages, items);
     }
 
-    public LeadDetail detail(long id) {
+    public LeadDetail detail(long requestedId) {
+        long id = canonicalId(requestedId);
         LeadView lead = find(id);
         String key = leadKey(id);
         List<Touch> touches = jdbc.query("SELECT id, channel, source, detail, created_at, payload, attribution::text AS attribution FROM (SELECT l.*, " + KEY
@@ -1465,7 +1466,7 @@ public class LeadFollowUpService {
     }
 
     public boolean isAcademy(long id) {
-        return find(id).academy();
+        return find(canonicalId(id)).academy();
     }
 
     /** True when the business has at least one academy lead, i.e. the Academy sub-section exists. */
@@ -1475,7 +1476,21 @@ public class LeadFollowUpService {
     }
 
     public LeadView lead(long id) {
-        return find(id);
+        return find(canonicalId(id));
+    }
+
+    /** One person is one lead card (their earliest row); every later touch row of the same person opens that card. */
+    public long canonicalId(long id) {
+        String key;
+        try {
+            key = leadKey(id);
+        } catch (EmptyResultDataAccessException e) {
+            return id;
+        }
+        List<Long> ids = jdbc.queryForList("SELECT id FROM (SELECT l.id, l.created_at, " + KEY + " AS k FROM lead_intake l "
+                + "WHERE l.business_id = ? AND l.outcome <> 'DUPLICATE') t WHERE k = ? ORDER BY created_at, id LIMIT 1",
+                Long.class, business.id(), key);
+        return ids.isEmpty() ? id : ids.get(0);
     }
 
     LeadView find(long id) {
