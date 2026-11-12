@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * Reads the `marketing` Postgres schema — owned and migrated by the separate `salonLandings`
@@ -71,31 +72,42 @@ public class MarketingDashboardRepository {
         return ids.stream().findFirst();
     }
 
-    /** This business's own oldest landing page — the fallback used when the owner dashboard's
-     * slug param is omitted, replacing the old hardcoded "mani" default (which silently showed
-     * business 1's page to every business regardless of who was actually asking). Reproduces
-     * today's default for business 1 (mani was created first) while giving every other business
-     * its own first page automatically, with no frontend change required.
+    /** Pages whose site no longer exists (AK PMU Landing, mani). Their history stays selectable but
+     * they sort last in the selector and are never the default. Add a slug here to retire a page.
      */
-    public Optional<String> findDefaultSlugForBusiness(Long businessId) {
-        List<String> slugs = jdbcTemplate.query(
-                "SELECT slug FROM marketing.landing_pages WHERE business_id = ? ORDER BY created_at ASC LIMIT 1",
-                (rs, rowNum) -> rs.getString("slug"),
-                businessId);
-        return slugs.stream().findFirst();
+    public static final Set<String> INACTIVE_LANDING_SLUGS = Set.of("pmu", "mani");
+
+    public static boolean isLandingPageActive(String slug) {
+        return !INACTIVE_LANDING_SLUGS.contains(slug);
     }
 
-    public record LandingPageSummary(String slug, String name) {}
+    /** Active pages first, each group keeping its incoming (oldest first) order. */
+    static List<LandingPageSummary> activeFirst(List<LandingPageSummary> pages) {
+        return Stream.concat(
+                pages.stream().filter(LandingPageSummary::active),
+                pages.stream().filter(p -> !p.active())).toList();
+    }
 
-    /** Every landing page belonging to this business, oldest first — feeds the owner dashboard's
+    /** This business's default landing page when the slug param is omitted: its oldest active page,
+     * or its oldest page when every one is inactive. Gives every business its own first page
+     * automatically, with no frontend change required.
+     */
+    public Optional<String> findDefaultSlugForBusiness(Long businessId) {
+        return activeFirst(listLandingPages(businessId)).stream().map(LandingPageSummary::slug).findFirst();
+    }
+
+    public record LandingPageSummary(String slug, String name, boolean active) {}
+
+    /** Every landing page belonging to this business, active pages first (oldest first within each group), inactive last — feeds the owner dashboard's
      * page selector so a newly-added page (see akluxnails-home) shows up with no frontend change.
      * Scoped by business_id so one business's page selector never lists another's pages.
      */
     public List<LandingPageSummary> listLandingPages(Long businessId) {
-        return jdbcTemplate.query(
+        return activeFirst(jdbcTemplate.query(
                 "SELECT slug, name FROM marketing.landing_pages WHERE business_id = ? ORDER BY created_at ASC",
-                (rs, rowNum) -> new LandingPageSummary(rs.getString("slug"), rs.getString("name")),
-                businessId);
+                (rs, rowNum) -> new LandingPageSummary(rs.getString("slug"), rs.getString("name"),
+                        isLandingPageActive(rs.getString("slug"))),
+                businessId));
     }
 
     public Optional<Instant> findStatsSince(UUID landingPageId) {

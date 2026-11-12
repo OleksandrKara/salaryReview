@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { api } from '../../../lib/api';
 import { t } from '../../../lib/i18n';
+import { firstActiveSlug, pageOptionLabel } from '../../../lib/marketingPages';
 import type {
   AdSpendEntry,
   Language,
@@ -1481,8 +1482,15 @@ function AdSpendEntryForm({ slug }: { slug?: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    api.getMarketingPages().then((p) => { if (!cancelled) setPages(p); }).catch(() => {});
+    api.getMarketingPages().then((p) => {
+      if (cancelled) return;
+      setPages(p);
+      // No page chosen in the URL: start on the first active page, not a retired one.
+      const firstActive = firstActiveSlug(p);
+      if (!slug && firstActive) setPage((cur) => (p.find((x) => x.slug === cur)?.active === false || !p.some((x) => x.slug === cur) ? firstActive : cur));
+    }).catch(() => {});
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadEntries(forPage: string) {
@@ -1576,7 +1584,7 @@ function AdSpendEntryForm({ slug }: { slug?: string }) {
               className="rounded border border-zinc-300 px-2 py-1.5 text-xs"
             >
               {pages.map((p) => (
-                <option key={p.slug} value={p.slug}>{p.name}</option>
+                <option key={p.slug} value={p.slug}>{pageOptionLabel(p)}</option>
               ))}
             </select>
           </label>
