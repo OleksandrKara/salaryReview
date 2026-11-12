@@ -2691,6 +2691,48 @@ export interface ResponseLeaderboard {
   waiting: { phoneLast4: string; since: string; seconds: number }[];
 }
 
+export interface ResponseStats {
+  replies: number;
+  medianSeconds: number | null;
+  averageSeconds: number | null;
+  within5Percent: number | null;
+  within15Percent: number | null;
+}
+
+export interface NewLeadsReport {
+  created: number;
+  firstTouch: ResponseStats;
+  pending: number;
+  oldestPendingSeconds: number | null;
+  closedWithoutContact: number;
+  offShiftTouches: number;
+  managers: { userId: number; username: string; touches: number; medianSeconds: number | null; within5Percent: number | null }[];
+  slowest: { phoneLast4: string; createdAt: string; touchedAt: string; seconds: number }[];
+  waiting: { phoneLast4: string; createdAt: string; seconds: number }[];
+}
+
+export interface BusinessResponseReport {
+  businessId: number;
+  name: string;
+  texts: ResponseLeaderboard;
+  newLeads: NewLeadsReport;
+}
+
+export interface ResponseOverview {
+  period: 'today' | '7d' | '30d' | 'all';
+  from: string;
+  to: string;
+  businesses: BusinessResponseReport[];
+  total: {
+    texts: ResponseStats;
+    unansweredNow: number;
+    oldestUnansweredSeconds: number | null;
+    firstTouch: ResponseStats;
+    pendingLeads: number;
+    oldestPendingSeconds: number | null;
+  };
+}
+
 export interface ShiftSummaryData {
   onShift: boolean;
   shiftStart: string | null;
