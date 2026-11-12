@@ -73,4 +73,25 @@ class LeadOwnerServiceTest {
         assertEquals(List.of(1L, 2L), svc.mine(owners, 31, true).stream().sorted().toList());
         assertEquals(List.of(3L), svc.mine(owners, 42, false));
     }
+
+    @Test
+    void changeEventCarriesFromToAndActor() throws Exception {
+        var m = new com.fasterxml.jackson.databind.ObjectMapper();
+        var n = m.readTree(LeadOwnerService.changeEvent(new Owner(42L, "Anastasiia", "DEFAULT"), new Owner(31L, "Alex (owner)", "ASSIGNED"), "Alex (owner)", false));
+        assertEquals(1, n.get("v").asInt());
+        assertEquals("Anastasiia", n.get("from").get("name").asText());
+        assertEquals("DEFAULT", n.get("from").get("kind").asText());
+        assertEquals("Alex (owner)", n.get("to").get("name").asText());
+        assertEquals("Alex (owner)", n.get("by").asText());
+        assertEquals(false, n.get("reset").asBoolean());
+    }
+
+    @Test
+    void changeEventUsesSystemWhenNoActorAndTeamWhenNoOwner() throws Exception {
+        var m = new com.fasterxml.jackson.databind.ObjectMapper();
+        var n = m.readTree(LeadOwnerService.changeEvent(new Owner(31L, "Alex", "ASSIGNED"), new Owner(null, null, "TEAM"), null, true));
+        assertEquals("System", n.get("by").asText());
+        assertEquals("TEAM", n.get("to").get("kind").asText());
+        assertEquals(true, n.get("reset").asBoolean());
+    }
 }
