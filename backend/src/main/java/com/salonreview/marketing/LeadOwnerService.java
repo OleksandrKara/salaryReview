@@ -126,8 +126,33 @@ public class LeadOwnerService {
             name = names(meId).get(userId);
             if (name == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "that person cannot own leads");
         }
+        Owner before = info(leadId, meId).owner();
         leads.setOwner(lead.id(), userId);
-        leads.addEvent(lead.id(), "OWNER", name == null ? "none" : name, by);
+        Owner after = info(leadId, meId).owner();
+        String actor = by == null ? null : (meId == null ? by : names(meId).getOrDefault(meId, by));
+        leads.addEvent(lead.id(), "OWNER", changeEvent(before, after, actor, userId == null), by == null ? "System" : by);
+    }
+
+    /** Timeline payload for an owner change; the frontend renders "who took over from whom". Older events carry the plain new name. */
+    static String changeEvent(Owner from, Owner to, String actor, boolean reset) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("v", 1);
+        m.put("from", side(from));
+        m.put("to", side(to));
+        m.put("by", actor == null ? "System" : actor);
+        m.put("reset", reset);
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(m);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static Map<String, Object> side(Owner o) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("name", o == null ? null : o.name());
+        m.put("kind", o == null ? "TEAM" : o.kind());
+        return m;
     }
 
     public void setAcademyDefault(long userId, String by, Long meId) {

@@ -19,6 +19,7 @@ import ReminderSheet, { type ReachedOutBody } from '../ReminderSheet';
 import { isActive } from '../leadActions';
 import CopyButton from '../CopyButton';
 import LeadOwnerPanel from '../LeadOwnerPanel';
+import { ownerChangeSentence, parseOwnerChange } from '../../../lib/ownerEvent';
 import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
 import type { Language, Lead, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
 
@@ -45,9 +46,11 @@ const field = 'rounded border border-zinc-300 px-2 py-1.5 text-sm focus:border-z
 const primary = 'rounded bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-40';
 const link = 'min-w-0 rounded px-3 py-1.5 text-sm ring-1 ring-zinc-300 hover:bg-zinc-50';
 
+const PT = 'America/Los_Angeles';
+
 function fmt(iso: string, lang: Language | null): string {
   return new Date(iso).toLocaleString(lang === 'RU' ? 'ru-RU' : 'en-US', {
-    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: PT,
   });
 }
 
@@ -126,21 +129,21 @@ const DOT: Record<Kind, string> = {
 const PAGE = 25;
 
 function dayKey(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: PT });
 }
 
 function dayTitle(iso: string, lang: Language | null, now: number): string {
   const d = new Date(iso);
   const n = new Date(now);
+  const yearOf = (x: Date) => x.toLocaleDateString('en-CA', { timeZone: PT, year: 'numeric' });
   if (dayKey(iso) === dayKey(n.toISOString())) return t(lang, 'crmToday');
   const y = new Date(now - 86_400_000);
   if (dayKey(iso) === dayKey(y.toISOString())) return t(lang, 'crmYesterday');
-  return d.toLocaleDateString(lang === 'RU' ? 'ru-RU' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() === n.getFullYear() ? undefined : 'numeric' });
+  return d.toLocaleDateString(lang === 'RU' ? 'ru-RU' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', year: yearOf(d) === yearOf(n) ? undefined : 'numeric', timeZone: PT });
 }
 
 function timeOnly(iso: string, lang: Language | null): string {
-  return new Date(iso).toLocaleTimeString(lang === 'RU' ? 'ru-RU' : 'en-US', { hour: 'numeric', minute: '2-digit' });
+  return new Date(iso).toLocaleTimeString(lang === 'RU' ? 'ru-RU' : 'en-US', { hour: 'numeric', minute: '2-digit', timeZone: PT });
 }
 
 export default function LeadCard({ initial, language = null, stopFunnel = null, canTagAcademy = false }: { initial: LeadDetail; language?: Language | null; stopFunnel?: string | null; canTagAcademy?: boolean }) {
@@ -225,7 +228,12 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
         text = LOST_REASONS.includes(code) ? [t(language, `leadLost_${code}` as 'leadLost_PRICE'), ...rest].join(': ') : x.text;
       }
       if ((x.type === 'CALLBACK' || x.type === 'LAPSED') && x.text) text = fmt(x.text, language);
-      if (x.type === 'OWNER') text = x.text === 'none' ? t(language, 'ownerBackToDefault') : x.text;
+      if (x.type === 'OWNER') {
+        const change = parseOwnerChange(x.text);
+        text = change
+          ? ownerChangeSentence(change, { took: t(language, 'ownerEvTook'), assigned: t(language, 'ownerEvAssigned'), reset: t(language, 'ownerEvReset'), team: t(language, 'ownerEvTeam'), defaultTag: t(language, 'ownerEvDefaultTag') })
+          : x.text === 'none' ? t(language, 'ownerBackToDefault') : x.text;
+      }
       if (x.type === 'REACHED_OUT' && x.text?.startsWith('none')) {
         const r = x.text.split(':')[1];
         text = r ? `${t(language, 'leadEventNOFOLLOWUP')}: ${t(language, `remSkip_${r}` as 'remSkip_ARRANGED')}` : t(language, 'leadEventNOFOLLOWUP');
