@@ -62,7 +62,16 @@ public class TimecardReviewService {
             if (req.note() == null || req.note().isBlank()) throw bad("A note is required for a manually added shift");
             cards = List.of(new DayTimecard(new TimeSpan(Instant.parse(req.start()), Instant.parse(req.end())), List.of()));
         }
-        if ("APPROVED".equals(c.status())) throw new ResponseStatusException(HttpStatus.CONFLICT, "Day already approved");
+        if ("APPROVED".equals(c.status())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This day is already approved. Ask your manager to reopen it or to adjust the hours");
+        }
+        if (c.source().equals("SQUARE") && (req.start() != null || req.end() != null)) {
+            TimeSpan sq = cards.get(0).span();
+            boolean same = (req.start() == null || Instant.parse(req.start()).equals(sq.start()))
+                    && (req.end() == null || Instant.parse(req.end()).equals(sq.end()));
+            if (!same) throw bad("These hours come from Square. Ask your manager to adjust them");
+        }
 
         String mode = c.source().equals("SQUARE") ? "EXTERNAL" : "DRAFT";
         String proposed = null;
@@ -204,6 +213,88 @@ public class TimecardReviewService {
                     userId, squareId, version, id, businessId);
         }
         audit(businessId, id, "user:" + userId, onBehalf ? "APPROVE_ON_BEHALF" : "APPROVE", before, snapshot(id));
+        return days.view(businessId, providerId, date, "OWNER".equals(role));
+    }
+
+    /**
+     * Approver corrects the start/end of a day. A Square day is changed in Square itself (the timecard is the
+     * source of truth for pay) and mirrored back; a draft day just changes its proposed hours. The day returns
+     * to NEEDS_REVIEW so the approver checks the findings and approves again.
+     */
+    public DayView adjust(Long businessId, Long userId, String role, Long providerId, LocalDate date,
+                          String startIso, String endIso, String note) {
+        requireW2(businessId, providerId);
+        requireApprover(businessId, userId, role, providerId);
+        if (date.isAfter(LocalDate.now(TimecardDayService.RULES.zone()))) throw bad("Cannot change a future day");
+        if (note == null || note.isBlank()) throw bad("A short reason is required");
+        if (note.length() > 300) throw bad("Reason is too long");
+        if (startIso == null || endIso == null) throw bad("Start and end are required");
+        Instant start;
+        Instant end;
+        try {
+            start = Instant.parse(startIso);
+            end = Instant.parse(endIso);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw bad("Invalid time");
+        }
+        if (!end.isAfter(start)) throw bad("End must be after start");
+        if (java.time.Duration.between(start, end).toHours() > 16) throw bad("A day cannot be longer than 16 hours");
+        if (!start.atZone(TimecardDayService.RULES.zone()).toLocalDate().equals(date)) {
+            throw bad("Start must be on the selected day");
+        }
+        DayCalc c = days.calc(businessId, providerId, date);
+        if (c.source().equals("NONE") || c.source().equals("VOIDED")) throw bad("There is no shift to adjust on this day");
+        long id = ensureReview(businessId, providerId, date, c.source().equals("SQUARE") ? "EXTERNAL" : "DRAFT");
+        String before = snapshot(id);
+        if (c.source().equals("SQUARE")) {
+            if (c.timecards().size() != 1) throw bad("This day has several Square timecards. Change it in Square");
+            List<Object[]> rows = jdbc.query("SELECT square_timecard_id, square_version, breaks_json, timezone, "
+                            + "hourly_rate_cents FROM square_timecard_mirror WHERE business_id = ? AND provider_id = ? "
+                            + "AND work_date = ? AND NOT deleted",
+                    (rs, i) -> new Object[] {rs.getString(1), rs.getObject(2), rs.getString(3), rs.getString(4), rs.getObject(5)},
+                    businessId, providerId, java.sql.Date.valueOf(date));
+            if (rows.size() != 1 || rows.get(0)[1] == null) throw bad("Square timecard is not synced yet. Try again in a minute");
+            Object[] row = rows.get(0);
+            SquareConnection conn = connections.findByBusinessId(businessId)
+                    .orElseThrow(() -> bad("Square is not connected"));
+            List<String> members = days.memberIds(providerId);
+            if (members.isEmpty()) throw bad("Provider is not linked to a Square team member");
+            ObjectNode tc = MAPPER.createObjectNode();
+            tc.put("location_id", conn.getLocationId());
+            tc.put("team_member_id", members.get(0));
+            tc.put("start_at", start.toString());
+            tc.put("end_at", end.toString());
+            tc.put("timezone", (String) row[3]);
+            tc.put("version", ((Number) row[1]).intValue());
+            if (row[4] != null) {
+                ObjectNode wage = tc.putObject("wage");
+                wage.put("title", "Nail technician");
+                ObjectNode rate = wage.putObject("hourly_rate");
+                rate.put("amount", ((Number) row[4]).intValue());
+                rate.put("currency", "USD");
+            }
+            try {
+                tc.set("breaks", MAPPER.readTree((String) row[2]));
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw bad("Square timecard breaks could not be read");
+            }
+            JsonNode updated;
+            try {
+                updated = labor.updateTimecard(businessId, (String) row[0], tc);
+            } catch (RuntimeException e) {
+                log.warn("Square timecard update failed for provider {} on {}: {}", providerId, date, e.toString());
+                throw bad("Square did not accept the change. Check that breaks fit inside the hours, or change it in Square");
+            }
+            sync.upsert(businessId, providerId, updated);
+        } else {
+            List<DayTimecard> cards = applyEdits(c.timecards(), new SubmitRequest(date.toString(), start.toString(),
+                    end.toString(), null, null, null, null, null));
+            jdbc.update("UPDATE timecard_review SET proposed_json = ? WHERE id = ? AND business_id = ?",
+                    TimecardDayService.proposedJson(cards), id, businessId);
+        }
+        jdbc.update("UPDATE timecard_review SET status = 'NEEDS_REVIEW', approved_at = NULL, approved_by_user_id = NULL, "
+                + "note = ? WHERE id = ? AND business_id = ?", note.trim(), id, businessId);
+        audit(businessId, id, "user:" + userId, "ADJUST", before, snapshot(id));
         return days.view(businessId, providerId, date, "OWNER".equals(role));
     }
 

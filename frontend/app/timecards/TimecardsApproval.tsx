@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Language } from '../lib/types';
 import { t, tf } from '../lib/i18n';
 import VoidPanel from './VoidPanel';
+import AdjustPanel from './AdjustPanel';
 import { type DayView, type Summary, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
 
 const SEV = {
@@ -16,14 +17,17 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [voiding, setVoiding] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
   const post = async (path: string, body: object) => {
     setBusy(true);
     setErr('');
     try {
       await tcFetch<DayView>(path, 'POST', body);
       onChange();
+      return true;
     } catch (e) {
       setErr((e as Error).message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -110,6 +114,11 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
             {t(lang, 'tcReopen')}
           </button>
         )}
+        {card && !adjusting && (d.source === 'SQUARE' || d.source === 'DRAFT') && (
+          <button disabled={busy} onClick={() => setAdjusting(true)} className="rounded border border-zinc-400 px-3 py-1.5 text-sm disabled:opacity-50">
+            {t(lang, 'tcAdjust')}
+          </button>
+        )}
         {d.source === 'DRAFT' && !voiding && (
           <button disabled={busy} onClick={() => setVoiding(true)} className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 disabled:opacity-50">
             {t(lang, 'tcVoid')}
@@ -121,11 +130,18 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
         </label>
       </div>
       {d.source === 'SQUARE' && <div className="mt-2 text-xs text-zinc-500">{t(lang, 'tcVoidSquare')}</div>}
+      {adjusting && card && (
+        <AdjustPanel lang={lang} date={d.date} start={card.start} end={card.end} fromSquare={d.source === 'SQUARE'} busy={busy} err={err}
+          onClose={() => setAdjusting(false)}
+          onConfirm={async (start, end, note) => {
+            if (await post('adjust', { ...base, start, end, note })) setAdjusting(false);
+          }} />
+      )}
       {voiding && (
         <VoidPanel lang={lang} hint={t(lang, 'tcVoidHint')} busy={busy} err={err} onClose={() => setVoiding(false)}
           onConfirm={(reason) => post('void', { ...base, reason })} />
       )}
-      {!voiding && err && <div className="mt-2 text-sm text-red-700">{err}</div>}
+      {!voiding && !adjusting && err && <div className="mt-2 text-sm text-red-700">{err}</div>}
     </li>
   );
 }
