@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Language } from '../lib/types';
 import { t, tf } from '../lib/i18n';
 import VoidPanel from './VoidPanel';
@@ -13,7 +13,7 @@ const SEV = {
   ALERT: 'bg-red-100 text-red-800',
 } as const;
 
-function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lang: Language; onChange: () => void }) {
+function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; owner: boolean; lang: Language; onChange: () => void; onFixed?: (d: DayView) => void; fixed?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [voiding, setVoiding] = useState(false);
@@ -71,7 +71,8 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
         )}
         {card?.breaks.length ? ` · ${card.breaks.map((b) => `${b.kind === 'UNPAID' ? 'meal' : 'rest'} ${hhmm(b.start)}-${hhmm(b.end)}`).join(', ')}` : ''}
       </div>
-      <div className="mt-1 text-sm">
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-2 text-sm">
+        <span>
         {t(lang, 'tcPaid')}: {hrs(d.paidMinutes)} {t(lang, 'tcHours')}
         {d.overtimeMinutes + d.doubleTimeMinutes > 0 && (
           <span className="text-red-700"> · OT {hrs(d.overtimeMinutes)} / DT {hrs(d.doubleTimeMinutes)}</span>
@@ -84,7 +85,14 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
           </span>
         )}
         {d.mealWaiver && <span className="text-zinc-600"> · meal waived</span>}
+        </span>
+        {card && !adjusting && (d.source === 'SQUARE' || d.source === 'DRAFT') && (
+          <button disabled={busy} onClick={() => setAdjusting(true)} className="min-h-[44px] w-full rounded border border-zinc-400 min-h-[44px] px-3 py-1.5 text-sm disabled:opacity-50 sm:w-auto">
+            {t(lang, 'tcAdjust')}
+          </button>
+        )}
       </div>
+      {fixed && d.status === 'NEEDS_REVIEW' && <div className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-sm text-amber-900">{t(lang, 'tcFixedNotice')}</div>}
       {d.note && <div className="mt-1 text-sm italic text-zinc-600">{d.note}</div>}
       {d.findings.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1">
@@ -99,28 +107,23 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
         {d.status !== 'APPROVED' && (
           <>
             {workerDone ? (
-              <button disabled={busy} onClick={() => post('approve', { ...base, onBehalf: false })} className="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-50">
+              <button disabled={busy} onClick={() => post('approve', { ...base, onBehalf: false })} className="rounded bg-zinc-900 min-h-[44px] px-3 py-1.5 text-sm text-white disabled:opacity-50">
                 {t(lang, 'tcApprove')}
               </button>
             ) : (
-              <button disabled={busy} onClick={() => post('approve', { ...base, onBehalf: true })} className="rounded border border-zinc-400 px-3 py-1.5 text-sm disabled:opacity-50">
+              <button disabled={busy} onClick={() => post('approve', { ...base, onBehalf: true })} className="rounded border border-zinc-400 min-h-[44px] px-3 py-1.5 text-sm disabled:opacity-50">
                 {t(lang, 'tcApproveBehalf')}
               </button>
             )}
           </>
         )}
         {d.status === 'APPROVED' && (
-          <button disabled={busy} onClick={() => post('reopen', base)} className="rounded border border-zinc-400 px-3 py-1.5 text-sm disabled:opacity-50">
+          <button disabled={busy} onClick={() => post('reopen', base)} className="rounded border border-zinc-400 min-h-[44px] px-3 py-1.5 text-sm disabled:opacity-50">
             {t(lang, 'tcReopen')}
           </button>
         )}
-        {card && !adjusting && (d.source === 'SQUARE' || d.source === 'DRAFT') && (
-          <button disabled={busy} onClick={() => setAdjusting(true)} className="rounded border border-zinc-400 px-3 py-1.5 text-sm disabled:opacity-50">
-            {t(lang, 'tcAdjust')}
-          </button>
-        )}
         {d.source === 'DRAFT' && !voiding && (
-          <button disabled={busy} onClick={() => setVoiding(true)} className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 disabled:opacity-50">
+          <button disabled={busy} onClick={() => setVoiding(true)} className="rounded border border-red-300 min-h-[44px] px-3 py-1.5 text-sm text-red-700 disabled:opacity-50">
             {t(lang, 'tcVoid')}
           </button>
         )}
@@ -134,7 +137,10 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
         <AdjustPanel lang={lang} date={d.date} start={card.start} end={card.end} fromSquare={d.source === 'SQUARE'} busy={busy} err={err}
           onClose={() => setAdjusting(false)}
           onConfirm={async (start, end, note) => {
-            if (await post('adjust', { ...base, start, end, note })) setAdjusting(false);
+            if (await post('adjust', { ...base, start, end, note })) {
+              setAdjusting(false);
+              onFixed?.(d);
+            }
           }} />
       )}
       {voiding && (
@@ -204,21 +210,51 @@ function PayrollTab({ lang }: { lang: Language }) {
   );
 }
 
+type Filter = 'pending' | 'approved' | 'all';
+
 export default function TimecardsApproval({ role, language, businessName }: { role: string; language: Language; businessName: string }) {
   const owner = role === 'OWNER';
   const [tab, setTab] = useState<'queue' | 'payroll'>('queue');
   const [rows, setRows] = useState<DayView[] | null>(null);
   const [err, setErr] = useState('');
+  const [filter, setFilter] = useState<Filter>('pending');
+  const [period, setPeriod] = useState(30);
+  const [emp, setEmp] = useState('');
+  const [date, setDate] = useState('');
+  const [fixedKeys, setFixedKeys] = useState<string[]>([]);
+  const [notice, setNotice] = useState('');
+  const keyOf = (d: DayView) => `${d.providerId}-${d.date}`;
+  const onFixed = (d: DayView) => {
+    setFixedKeys((k) => [...k, keyOf(d)]);
+    setNotice(`${d.providerName} ${d.date}: ${t(language, 'tcFixedNotice')}`);
+    setFilter('pending');
+  };
   const load = useCallback(() => {
-    tcFetch<DayView[]>('queue?days=21').then(setRows).catch((e) => setErr(e.message));
-  }, []);
+    tcFetch<DayView[]>(`queue?days=${period}&scope=all`).then(setRows).catch((e) => setErr(e.message));
+  }, [period]);
   useEffect(load, [load]);
+  const employees = useMemo(() => {
+    const m = new Map<number, string>();
+    rows?.forEach((d) => m.set(d.providerId, d.providerName));
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [rows]);
+  const scoped = useMemo(
+    () => (rows ?? []).filter((d) => (!emp || String(d.providerId) === emp) && (!date || d.date === date)),
+    [rows, emp, date],
+  );
+  const live = scoped.filter((d) => d.source !== 'VOIDED');
+  const pendingN = live.filter((d) => d.status !== 'APPROVED').length;
+  const approvedN = live.filter((d) => d.status === 'APPROVED').length;
+  const shown = live.filter((d) => filter === 'all' || (filter === 'approved') === (d.status === 'APPROVED'));
+  const voided = scoped.filter((d) => d.source === 'VOIDED');
+  const chip = (on: boolean) => `min-h-[44px] rounded px-3 py-1.5 text-sm ${on ? 'bg-zinc-900 text-white' : 'border border-zinc-300'}`;
+  const sel = 'min-h-[44px] w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm';
   return (
     <div>
       {owner && (
         <div className="mb-4 flex gap-2 text-sm">
           {(['queue', 'payroll'] as const).map((k) => (
-            <button key={k} onClick={() => setTab(k)} className={`rounded px-3 py-1.5 ${tab === k ? 'bg-zinc-900 text-white' : 'border border-zinc-300'}`}>
+            <button key={k} onClick={() => setTab(k)} className={chip(tab === k)}>
               {t(language, k === 'queue' ? 'tcQueue' : 'tcPayroll')}
             </button>
           ))}
@@ -228,16 +264,41 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
         <PayrollTab lang={language} />
       ) : (
         <>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {([['pending', 'tcTabPending', pendingN], ['approved', 'tcTabApproved', approvedN], ['all', 'tcTabAll', pendingN + approvedN]] as const).map(([k, label, n]) => (
+              <button key={k} onClick={() => setFilter(k)} className={chip(filter === k)}>
+                {t(language, label)} ({n})
+              </button>
+            ))}
+          </div>
+          <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
+            <select aria-label={t(language, 'tcPeriod')} value={period} onChange={(e) => setPeriod(Number(e.target.value))} className={sel}>
+              <option value={14}>{t(language, 'tcDays14')}</option>
+              <option value={30}>{t(language, 'tcDays30')}</option>
+              <option value={60}>{t(language, 'tcDays60')}</option>
+            </select>
+            <select aria-label="employee" value={emp} onChange={(e) => setEmp(e.target.value)} className={sel}>
+              <option value="">{t(language, 'tcAllEmployees')}</option>
+              {employees.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
+            <input aria-label={t(language, 'tcDateSearch')} type="date" value={date} onChange={(e) => setDate(e.target.value)} className={sel} />
+            <button onClick={() => { setEmp(''); setDate(''); setFilter('pending'); }} className="min-h-[44px] rounded border border-zinc-300 px-3 py-1.5 text-sm">
+              {t(language, 'tcClearFilters')}
+            </button>
+          </div>
+          {notice && <div role="status" className="mb-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">{notice}</div>}
           {err && <div className="text-sm text-red-700">{err}</div>}
-          {rows && rows.filter((d) => d.source !== 'VOIDED').length === 0 && <p className="text-sm text-zinc-500">{t(language, 'tcNothing')}{businessName ? ` ${tf(language, 'tcViewingBusiness', { name: businessName })}` : ''}</p>}
+          {rows && shown.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'tcNothing')}{businessName ? ` ${tf(language, 'tcViewingBusiness', { name: businessName })}` : ''}</p>}
           <ul className="flex flex-col gap-3">
-            {rows?.filter((d) => d.source !== 'VOIDED').map((d) => <DayCard key={`${d.providerId}-${d.date}`} d={d} owner={owner} lang={language} onChange={load} />)}
+            {shown.map((d) => <DayCard key={keyOf(d)} d={d} owner={owner} lang={language} onChange={load} onFixed={onFixed} fixed={fixedKeys.includes(keyOf(d))} />)}
           </ul>
-          {rows && rows.some((d) => d.source === 'VOIDED') && (
+          {voided.length > 0 && (
             <details className="mt-4">
-              <summary className="cursor-pointer text-sm text-zinc-600">{t(language, 'tcVoidedList')} ({rows.filter((d) => d.source === 'VOIDED').length})</summary>
+              <summary className="min-h-[44px] cursor-pointer text-sm text-zinc-600">{t(language, 'tcVoidedList')} ({voided.length})</summary>
               <ul className="mt-2 flex flex-col gap-2">
-                {rows.filter((d) => d.source === 'VOIDED').map((d) => <DayCard key={`${d.providerId}-${d.date}`} d={d} owner={owner} lang={language} onChange={load} />)}
+                {voided.map((d) => <DayCard key={`${d.providerId}-${d.date}`} d={d} owner={owner} lang={language} onChange={load} />)}
               </ul>
             </details>
           )}
