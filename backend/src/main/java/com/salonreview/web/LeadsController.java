@@ -46,9 +46,9 @@ public class LeadsController {
         return me != null && permissions.leadsScope(me.getUserId(), me.getRole(), business.id()) == LeadsScope.ACADEMY;
     }
 
-    /** Academy-only users reach academy leads and nothing else. */
+    /** Academy-only users reach academy leads and the shared Outdated archive, nothing else. */
     private void guard(long id, AppUserPrincipal me) {
-        if (academyOnly(me) && !leads.isAcademy(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such lead");
+        if (academyOnly(me) && !leads.isAcademy(id) && !leads.isOutdated(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such lead");
     }
 
     @GetMapping
@@ -57,11 +57,10 @@ public class LeadsController {
         return academyOnly(me) ? all.stream().filter(LeadView::academy).toList() : all;
     }
 
-    /** Pre-CRM archive. Owner/manager only: academy-only users never see it. */
+    /** Pre-CRM archive, visible to everyone who has access to leads. */
     @GetMapping("/outdated")
     public LeadFollowUpService.OutdatedPage outdated(@RequestParam(required = false) String q, @RequestParam(required = false) String seg,
                                                      @RequestParam(defaultValue = "0") int page, @AuthenticationPrincipal AppUserPrincipal me) {
-        if (academyOnly(me)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not available");
         return leads.outdated(q, seg, page);
     }
 

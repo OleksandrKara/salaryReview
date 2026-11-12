@@ -163,9 +163,8 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   }, [restricted, loadQueue]);
 
   useEffect(() => {
-    if (restricted) return;
     fetch('/api/leads/outdated?page=0', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOutdatedTotal(d.total); }).catch(() => undefined);
-  }, [restricted]);
+  }, []);
 
   const sources = useMemo(() => Array.from(new Set(leads.map((l) => l.source))).sort(), [leads]);
   const mineOnly = ownerView != null && (mineChoice ?? !ownerView.canSetDefault);
@@ -291,17 +290,15 @@ export default function LeadsManager({ initialLeads, language = null, restricted
             <span className={`rounded-full px-1.5 text-xs tabular-nums ${activeTab === x ? 'bg-white/20' : x === 'ACTION' && counts[x] > 0 ? 'bg-red-100 text-red-700' : 'bg-zinc-100 text-zinc-600'}`}>{counts[x]}</span>
           </button>
         ))}
-        {!restricted && (
-          <button
-            onClick={() => setTab(OUTDATED)}
-            aria-pressed={archive}
-            className={`flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1 text-sm ${archive ? 'border-zinc-700 bg-zinc-700 text-white' : 'border-zinc-400 bg-zinc-50 text-zinc-600 hover:bg-zinc-100'}`}
-          >
-            <LockIcon />
-            {t(language, 'crmTabOutdated')}
-            {outdatedTotal != null && <span className={`rounded-full px-1.5 text-xs tabular-nums ${archive ? 'bg-white/20' : 'bg-zinc-200 text-zinc-600'}`}>{outdatedTotal}</span>}
-          </button>
-        )}
+        <button
+          onClick={() => setTab(OUTDATED)}
+          aria-pressed={archive}
+          className={`flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1 text-sm ${archive ? 'border-zinc-700 bg-zinc-700 text-white' : 'border-zinc-400 bg-zinc-50 text-zinc-600 hover:bg-zinc-100'}`}
+        >
+          <LockIcon />
+          {t(language, 'crmTabOutdated')}
+          {outdatedTotal != null && <span className={`rounded-full px-1.5 text-xs tabular-nums ${archive ? 'bg-white/20' : 'bg-zinc-200 text-zinc-600'}`}>{outdatedTotal}</span>}
+        </button>
         {ownerView && !archive && (
           <button
             onClick={() => setMineOnly(!mineOnly)}
