@@ -70,7 +70,7 @@ class ManagerMetricsServiceTest {
         var row = lb.managers().stream().filter(r -> r.userId() == anna.getId()).findFirst().orElseThrow();
         assertThat(row.replies()).isEqualTo(1);
         assertThat(row.medianSeconds()).isEqualTo(180);
-        assertThat(lb.managers().stream().filter(r -> r.userId() == bob.getId()).findFirst().orElseThrow().replies()).isZero();
+        assertThat(lb.managers().stream().anyMatch(r -> r.userId() == bob.getId())).as("manager with no data is hidden").isFalse();
         assertThat(lb.unansweredNow()).isZero();
     }
 
@@ -99,16 +99,37 @@ class ManagerMetricsServiceTest {
         sms("OUTBOUND", "2026-11-11T19:10:00Z", "a2", bob.getId(), null);
 
         var s = service.shiftSummary(b, bob.getId(), bob.getUsername());
-        assertThat(s.myMedian7dSeconds()).isEqualTo(600);
-        assertThat(s.rank7d()).isEqualTo(2);
-        assertThat(s.ranked7d()).isEqualTo(2);
-        assertThat(s.teamMedian7dSeconds()).isEqualTo(390);
+        for (String period : List.of("7d", "30d", "all")) {
+            var c = s.comparisons().stream().filter(x -> x.period().equals(period)).findFirst().orElseThrow();
+            assertThat(c.myMedianSeconds()).as(period).isEqualTo(600);
+            assertThat(c.rank()).as(period).isEqualTo(2);
+            assertThat(c.ranked()).as(period).isEqualTo(2);
+            assertThat(c.teamMedianSeconds()).as(period).isEqualTo(390);
+        }
 
         var board = service.leaderboard(b, "7d");
         var bobRow = board.managers().stream().filter(r -> r.userId() == bob.getId()).findFirst().orElseThrow();
         assertThat(bobRow.slowest()).hasSize(1);
         assertThat(bobRow.slowest().get(0).seconds()).isEqualTo(600);
         assertThat(bobRow.slowest().get(0).phoneLast4()).hasSizeLessThanOrEqualTo(4);
+    }
+
+    @Test
+    void allTimeStartsAtFirstShiftAndRanksOnlyManagersWithData() {
+        shift(anna, "2026-09-01T16:00:00Z", "2026-09-01T20:00:00Z");
+        sms("INBOUND", "2026-09-01T18:00:00Z", "old q", null, null);
+        sms("OUTBOUND", "2026-09-01T18:02:00Z", "old a", anna.getId(), null);
+
+        var all = service.leaderboard(b, "all");
+        assertThat(all.managers()).extracting(ManagerMetricsService.ManagerRow::userId).containsExactly(anna.getId());
+        assertThat(all.managers().get(0).replies()).isEqualTo(1);
+        assertThat(service.leaderboard(b, "30d").managers()).isEmpty();
+
+        var s = service.shiftSummary(b, bob.getId(), bob.getUsername());
+        var c = s.comparisons().stream().filter(x -> x.period().equals("all")).findFirst().orElseThrow();
+        assertThat(c.myMedianSeconds()).isNull();
+        assertThat(c.rank()).isNull();
+        assertThat(c.ranked()).isEqualTo(1);
     }
 
     @Test

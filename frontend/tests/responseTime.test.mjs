@@ -45,3 +45,10 @@ test('the metrics proxy routes exist and the response-times page is staff only',
   const proxy = fs.readFileSync(new URL('../proxy.ts', import.meta.url), 'utf8');
   assert.match(proxy, /STAFF_ONLY = \[[^\]]*'\/admin\/response-times'/);
 });
+
+test('shiftState separates never clocked in, quiet shift and active shift', () => {
+  assert.equal(m.shiftState({ shiftStart: null, replies: 0, leadsProcessed: 0 }), 'none');
+  assert.equal(m.shiftState({ shiftStart: '2026-11-11T16:00:00Z', replies: 0, leadsProcessed: 0 }), 'quiet');
+  assert.equal(m.shiftState({ shiftStart: '2026-11-11T16:00:00Z', replies: 0, leadsProcessed: 2 }), 'active');
+  assert.equal(m.shiftState({ shiftStart: '2026-11-11T16:00:00Z', replies: 3, leadsProcessed: 0 }), 'active');
+});

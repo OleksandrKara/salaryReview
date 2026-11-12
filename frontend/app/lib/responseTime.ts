@@ -39,3 +39,11 @@ export function rankManagers<T extends RankableManager>(rows: T[]): T[] {
     return (a.medianSeconds ?? Infinity) - (b.medianSeconds ?? Infinity);
   });
 }
+
+export type ShiftState = 'none' | 'quiet' | 'active';
+
+/** none: never clocked in; quiet: a shift exists but nothing was answered or processed yet; active: there is something to show. */
+export function shiftState(d: { shiftStart: string | null; replies: number; leadsProcessed: number }): ShiftState {
+  if (!d.shiftStart) return 'none';
+  return d.replies > 0 || d.leadsProcessed > 0 ? 'active' : 'quiet';
+}
