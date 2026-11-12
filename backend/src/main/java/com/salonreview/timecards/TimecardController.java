@@ -98,8 +98,10 @@ public class TimecardController {
     // ---- approver (owner + manager) ----
 
     @GetMapping("/queue")
-    public List<DayView> queue(@AuthenticationPrincipal AppUserPrincipal me, @RequestParam(defaultValue = "14") int days) {
+    public List<DayView> queue(@AuthenticationPrincipal AppUserPrincipal me, @RequestParam(defaultValue = "14") int days,
+                               @RequestParam(defaultValue = "pending") String scope) {
         Long b = business.id();
+        boolean withApproved = "all".equals(scope);
         boolean owner = me.getRole().name().equals("OWNER");
         List<Long> ids = jdbc.queryForList("SELECT id FROM providers WHERE business_id = ? AND worker_type = 'W2' AND active "
                 + "ORDER BY display_name", Long.class, b);
@@ -107,9 +109,9 @@ public class TimecardController {
         List<DayView> out = new ArrayList<>();
         for (Long pid : ids) {
             if (!reviews.canApprove(b, me.getUserId(), me.getRole().name(), pid)) continue;
-            for (int i = 1; i <= Math.min(days, 45); i++) {
+            for (int i = 1; i <= Math.min(days, 60); i++) {
                 DayView v = this.days.view(b, pid, today.minusDays(i), owner);
-                if (!v.source().equals("NONE") && !v.status().equals("APPROVED")) out.add(v);
+                if (!v.source().equals("NONE") && (withApproved || !v.status().equals("APPROVED"))) out.add(v);
             }
         }
         return out;
