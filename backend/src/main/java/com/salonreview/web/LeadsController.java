@@ -150,10 +150,7 @@ public class LeadsController {
 
     @PutMapping("/{id}/academy")
     public ResponseEntity<Void> setAcademy(@PathVariable long id, @RequestBody AcademyRequest req, @AuthenticationPrincipal AppUserPrincipal me) {
-        if (academyOnly(me)) {
-            guard(id, me);
-            if (!Boolean.TRUE.equals(req.value())) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not available");
-        }
+        guard(id, me);
         leads.setAcademy(id, req.value());
         return ResponseEntity.noContent().build();
     }
