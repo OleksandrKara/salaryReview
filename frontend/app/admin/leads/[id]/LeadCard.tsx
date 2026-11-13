@@ -167,6 +167,10 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
 
   async function reload() {
     const res = await fetch(`/api/leads/${lead.id}`, { cache: 'no-store' });
+    if (res.status === 404) {
+      window.location.assign('/admin/leads');
+      return;
+    }
     if (res.ok) {
       const d: LeadDetail = await res.json();
       setData(d);
