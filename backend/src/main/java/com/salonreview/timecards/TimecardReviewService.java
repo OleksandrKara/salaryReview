@@ -223,6 +223,12 @@ public class TimecardReviewService {
      */
     public DayView adjust(Long businessId, Long userId, String role, Long providerId, LocalDate date,
                           String startIso, String endIso, String note) {
+        return adjust(businessId, userId, role, providerId, date, startIso, endIso, note, false);
+    }
+
+    /** removeMeal drops the unpaid meal break(s) of the day (the worker confirms no meal was taken); paid rests stay. */
+    public DayView adjust(Long businessId, Long userId, String role, Long providerId, LocalDate date,
+                          String startIso, String endIso, String note, boolean removeMeal) {
         requireW2(businessId, providerId);
         requireApprover(businessId, userId, role, providerId);
         if (date.isAfter(LocalDate.now(TimecardDayService.RULES.zone()))) throw bad("Cannot change a future day");
@@ -274,7 +280,15 @@ public class TimecardReviewService {
                 rate.put("currency", "USD");
             }
             try {
-                tc.set("breaks", MAPPER.readTree((String) row[2]));
+                JsonNode breaks = MAPPER.readTree((String) row[2]);
+                if (removeMeal && breaks.isArray()) {
+                    ArrayNode kept = MAPPER.createArrayNode();
+                    for (JsonNode b : breaks) {
+                        if (b.path("is_paid").asBoolean(false)) kept.add(b);
+                    }
+                    breaks = kept;
+                }
+                tc.set("breaks", breaks);
             } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
                 throw bad("Square timecard breaks could not be read");
             }
@@ -289,6 +303,11 @@ public class TimecardReviewService {
         } else {
             List<DayTimecard> cards = applyEdits(c.timecards(), new SubmitRequest(date.toString(), start.toString(),
                     end.toString(), null, null, null, null, null));
+            if (removeMeal) {
+                DayTimecard only = cards.get(0);
+                cards = List.of(new DayTimecard(only.span(),
+                        only.breaks().stream().filter(b -> b.kind() != BreakKind.UNPAID).toList()));
+            }
             jdbc.update("UPDATE timecard_review SET proposed_json = ? WHERE id = ? AND business_id = ?",
                     TimecardDayService.proposedJson(cards), id, businessId);
         }

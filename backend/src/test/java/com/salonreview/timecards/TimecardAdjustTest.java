@@ -128,6 +128,28 @@ class TimecardAdjustTest {
     }
 
     @Test
+    void removeMealDropsUnpaidBreakAndKeepsPaidRest() throws Exception {
+        when(days.calc(1L, 43L, DAY)).thenReturn(calc("SQUARE", "NEEDS_REVIEW"));
+        when(days.memberIds(43L)).thenReturn(List.of("TM1"));
+        SquareConnection conn = new SquareConnection();
+        conn.setLocationId("LOC");
+        when(connections.findByBusinessId(1L)).thenReturn(Optional.of(conn));
+        String breaks = "[{\"start_at\":\"2026-11-07T00:15:00Z\",\"end_at\":\"2026-11-07T00:30:00Z\",\"is_paid\":false},"
+                + "{\"start_at\":\"2026-11-07T01:00:00Z\",\"end_at\":\"2026-11-07T01:10:00Z\",\"is_paid\":true}]";
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
+                .thenReturn(List.<Object[]>of(new Object[] {"TC1", 1, breaks, "America/Los_Angeles", 1850}));
+        JsonNode updated = new ObjectMapper().readTree("{\"id\":\"TC1\",\"version\":2}");
+        when(labor.updateTimecard(eq(1L), eq("TC1"), any())).thenReturn(updated);
+
+        svc.adjust(1L, 18L, "OWNER", 43L, DAY, START, END_OLD, "No meal was taken", true);
+
+        ArgumentCaptor<JsonNode> body = ArgumentCaptor.forClass(JsonNode.class);
+        verify(labor).updateTimecard(eq(1L), eq("TC1"), body.capture());
+        assertEquals(1, body.getValue().get("breaks").size());
+        assertTrue(body.getValue().get("breaks").get(0).get("is_paid").asBoolean());
+    }
+
+    @Test
     void squareRejectionBecomesReadableError() {
         when(days.calc(1L, 43L, DAY)).thenReturn(calc("SQUARE", "NEEDS_REVIEW"));
         when(days.memberIds(43L)).thenReturn(List.of("TM1"));
