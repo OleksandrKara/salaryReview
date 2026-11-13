@@ -34,6 +34,7 @@ public class TimecardController {
     public record ReopenRequest(String date, Long providerId) {}
     public record VoidRequest(String date, Long providerId, String reason) {}
     public record RestRequest(String date, Long providerId, boolean notProvided) {}
+    public record Pattern(Long providerId, String name, int flaggedDays, String level) {}
     public record SignRequest(String signedName) {}
     public record Earnings(String from, String to, ProviderSummary timeBased, Integer commissionComparisonCents) {}
     public record Profile(boolean w2, String name, boolean waiverSigned) {}
@@ -116,6 +117,30 @@ public class TimecardController {
             }
         }
         return out;
+    }
+
+    /** Rolling 14 days of days with a missed/short required break, per worker the caller approves. */
+    @GetMapping("/patterns")
+    public List<Pattern> patterns(@AuthenticationPrincipal AppUserPrincipal me) {
+        Long b = business.id();
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT id, display_name FROM providers WHERE business_id = ? "
+                + "AND worker_type = 'W2' AND active ORDER BY display_name", b);
+        LocalDate today = LocalDate.now(TimecardDayService.RULES.zone());
+        List<Pattern> out = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            Long pid = ((Number) r.get("id")).longValue();
+            if (!reviews.canApprove(b, me.getUserId(), me.getRole().name(), pid)) continue;
+            int flagged = 0;
+            for (int i = 0; i < 14; i++) {
+                if (this.days.view(b, pid, today.minusDays(i), false).needsAttention()) flagged++;
+            }
+            out.add(new Pattern(pid, String.valueOf(r.get("display_name")), flagged, patternLevel(flagged)));
+        }
+        return out;
+    }
+
+    static String patternLevel(int flaggedDays) {
+        return flaggedDays >= 5 ? "RED" : flaggedDays >= 3 ? "YELLOW" : "NONE";
     }
 
     @GetMapping("/day")

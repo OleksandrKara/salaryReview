@@ -13,6 +13,10 @@ public final class TimecardDtos {
 
     public record ApptDto(String start, String end, String status) {}
 
+    public record BreakQuestionDto(String kind, int index, String assumedStart, String assumedEnd) {}
+
+    public record AnswerDto(String kind, int index, String answer, String start, String end, String reason) {}
+
     public record FindingDto(String code, String severity, long minutes, String message) {}
 
     public record DayView(
@@ -37,7 +41,12 @@ public final class TimecardDtos {
             Integer rateCents,
             Integer payCents,
             Integer premiumCents,
-            String voidReason) {}
+            String voidReason,
+            List<BreakQuestionDto> breakQuestions,
+            boolean breaksAssumed,
+            boolean needsAttention,
+            List<String> attentionReasons,
+            List<AnswerDto> workerAnswers) {}
 
     public record SubmitRequest(
             String date,
@@ -47,7 +56,8 @@ public final class TimecardDtos {
             String mealEnd,
             Boolean mealWaiver,
             Boolean restsTaken,
-            String note) {}
+            String note,
+            List<AnswerDto> answers) {}
 
     public record WaiverStatus(boolean signed, String signedAt, String signedName, String textVersion, String text) {}
 }

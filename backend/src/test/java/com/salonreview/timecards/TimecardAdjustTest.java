@@ -73,14 +73,14 @@ class TimecardAdjustTest {
     private DayCalc calc(String source, String status) {
         List<DayTimecard> cards = List.of(new DayTimecard(
                 new TimeSpan(Instant.parse(START), Instant.parse(END_OLD)), List.of()));
-        return new DayCalc(DAY, 43L, source, cards, List.of(), null, 1850, null, status, false, false);
+        return new DayCalc(DAY, 43L, source, cards, List.of(), null, 1850, null, status, false, false, false);
     }
 
     @Test
     void approvedDayWorkerSubmitGetsHelpfulConflict() {
         when(days.calc(1L, 43L, DAY)).thenReturn(calc("SQUARE", "APPROVED"));
         ResponseStatusException e = assertThrows(ResponseStatusException.class, () -> svc.submit(1L, 43L,
-                new SubmitRequest("2026-11-06", START, END_NEW, null, null, false, false, null)));
+                new SubmitRequest("2026-11-06", START, END_NEW, null, null, false, false, null, null)));
         assertEquals(409, e.getStatusCode().value());
         assertTrue(e.getReason().contains("reopen"));
     }
@@ -89,7 +89,7 @@ class TimecardAdjustTest {
     void workerCannotChangeHoursOfSquareDay() {
         when(days.calc(1L, 43L, DAY)).thenReturn(calc("SQUARE", "NEEDS_REVIEW"));
         ResponseStatusException e = assertThrows(ResponseStatusException.class, () -> svc.submit(1L, 43L,
-                new SubmitRequest("2026-11-06", START, END_NEW, null, null, false, false, null)));
+                new SubmitRequest("2026-11-06", START, END_NEW, null, null, false, false, null, null)));
         assertEquals(400, e.getStatusCode().value());
         verify(jdbc, never()).update(contains("WORKER_CONFIRMED"), any(Object[].class));
     }

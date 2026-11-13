@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Language } from '../lib/types';
 import { t, tf } from '../lib/i18n';
 import VoidPanel from '../timecards/VoidPanel';
+import BreakQuestions, { complete, initStates, toPayload } from '../timecards/BreakQuestions';
 import { type DayView, type ProviderSummary, type Waiver, hhmm, hrs, laToIso, tcFetch, usd } from '../lib/timecards';
 
 type Earnings = { from: string; to: string; timeBased: ProviderSummary; commissionComparisonCents: number | null };
@@ -54,12 +55,9 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
   d: DayView; tone: Tone; waiverSigned: boolean; lang: Language; open: boolean; onToggle: () => void; onDone: () => void;
 }) {
   const card = d.timecards[0];
-  const meal = card?.breaks.find((b) => b.kind === 'UNPAID');
   const [start, setStart] = useState(card ? hhmm(card.start) : '');
   const [end, setEnd] = useState(card ? hhmm(card.end) : '');
-  const [mealStart, setMealStart] = useState(meal ? hhmm(meal.start) : '');
-  const [mealEnd, setMealEnd] = useState(meal ? hhmm(meal.end) : '');
-  const [rests, setRests] = useState(d.restConfirmed);
+  const [qs, setQs] = useState(() => initStates(d.breakQuestions ?? [], d.workerAnswers ?? []));
   const [waiver, setWaiver] = useState(d.mealWaiver);
   const [note, setNote] = useState(d.note ?? '');
   const [err, setErr] = useState('');
@@ -70,7 +68,12 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
   const voided = d.source === 'VOIDED';
   const manual = d.source === 'DRAFT' && d.appointments.length === 0 && d.status !== 'APPROVED' && tone !== 'today';
   const { wd, md } = weekday(d.date, lang);
-  const field = 'rounded-md border border-zinc-300 px-2 py-1.5 text-sm';
+  const field = 'min-h-[44px] w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 sm:text-sm';
+  const waived = waiver && d.paidMinutes <= 360;
+  const shownIdx = (d.breakQuestions ?? []).map((q, i) => i).filter((i) => !(waived && d.breakQuestions[i].kind === 'MEAL'));
+  const shownQs = shownIdx.map((i) => d.breakQuestions[i]);
+  const shownStates = shownIdx.map((i) => qs[i]);
+  const ready = complete(shownStates);
 
   const withdraw = async (reason: string) => {
     setBusy(true);
@@ -92,9 +95,9 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
       await tcFetch<DayView>('me/submit', 'POST', {
         date: d.date,
         ...(editable && start && end ? { start: laToIso(d.date, start), end: laToIso(d.date, end) } : {}),
-        ...(editable && mealStart && mealEnd ? { mealStart: laToIso(d.date, mealStart), mealEnd: laToIso(d.date, mealEnd) } : {}),
         mealWaiver: waiver,
-        restsTaken: rests,
+        restsTaken: shownQs.every((q) => q.kind !== 'REST') || shownStates.filter((x) => x.kind === 'REST').every((x) => x.answer !== 'NO'),
+        answers: toPayload(d.date, shownStates),
         note: note || null,
       });
       onDone();
@@ -144,22 +147,24 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
           ) : (
             <>
               {editable && (
-                <div className="flex flex-wrap gap-3">
-                  <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcStart')}<input className={field} type="time" value={start} onChange={(e) => setStart(e.target.value)} /></label>
-                  <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcEnd')}<input className={field} type="time" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
-                  <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcMealStart')}<input className={field} type="time" value={mealStart} onChange={(e) => setMealStart(e.target.value)} /></label>
-                  <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcMealEnd')}<input className={field} type="time" value={mealEnd} onChange={(e) => setMealEnd(e.target.value)} /></label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex min-w-0 flex-col gap-1 text-xs">{t(lang, 'tcStart')}<input className={field} type="time" value={start} onChange={(e) => setStart(e.target.value)} /></label>
+                  <label className="flex min-w-0 flex-col gap-1 text-xs">{t(lang, 'tcEnd')}<input className={field} type="time" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
                 </div>
               )}
-              <label className="flex items-center gap-2"><input type="checkbox" checked={rests} onChange={(e) => setRests(e.target.checked)} />{t(lang, 'tcRestsTaken')}</label>
+              {shownQs.length > 0 ? (
+                <BreakQuestions lang={lang} questions={shownQs} states={shownStates} onChange={(ns) => setQs(qs.map((q, i) => { const k = shownIdx.indexOf(i); return k >= 0 ? ns[k] : q; }))} />
+              ) : (
+                <p className="text-xs text-zinc-600">{t(lang, 'tcBqNoQuestions')}</p>
+              )}
               {waiverSigned && d.paidMinutes <= 360 && (
-                <label className="flex items-center gap-2"><input type="checkbox" checked={waiver} onChange={(e) => setWaiver(e.target.checked)} />{t(lang, 'tcUseWaiver')}</label>
+                <label className="flex min-h-[44px] items-center gap-3"><input className="h-5 w-5 shrink-0" type="checkbox" checked={waiver} onChange={(e) => setWaiver(e.target.checked)} />{t(lang, 'tcUseWaiver')}</label>
               )}
               <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcNote')}<input className={field} value={note} onChange={(e) => setNote(e.target.value)} /></label>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                <button disabled={busy} onClick={submit} className="w-full rounded-md bg-zinc-900 px-4 py-2.5 text-sm text-white disabled:opacity-50 sm:w-auto">{t(lang, 'tcConfirmDay')}</button>
+                <button disabled={busy || !ready} onClick={submit} className="min-h-[44px] w-full rounded-md bg-zinc-900 px-4 py-2.5 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2 disabled:opacity-50 sm:w-auto">{t(lang, 'tcConfirmDay')}</button>
                 {manual && !voiding && (
-                  <button type="button" disabled={busy} onClick={() => setVoiding(true)} className="w-full rounded-md border border-red-300 px-4 py-2.5 text-sm text-red-700 disabled:opacity-50 sm:w-auto">{t(lang, 'payWithdraw')}</button>
+                  <button type="button" disabled={busy} onClick={() => setVoiding(true)} className="min-h-[44px] w-full rounded-md border border-red-300 px-4 py-2.5 text-sm text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 disabled:opacity-50 sm:w-auto">{t(lang, 'payWithdraw')}</button>
                 )}
                 {!voiding && err && <span className="text-sm text-red-700">{err}</span>}
               </div>
@@ -180,7 +185,7 @@ function AddShift({ lang, from, to, onDone }: { lang: Language; from: string; to
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const field = 'rounded-md border border-zinc-300 px-2 py-1.5 text-sm';
+  const field = 'min-h-[44px] w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 sm:text-sm';
   const send = async () => {
     setBusy(true);
     setErr('');
@@ -196,7 +201,7 @@ function AddShift({ lang, from, to, onDone }: { lang: Language; from: string; to
     }
   };
   if (!open) {
-    return <button type="button" onClick={() => setOpen(true)} className="mt-3 text-sm text-zinc-700 underline">{t(lang, 'payAddShift')}</button>;
+    return <button type="button" onClick={() => setOpen(true)} className="mt-3 inline-flex min-h-[44px] items-center text-sm text-zinc-700 underline">{t(lang, 'payAddShift')}</button>;
   }
   return (
     <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 p-3">
@@ -263,7 +268,7 @@ function PeriodCard({ title, range, from, to, earn, byDate, today, waiverSigned,
                 disabled={!byDate.has(d) || d > today}
                 onClick={() => setOpenDate(openDate === d ? null : d)}
                 title={`${d}: ${label(tn, lang)}`}
-                className={`flex h-7 w-7 items-center justify-center rounded text-[11px] tabular-nums ${tn === 'off' ? 'bg-zinc-50 text-zinc-300' : 'text-white'} ${tn === 'off' ? '' : TONE[tn].dot} ${openDate === d ? 'ring-2 ring-zinc-900' : ''}`}
+                className={`flex h-11 w-11 items-center justify-center rounded text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 tabular-nums ${tn === 'off' ? 'bg-zinc-50 text-zinc-300' : 'text-white'} ${tn === 'off' ? '' : TONE[tn].dot} ${openDate === d ? 'ring-2 ring-zinc-900' : ''}`}
               >
                 {Number(d.slice(8))}
               </button>
@@ -314,12 +319,12 @@ function WaiverBlock({ lang, w, reload }: { lang: Language; w: Waiver; reload: (
   };
   return (
     <details className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">
-      <summary className="cursor-pointer text-sm font-medium">
+      <summary className="flex min-h-[44px] cursor-pointer items-center text-sm font-medium">
         {t(lang, 'tcWaiverTitle')}: {w.signed ? `${t(lang, 'tcWaiverSigned')} (${w.signedName})` : 'not signed'}
       </summary>
       <pre className="mt-3 whitespace-pre-wrap text-xs text-zinc-700">{w.text}</pre>
       {w.signed ? (
-        <button onClick={() => act('me/waiver/revoke', {})} className="mt-3 rounded border border-zinc-400 px-3 py-1.5 text-sm">{t(lang, 'tcWaiverRevoke')}</button>
+        <button onClick={() => act('me/waiver/revoke', {})} className="mt-3 min-h-[44px] rounded border border-zinc-400 px-3 py-1.5 text-sm">{t(lang, 'tcWaiverRevoke')}</button>
       ) : (
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcWaiverSign')}

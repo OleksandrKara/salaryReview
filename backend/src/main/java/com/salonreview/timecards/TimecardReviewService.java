@@ -79,11 +79,52 @@ public class TimecardReviewService {
             cards = applyEdits(cards, req);
             proposed = TimecardDayService.proposedJson(cards);
         }
-        long paid = days.paidMinutesOf(cards, date, c.rateCents());
         boolean waiver = Boolean.TRUE.equals(req.mealWaiver());
-        if (waiver) {
-            if (!days.activeWaiver(businessId, providerId)) throw bad("Sign the meal waiver first");
-            if (paid > TimecardDayService.RULES.mealWaiverMaxMinutes()) throw bad("A meal waiver is only allowed on days up to 6 hours");
+        if (waiver && !days.activeWaiver(businessId, providerId)) throw bad("Sign the meal waiver first");
+        boolean generated = c.generatedBreaks() && mode.equals("DRAFT");
+        List<AnswerDto> answers = req.answers() == null ? List.of() : req.answers();
+        long paid0 = days.paidMinutesOf(cards, date, c.rateCents());
+        List<BreakQuestionDto> questions = days.breakQuestions(cards,
+                days.analyze(providerId, cards, date, c.rateCents(), generated, waiver), paid0, generated, waiver);
+        String confirmedJson = null;
+        String answersJson = null;
+        boolean manualShift = c.source().equals("NONE") || c.source().equals("VOIDED");
+        if (!questions.isEmpty() && !(manualShift && answers.isEmpty())) {
+            List<AnswerDto> kept = new ArrayList<>();
+            List<TimecardBreak> asked = new ArrayList<>();
+            java.util.Set<String> askedKinds = new java.util.HashSet<>();
+            for (BreakQuestionDto q : questions) {
+                askedKinds.add(q.kind());
+                AnswerDto a = answers.stream().filter(x -> q.kind().equals(x.kind()) && q.index() == x.index())
+                        .findFirst().orElseThrow(() -> bad("Answer the break questions"));
+                kept.add(resolveAnswer(q, a, asked));
+            }
+            Instant lo = cards.stream().map(x -> x.span().start()).min(Comparator.naturalOrder()).orElseThrow();
+            Instant hi = cards.stream().map(x -> x.span().end()).max(Comparator.naturalOrder()).orElseThrow();
+            List<TimecardBreak> all = new ArrayList<>();
+            for (DayTimecard card : cards) {
+                for (TimecardBreak b : card.breaks()) {
+                    String k = b.kind() == BreakKind.UNPAID ? "MEAL" : "REST";
+                    if (!askedKinds.contains(k)) all.add(b);
+                }
+            }
+            all.addAll(asked);
+            validateBreaks(all, lo, hi);
+            confirmedJson = TimecardDayService.confirmedBreaksJson(all);
+            answersJson = TimecardDayService.answersJson(kept);
+            cards = TimecardDayService.applyConfirmed(cards, confirmedJson);
+            if (mode.equals("DRAFT")) proposed = TimecardDayService.proposedJson(cards);
+            DayAnalysis after = days.analyze(providerId, cards, date, c.rateCents(), false, waiver);
+            List<BreakQuestionDto> residual = days.breakQuestions(cards, after,
+                    days.paidMinutesOf(cards, date, c.rateCents()), false, waiver);
+            for (BreakQuestionDto q : residual) {
+                boolean covered = kept.stream().anyMatch(x -> q.kind().equals(x.kind()) && q.index() == x.index());
+                if (!covered) throw bad("Answer the break questions");
+            }
+        }
+        long paid = days.paidMinutesOf(cards, date, c.rateCents());
+        if (waiver && paid > TimecardDayService.RULES.mealWaiverMaxMinutes()) {
+            throw bad("A meal waiver is only allowed on days up to 6 hours");
         }
         boolean rests = Boolean.TRUE.equals(req.restsTaken());
         long id = ensureReview(businessId, providerId, date, mode);
@@ -91,8 +132,47 @@ public class TimecardReviewService {
         jdbc.update("UPDATE timecard_review SET mode = ?, status = 'WORKER_CONFIRMED', proposed_json = ?, meal_waiver = ?, "
                         + "rest_confirmed = ?, note = ?, worker_confirmed_at = now() WHERE id = ? AND business_id = ?",
                 mode, proposed, waiver, rests, req.note(), id, businessId);
+        if (confirmedJson != null) {
+            jdbc.update("UPDATE timecard_review SET confirmed_breaks_json = ?, break_answers_json = ? "
+                    + "WHERE id = ? AND business_id = ?", confirmedJson, answersJson, id, businessId);
+        }
         audit(businessId, id, "provider:" + providerId, "WORKER_CONFIRM", before, snapshot(id));
         return days.view(businessId, providerId, date, false);
+    }
+
+    /** Turns one worker answer into the break it confirms (or none), enforcing the reason rule. */
+    AnswerDto resolveAnswer(BreakQuestionDto q, AnswerDto a, List<TimecardBreak> out) {
+        BreakKind kind = "MEAL".equals(q.kind()) ? BreakKind.UNPAID : BreakKind.PAID_REST;
+        String reason = a.reason() == null || a.reason().isBlank() ? null : a.reason().trim();
+        if (reason != null && reason.length() > 200) throw bad("Reason is too long");
+        String answer = a.answer() == null ? "" : a.answer();
+        switch (answer) {
+            case "YES" -> {
+                if (q.assumedStart() == null) throw bad("There is no proposed break to confirm");
+                out.add(new TimecardBreak(new TimeSpan(Instant.parse(q.assumedStart()), Instant.parse(q.assumedEnd())), kind));
+                return new AnswerDto(q.kind(), q.index(), "YES", q.assumedStart(), q.assumedEnd(), null);
+            }
+            case "DIFF" -> {
+                if (a.start() == null || a.end() == null) throw bad("Enter when the break was");
+                TimeSpan span;
+                try {
+                    span = new TimeSpan(Instant.parse(a.start()), Instant.parse(a.end()));
+                } catch (java.time.format.DateTimeParseException e) {
+                    throw bad("Invalid time");
+                }
+                if (!span.end().isAfter(span.start())) throw bad("Break end must be after its start");
+                if (kind == BreakKind.UNPAID && span.minutes() < TimecardDayService.RULES.mealMinutes() && reason == null) {
+                    throw bad("A meal under 30 minutes needs a short reason");
+                }
+                out.add(new TimecardBreak(span, kind));
+                return new AnswerDto(q.kind(), q.index(), "DIFF", a.start(), a.end(), reason);
+            }
+            case "NO" -> {
+                if (reason == null) throw bad("Give a short reason for the missed break");
+                return new AnswerDto(q.kind(), q.index(), "NO", null, null, reason);
+            }
+            default -> throw bad("Answer the break questions");
+        }
     }
 
     List<DayTimecard> applyEdits(List<DayTimecard> cards, SubmitRequest req) {
@@ -195,6 +275,16 @@ public class TimecardReviewService {
                 writeFailed = true;
             }
         } else {
+            if (c.review() != null && c.review().confirmedBreaksJson() != null && c.timecards().size() == 1
+                    && breaksDiffer(days.mirrorCards(businessId, providerId, date), c.timecards())) {
+                DayTimecard card = c.timecards().get(0);
+                try {
+                    updateSquareTimecard(businessId, providerId, date, c, card.span().start(), card.span().end(), card.breaks());
+                } catch (RuntimeException e) {
+                    log.warn("Square break write-back failed for provider {} on {}: {}", providerId, date, e.toString());
+                    writeFailed = true;
+                }
+            }
             List<Object[]> v = jdbc.query("SELECT square_timecard_id, square_version FROM square_timecard_mirror "
                             + "WHERE business_id = ? AND provider_id = ? AND work_date = ? AND NOT deleted ORDER BY start_at",
                     (rs, i) -> new Object[] {rs.getString(1), rs.getInt(2)},
@@ -254,73 +344,10 @@ public class TimecardReviewService {
         long id = ensureReview(businessId, providerId, date, c.source().equals("SQUARE") ? "EXTERNAL" : "DRAFT");
         String before = snapshot(id);
         if (c.source().equals("SQUARE")) {
-            if (c.timecards().size() != 1) throw bad("This day has several Square timecards. Change it in Square");
-            List<Object[]> rows = jdbc.query("SELECT square_timecard_id, square_version, breaks_json, timezone, "
-                            + "hourly_rate_cents FROM square_timecard_mirror WHERE business_id = ? AND provider_id = ? "
-                            + "AND work_date = ? AND NOT deleted",
-                    (rs, i) -> new Object[] {rs.getString(1), rs.getObject(2), rs.getString(3), rs.getString(4), rs.getObject(5)},
-                    businessId, providerId, java.sql.Date.valueOf(date));
-            if (rows.size() != 1 || rows.get(0)[1] == null) throw bad("Square timecard is not synced yet. Try again in a minute");
-            Object[] row = rows.get(0);
-            SquareConnection conn = connections.findByBusinessId(businessId)
-                    .orElseThrow(() -> bad("Square is not connected"));
-            List<String> members = days.memberIds(providerId);
-            if (members.isEmpty()) throw bad("Provider is not linked to a Square team member");
-            ObjectNode tc = MAPPER.createObjectNode();
-            tc.put("location_id", conn.getLocationId());
-            tc.put("team_member_id", members.get(0));
-            tc.put("start_at", start.toString());
-            tc.put("end_at", end.toString());
-            tc.put("timezone", (String) row[3]);
-            tc.put("version", ((Number) row[1]).intValue());
-            if (row[4] != null) {
-                ObjectNode wage = tc.putObject("wage");
-                wage.put("title", "Nail technician");
-                ObjectNode rate = wage.putObject("hourly_rate");
-                rate.put("amount", ((Number) row[4]).intValue());
-                rate.put("currency", "USD");
-            }
-            try {
-                JsonNode breaks = MAPPER.readTree((String) row[2]);
-                if (breaksEdit != null) {
-                    ArrayNode kept = MAPPER.createArrayNode();
-                    String unpaidType = null;
-                    String paidType = null;
-                    for (TimecardBreak u : breaksEdit) {
-                        boolean paidRest = u.kind() == BreakKind.PAID_REST;
-                        String typeId;
-                        if (paidRest) {
-                            if (paidType == null) paidType = breakTypeId(businessId, conn.getLocationId(), PAID_REST, 10, true);
-                            typeId = paidType;
-                        } else {
-                            if (unpaidType == null) unpaidType = breakTypeId(businessId, conn.getLocationId(), UNPAID_BREAK, 30, false);
-                            typeId = unpaidType;
-                        }
-                        ObjectNode bn = kept.addObject();
-                        bn.put("start_at", u.span().start().toString());
-                        bn.put("end_at", u.span().end().toString());
-                        bn.put("break_type_id", typeId);
-                        bn.put("name", paidRest ? PAID_REST : UNPAID_BREAK);
-                        bn.put("expected_duration", "PT" + u.span().minutes() + "M");
-                        bn.put("is_paid", paidRest);
-                    }
-                    breaks = kept;
-                }
-                tc.set("breaks", breaks);
-            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-                throw bad("Square timecard breaks could not be read");
-            }
-            JsonNode updated;
-            try {
-                updated = labor.updateTimecard(businessId, (String) row[0], tc);
-            } catch (RuntimeException e) {
-                log.warn("Square timecard update failed for provider {} on {}: {}", providerId, date, e.toString());
-                throw bad("Square did not accept the change. Check that breaks fit inside the hours, or change it in Square");
-            }
-            sync.upsert(businessId, providerId, updated);
+            updateSquareTimecard(businessId, providerId, date, c, start, end, breaksEdit);
         } else {
             List<DayTimecard> cards = applyEdits(c.timecards(), new SubmitRequest(date.toString(), start.toString(),
-                    end.toString(), null, null, null, null, null));
+                    end.toString(), null, null, null, null, null, null));
             if (breaksEdit != null) {
                 List<TimecardBreak> sorted = new ArrayList<>(breaksEdit);
                 sorted.sort(Comparator.comparing(x -> x.span().start()));
@@ -331,8 +358,90 @@ public class TimecardReviewService {
         }
         jdbc.update("UPDATE timecard_review SET status = 'NEEDS_REVIEW', approved_at = NULL, approved_by_user_id = NULL, "
                 + "note = ? WHERE id = ? AND business_id = ?", note.trim(), id, businessId);
+        if (breaksEdit != null) {
+            jdbc.update("UPDATE timecard_review SET confirmed_breaks_json = NULL WHERE id = ? AND business_id = ?", id, businessId);
+        }
         audit(businessId, id, "user:" + userId, "ADJUST", before, snapshot(id));
         return days.view(businessId, providerId, date, "OWNER".equals(role));
+    }
+
+    private static boolean breaksDiffer(List<DayTimecard> mirror, List<DayTimecard> confirmed) {
+        java.util.function.Function<List<DayTimecard>, java.util.Set<String>> keys = cards -> {
+            java.util.Set<String> k = new java.util.TreeSet<>();
+            for (DayTimecard card : cards) {
+                for (TimecardBreak b : card.breaks()) k.add(b.span().start() + "|" + b.span().end() + "|" + b.kind());
+            }
+            return k;
+        };
+        return !keys.apply(mirror).equals(keys.apply(confirmed));
+    }
+
+    private void updateSquareTimecard(Long businessId, Long providerId, LocalDate date, DayCalc c, Instant start,
+                                      Instant end, List<TimecardBreak> breaksEdit) {
+        if (c.timecards().size() != 1) throw bad("This day has several Square timecards. Change it in Square");
+        List<Object[]> rows = jdbc.query("SELECT square_timecard_id, square_version, breaks_json, timezone, "
+                        + "hourly_rate_cents FROM square_timecard_mirror WHERE business_id = ? AND provider_id = ? "
+                        + "AND work_date = ? AND NOT deleted",
+                (rs, i) -> new Object[] {rs.getString(1), rs.getObject(2), rs.getString(3), rs.getString(4), rs.getObject(5)},
+                businessId, providerId, java.sql.Date.valueOf(date));
+        if (rows.size() != 1 || rows.get(0)[1] == null) throw bad("Square timecard is not synced yet. Try again in a minute");
+        Object[] row = rows.get(0);
+        SquareConnection conn = connections.findByBusinessId(businessId)
+                .orElseThrow(() -> bad("Square is not connected"));
+        List<String> members = days.memberIds(providerId);
+        if (members.isEmpty()) throw bad("Provider is not linked to a Square team member");
+        ObjectNode tc = MAPPER.createObjectNode();
+        tc.put("location_id", conn.getLocationId());
+        tc.put("team_member_id", members.get(0));
+        tc.put("start_at", start.toString());
+        tc.put("end_at", end.toString());
+        tc.put("timezone", (String) row[3]);
+        tc.put("version", ((Number) row[1]).intValue());
+        if (row[4] != null) {
+            ObjectNode wage = tc.putObject("wage");
+            wage.put("title", "Nail technician");
+            ObjectNode rate = wage.putObject("hourly_rate");
+            rate.put("amount", ((Number) row[4]).intValue());
+            rate.put("currency", "USD");
+        }
+        try {
+            JsonNode breaks = MAPPER.readTree((String) row[2]);
+            if (breaksEdit != null) {
+                ArrayNode kept = MAPPER.createArrayNode();
+                String unpaidType = null;
+                String paidType = null;
+                for (TimecardBreak u : breaksEdit) {
+                    boolean paidRest = u.kind() == BreakKind.PAID_REST;
+                    String typeId;
+                    if (paidRest) {
+                        if (paidType == null) paidType = breakTypeId(businessId, conn.getLocationId(), PAID_REST, 10, true);
+                        typeId = paidType;
+                    } else {
+                        if (unpaidType == null) unpaidType = breakTypeId(businessId, conn.getLocationId(), UNPAID_BREAK, 30, false);
+                        typeId = unpaidType;
+                    }
+                    ObjectNode bn = kept.addObject();
+                    bn.put("start_at", u.span().start().toString());
+                    bn.put("end_at", u.span().end().toString());
+                    bn.put("break_type_id", typeId);
+                    bn.put("name", paidRest ? PAID_REST : UNPAID_BREAK);
+                    bn.put("expected_duration", "PT" + u.span().minutes() + "M");
+                    bn.put("is_paid", paidRest);
+                }
+                breaks = kept;
+            }
+            tc.set("breaks", breaks);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw bad("Square timecard breaks could not be read");
+        }
+        JsonNode updated;
+        try {
+            updated = labor.updateTimecard(businessId, (String) row[0], tc);
+        } catch (RuntimeException e) {
+            log.warn("Square timecard update failed for provider {} on {}: {}", providerId, date, e.toString());
+            throw bad("Square did not accept the change. Check that breaks fit inside the hours, or change it in Square");
+        }
+        sync.upsert(businessId, providerId, updated);
     }
 
     static void validateBreaks(List<TimecardBreak> breaks, Instant start, Instant end) {
@@ -477,7 +586,7 @@ public class TimecardReviewService {
 
     private String snapshot(long reviewId) {
         List<String> r = jdbc.queryForList("SELECT row_to_json(t)::text FROM (SELECT mode, status, proposed_json, meal_waiver, "
-                + "rest_confirmed, rest_not_provided, note, square_timecard_id, square_version, void_reason FROM timecard_review "
+                + "rest_confirmed, rest_not_provided, note, square_timecard_id, square_version, void_reason, confirmed_breaks_json, break_answers_json FROM timecard_review "
                 + "WHERE id = ?) t", String.class, reviewId);
         return r.isEmpty() ? null : r.get(0);
     }
