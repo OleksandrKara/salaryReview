@@ -30,7 +30,7 @@ public class TimecardController {
 
     public record ApproveRequest(String date, Long providerId, Boolean onBehalf) {}
     public record AdjustRequest(String date, Long providerId, String start, String end, String note, List<BreakInput> breaks) {}
-    public record BreakInput(String start, String end) {}
+    public record BreakInput(String start, String end, String kind) {}
     public record ReopenRequest(String date, Long providerId) {}
     public record VoidRequest(String date, Long providerId, String reason) {}
     public record RestRequest(String date, Long providerId, boolean notProvided) {}
@@ -130,11 +130,13 @@ public class TimecardController {
                 TimecardReviewService.parseDate(r.date()), Boolean.TRUE.equals(r.onBehalf()));
     }
 
-    private static List<com.salonreview.timecards.TimecardTypes.TimeSpan> unpaidBreaks(List<BreakInput> in) {
+    private static List<com.salonreview.timecards.TimecardTypes.TimecardBreak> breakEdits(List<BreakInput> in) {
         if (in == null) return null;
         try {
-            return in.stream().map(b -> new com.salonreview.timecards.TimecardTypes.TimeSpan(
-                    java.time.Instant.parse(b.start()), java.time.Instant.parse(b.end()))).toList();
+            return in.stream().map(b -> new com.salonreview.timecards.TimecardTypes.TimecardBreak(
+                    new com.salonreview.timecards.TimecardTypes.TimeSpan(java.time.Instant.parse(b.start()), java.time.Instant.parse(b.end())),
+                    "REST".equals(b.kind()) ? com.salonreview.timecards.TimecardTypes.BreakKind.PAID_REST
+                            : com.salonreview.timecards.TimecardTypes.BreakKind.UNPAID)).toList();
         } catch (RuntimeException e) {
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid break time");
         }
@@ -143,7 +145,7 @@ public class TimecardController {
     @PostMapping("/adjust")
     public DayView adjust(@AuthenticationPrincipal AppUserPrincipal me, @RequestBody AdjustRequest r) {
         return reviews.adjust(business.id(), me.getUserId(), me.getRole().name(), r.providerId(),
-                TimecardReviewService.parseDate(r.date()), r.start(), r.end(), r.note(), unpaidBreaks(r.breaks()));
+                TimecardReviewService.parseDate(r.date()), r.start(), r.end(), r.note(), breakEdits(r.breaks()));
     }
 
     @PostMapping("/reopen")
