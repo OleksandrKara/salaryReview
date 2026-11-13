@@ -22,7 +22,7 @@ export default function AdjustPanel({ lang, date, start, end, fromSquare, meals,
   const endIso = e && s && e <= s ? laToIso(nextDay(date), e) : e ? laToIso(date, e) : '';
   const startIso = s ? laToIso(date, s) : '';
   const focus = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-1';
-  const inputCls = `min-h-[44px] w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-base sm:text-sm ${focus}`;
+  const inputCls = `min-h-[44px] block w-full min-w-0 max-w-full appearance-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-base sm:text-sm ${focus}`;
   const btnCls = `min-h-[44px] rounded-md border border-zinc-300 bg-white py-2 text-sm ${focus}`;
   return (
     <div role="dialog" aria-label={t(lang, 'tcAdjustTitle')} className="mt-3 flex flex-col gap-3 rounded-lg border border-zinc-300 bg-zinc-50 p-3 text-sm">
