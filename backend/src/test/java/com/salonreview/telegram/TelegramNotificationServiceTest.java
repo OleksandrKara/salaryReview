@@ -521,8 +521,26 @@ class TelegramNotificationServiceTest {
         String missing = TelegramNotificationService.formatConsultationRequestMessage(n, LeadAlertContext.MISSING);
         String unknown = TelegramNotificationService.formatConsultationRequestMessage(n, LeadAlertContext.UNKNOWN);
 
-        assertThat(missing).contains("online call").contains("🏷 No CRM lead yet").doesNotContain("Academy").doesNotContain("💬");
+        assertThat(missing).contains("online call").contains("Owner: not assigned · No CRM lead yet").doesNotContain("Academy").doesNotContain("💬");
         assertThat(unknown).doesNotContain("🏷").doesNotContain("No CRM lead");
+    }
+
+    @Test
+    @DisplayName("consultation alert: chat and lead links, owner not assigned when the lead has none")
+    void consultationAlertLinksAndOwner() {
+        ConsultationRequestNotification n = new ConsultationRequestNotification(
+                2L, null, "Kalynn", "2405772146", "2026-09-29T00:30:00Z", true, null, null, null, null, null, null, null);
+
+        String msg = TelegramNotificationService.formatConsultationRequestMessage(n, LeadAlertContext.MISSING,
+                "https://x.test/admin/messages?phone=1&business=2", "https://x.test/admin/leads/open?phone=1&business=2");
+        String plain = TelegramNotificationService.formatConsultationRequestMessage(n, LeadAlertContext.UNKNOWN);
+
+        assertThat(msg).contains("Owner: not assigned")
+                .contains("<a href=\"https://x.test/admin/messages?phone=1&amp;business=2\">💬 Open chat</a>")
+                .contains("🧲 Open lead</a>");
+        assertThat(plain).doesNotContain("Owner:").doesNotContain("Open chat");
+        assertThat(TelegramNotificationService.formatConsultationRequestMessage(n, ACADEMY_CTX, null, null))
+                .contains("Owner: Anastasia, Lucy").doesNotContain("not assigned");
     }
 
     @Test

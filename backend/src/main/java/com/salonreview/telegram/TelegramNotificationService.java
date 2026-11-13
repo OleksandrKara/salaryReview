@@ -764,7 +764,12 @@ public class TelegramNotificationService {
      * {@link #sendPaymentFailedAlert}. Never throws, same contract as every other send method here. */
     public boolean sendConsultationRequestAlert(Long businessId, ConsultationRequestNotification n) {
         LeadAlertContext ctx = leadContext(businessId, n.phoneNumber(), null);
-        return sendLeadAlert(businessId, formatConsultationRequestMessage(n, ctx), leadUrl(ctx, n.phoneNumber(), businessId));
+        boolean hasPhone = n.phoneNumber() != null && !n.phoneNumber().replaceAll("\\D", "").isEmpty();
+        String chat = hasPhone ? chatLink(n.phoneNumber(), businessId) : null;
+        // The CRM lead is often created only after this alert, so the phone link is used even then;
+        // the page resolves it once the lead exists and falls back to the leads list.
+        String lead = hasPhone ? leadLink(n.phoneNumber(), businessId) : leadUrl(ctx, n.phoneNumber(), businessId);
+        return sendLeadAlert(businessId, formatConsultationRequestMessage(n, ctx, chat, lead), lead);
     }
 
     /** Plain-text staff alert (online booking health checks, BookingHealthCheckScheduler). Same
@@ -896,19 +901,29 @@ public class TelegramNotificationService {
      * The heading no longer says "free" for the in-person one: that consultation is paid ($50).
      * Package-private for direct unit testing. */
     static String formatConsultationRequestMessage(ConsultationRequestNotification n, LeadAlertContext ctx) {
+        return formatConsultationRequestMessage(n, ctx, null, null);
+    }
+
+    static String formatConsultationRequestMessage(ConsultationRequestNotification n, LeadAlertContext ctx,
+                                                   String chatUrl, String leadUrl) {
         StringBuilder sb = new StringBuilder("🆕 <b>New consultation</b> · ");
         sb.append(n.online() ? "online call" : "in studio");
         sb.append('\n').append(whoLine(n.customerName(), n.phoneNumber()));
         sb.append("\n🕐 ").append(escapeHtml(formatCompactTime(n.startAt())));
         if (n.artistName() != null && !n.artistName().isBlank()) sb.append(" · ").append(escapeHtml(n.artistName().strip()));
         boolean hasAd = n.adCampaign() != null && !n.adCampaign().isBlank();
-        sb.append(tagsTail(ctx, hasAd ? "Ad: " + n.adCampaign() : null));
+        boolean noOwner = ctx != null && ctx.state() != LeadAlertContext.State.UNKNOWN && ctx.owners().isEmpty();
+        sb.append(tagsTail(ctx, hasAd ? "Ad: " + n.adCampaign() : null, noOwner ? "Owner: not assigned" : null));
         boolean hasTitle = n.sourcePageTitle() != null && !n.sourcePageTitle().isBlank();
         if (hasTitle) sb.append("\n📄 ").append(escapeHtml(n.sourcePageTitle().strip()));
         if (n.note() != null && !n.note().isBlank()) {
             String note = n.note().strip();
             sb.append("\n💬 ").append(escapeHtml(note.length() > 160 ? note.substring(0, 157) + "..." : note));
         }
+        java.util.List<String> links = new java.util.ArrayList<>();
+        if (chatUrl != null) links.add("<a href=\"" + escapeHtml(chatUrl) + "\">💬 Open chat</a>");
+        if (leadUrl != null) links.add("<a href=\"" + escapeHtml(leadUrl) + "\">🧲 Open lead</a>");
+        if (!links.isEmpty()) sb.append("\n\n").append(String.join("  ·  ", links));
         return sb.toString();
     }
 
