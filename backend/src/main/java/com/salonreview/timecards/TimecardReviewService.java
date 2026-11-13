@@ -226,9 +226,9 @@ public class TimecardReviewService {
         return adjust(businessId, userId, role, providerId, date, startIso, endIso, note, null);
     }
 
-    /** unpaidBreaks, when not null, replaces every unpaid break of the day (empty list = no meal); paid rests stay. */
+    /** breaksEdit, when not null, replaces every break of the day: meals (UNPAID) and rests (PAID_REST). */
     public DayView adjust(Long businessId, Long userId, String role, Long providerId, LocalDate date,
-                          String startIso, String endIso, String note, List<TimeSpan> unpaidBreaks) {
+                          String startIso, String endIso, String note, List<TimecardBreak> breaksEdit) {
         requireW2(businessId, providerId);
         requireApprover(businessId, userId, role, providerId);
         if (date.isAfter(LocalDate.now(TimecardDayService.RULES.zone()))) throw bad("Cannot change a future day");
@@ -248,7 +248,7 @@ public class TimecardReviewService {
         if (!start.atZone(TimecardDayService.RULES.zone()).toLocalDate().equals(date)) {
             throw bad("Start must be on the selected day");
         }
-        if (unpaidBreaks != null) validateBreaks(unpaidBreaks, start, end);
+        if (breaksEdit != null) validateBreaks(breaksEdit, start, end);
         DayCalc c = days.calc(businessId, providerId, date);
         if (c.source().equals("NONE") || c.source().equals("VOIDED")) throw bad("There is no shift to adjust on this day");
         long id = ensureReview(businessId, providerId, date, c.source().equals("SQUARE") ? "EXTERNAL" : "DRAFT");
@@ -282,22 +282,27 @@ public class TimecardReviewService {
             }
             try {
                 JsonNode breaks = MAPPER.readTree((String) row[2]);
-                if (unpaidBreaks != null && breaks.isArray()) {
+                if (breaksEdit != null) {
                     ArrayNode kept = MAPPER.createArrayNode();
-                    for (JsonNode b : breaks) {
-                        if (b.path("is_paid").asBoolean(false)) kept.add(b);
-                    }
-                    if (!unpaidBreaks.isEmpty()) {
-                        String unpaidType = breakTypeId(businessId, conn.getLocationId(), UNPAID_BREAK, 30, false);
-                        for (TimeSpan u : unpaidBreaks) {
-                            ObjectNode bn = kept.addObject();
-                            bn.put("start_at", u.start().toString());
-                            bn.put("end_at", u.end().toString());
-                            bn.put("break_type_id", unpaidType);
-                            bn.put("name", UNPAID_BREAK);
-                            bn.put("expected_duration", "PT" + u.minutes() + "M");
-                            bn.put("is_paid", false);
+                    String unpaidType = null;
+                    String paidType = null;
+                    for (TimecardBreak u : breaksEdit) {
+                        boolean paidRest = u.kind() == BreakKind.PAID_REST;
+                        String typeId;
+                        if (paidRest) {
+                            if (paidType == null) paidType = breakTypeId(businessId, conn.getLocationId(), PAID_REST, 10, true);
+                            typeId = paidType;
+                        } else {
+                            if (unpaidType == null) unpaidType = breakTypeId(businessId, conn.getLocationId(), UNPAID_BREAK, 30, false);
+                            typeId = unpaidType;
                         }
+                        ObjectNode bn = kept.addObject();
+                        bn.put("start_at", u.span().start().toString());
+                        bn.put("end_at", u.span().end().toString());
+                        bn.put("break_type_id", typeId);
+                        bn.put("name", paidRest ? PAID_REST : UNPAID_BREAK);
+                        bn.put("expected_duration", "PT" + u.span().minutes() + "M");
+                        bn.put("is_paid", paidRest);
                     }
                     breaks = kept;
                 }
@@ -316,12 +321,10 @@ public class TimecardReviewService {
         } else {
             List<DayTimecard> cards = applyEdits(c.timecards(), new SubmitRequest(date.toString(), start.toString(),
                     end.toString(), null, null, null, null, null));
-            if (unpaidBreaks != null) {
-                DayTimecard only = cards.get(0);
-                List<TimecardBreak> merged = new ArrayList<>(only.breaks().stream().filter(b -> b.kind() != BreakKind.UNPAID).toList());
-                for (TimeSpan u : unpaidBreaks) merged.add(new TimecardBreak(u, BreakKind.UNPAID));
-                merged.sort(Comparator.comparing(b -> b.span().start()));
-                cards = List.of(new DayTimecard(only.span(), merged));
+            if (breaksEdit != null) {
+                List<TimecardBreak> sorted = new ArrayList<>(breaksEdit);
+                sorted.sort(Comparator.comparing(x -> x.span().start()));
+                cards = List.of(new DayTimecard(cards.get(0).span(), sorted));
             }
             jdbc.update("UPDATE timecard_review SET proposed_json = ? WHERE id = ? AND business_id = ?",
                     TimecardDayService.proposedJson(cards), id, businessId);
@@ -332,9 +335,9 @@ public class TimecardReviewService {
         return days.view(businessId, providerId, date, "OWNER".equals(role));
     }
 
-    static void validateBreaks(List<TimeSpan> breaks, Instant start, Instant end) {
-        if (breaks.size() > 8) throw bad("Too many breaks");
-        List<TimeSpan> sorted = breaks.stream().sorted(Comparator.comparing(TimeSpan::start)).toList();
+    static void validateBreaks(List<TimecardBreak> breaks, Instant start, Instant end) {
+        if (breaks.size() > 10) throw bad("Too many breaks");
+        List<TimeSpan> sorted = breaks.stream().map(TimecardBreak::span).sorted(Comparator.comparing(TimeSpan::start)).toList();
         Instant prevEnd = null;
         for (TimeSpan b : sorted) {
             if (b.start().isBefore(start) || b.end().isAfter(end)) throw bad("Breaks must be inside the work day");
