@@ -6,7 +6,7 @@ import { t, tf } from '../lib/i18n';
 import VoidPanel from './VoidPanel';
 import AdjustPanel from './AdjustPanel';
 import { reasonLabel } from './BreakQuestions';
-import { type DayView, type Pattern, type Summary, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
+import { type DayView, type Pattern, type Summary, findingText, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
 
 const SEV = {
   INFO: 'bg-zinc-100 text-zinc-700',
@@ -85,7 +85,7 @@ function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; own
             {d.premiumCents ? ` + ${usd(d.premiumCents)} premiums` : ''}
           </span>
         )}
-        {d.mealWaiver && <span className="text-zinc-600"> · meal waived</span>}
+        {d.mealWaiver && <span className="text-zinc-600"> · {t(lang, 'tcMealWaivedTag')}</span>}
         </span>
         {card && !adjusting && (d.source === 'SQUARE' || d.source === 'DRAFT') && (
           <button disabled={busy} onClick={() => setAdjusting(true)} className="min-h-[44px] w-full rounded border border-zinc-400 min-h-[44px] px-3 py-1.5 text-sm disabled:opacity-50 sm:w-auto">
@@ -112,7 +112,7 @@ function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; own
         <ul className="mt-2 flex flex-col gap-1">
           {d.findings.map((f, i) => (
             <li key={i} className={`rounded px-2 py-1 text-xs ${SEV[f.severity]}`}>
-              {f.message}
+              {findingText(lang, f)}
             </li>
           ))}
         </ul>
@@ -199,8 +199,8 @@ function PayrollTab({ lang }: { lang: Language }) {
           <table className="w-full min-w-[56rem] text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-zinc-500">
-                <th className="py-1">Name</th><th>Total h</th><th>Reg h</th><th>OT 1.5x h</th><th>DT 2x h</th>
-                <th>Wages</th><th>Premiums</th><th>Tips</th><th>Total</th><th>{t(lang, 'tcUnapproved')}</th><th>Commission (private)</th>
+                <th className="py-1">{t(lang, 'tcColName')}</th><th>{t(lang, 'tcColTotal')}</th><th>{t(lang, 'tcColReg')}</th><th>{t(lang, 'tcColOt')}</th><th>{t(lang, 'tcColDt')}</th>
+                <th>{t(lang, 'tcColWages')}</th><th>{t(lang, 'tcColPremiums')}</th><th>{t(lang, 'tcColTips')}</th><th>{t(lang, 'tcColSum')}</th><th>{t(lang, 'tcUnapproved')}</th><th>{t(lang, 'tcColCommission')}</th>
               </tr>
             </thead>
             <tbody>
@@ -215,7 +215,7 @@ function PayrollTab({ lang }: { lang: Language }) {
                   <td className="text-zinc-500">{usd(p.commissionComparisonCents)}</td>
                 </tr>
               ))}
-              {data.providers.length === 0 && <tr><td colSpan={11} className="py-3 text-zinc-500">No W2 workers.</td></tr>}
+              {data.providers.length === 0 && <tr><td colSpan={11} className="py-3 text-zinc-500">{t(lang, 'tcNoW2')}</td></tr>}
             </tbody>
           </table>
         </div>

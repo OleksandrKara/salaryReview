@@ -1,3 +1,6 @@
+import type { Language } from './types';
+import { t } from './i18n';
+
 export type Brk = { start: string; end: string; kind: string };
 export type Card = { start: string; end: string; breaks: Brk[] };
 export type Finding = { code: string; severity: 'INFO' | 'WARNING' | 'ALERT'; minutes: number; message: string };
@@ -118,4 +121,10 @@ export async function tcFetch<T>(path: string, method = 'GET', body?: unknown): 
     throw new Error(msg);
   }
   return (await res.json()) as T;
+}
+
+const STATIC_FINDINGS = ['MEAL_MISSING', 'MEAL_PREMIUM_OWED', 'MEAL_WAIVED', 'SECOND_MEAL_MISSING', 'REST_MISSING', 'REST_PREMIUM_OWED', 'OVERTIME_DAILY', 'DOUBLE_TIME_DAILY'];
+
+export function findingText(lang: Language, f: Finding): string {
+  return STATIC_FINDINGS.includes(f.code) ? t(lang, `tcFind${f.code}` as Parameters<typeof t>[1]) : f.message;
 }

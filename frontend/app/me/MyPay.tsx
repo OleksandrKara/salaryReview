@@ -5,7 +5,7 @@ import type { Language } from '../lib/types';
 import { t, tf } from '../lib/i18n';
 import VoidPanel from '../timecards/VoidPanel';
 import BreakQuestions, { complete, initStates, toPayload } from '../timecards/BreakQuestions';
-import { type DayView, type ProviderSummary, type Waiver, hhmm, hrs, laToIso, tcFetch, usd } from '../lib/timecards';
+import { type DayView, type ProviderSummary, type Waiver, findingText, hhmm, hrs, laToIso, tcFetch, usd } from '../lib/timecards';
 
 type Earnings = { from: string; to: string; timeBased: ProviderSummary; commissionComparisonCents: number | null };
 type Tone = 'approved' | 'waiting' | 'confirm' | 'review' | 'today' | 'off' | 'voided';
@@ -134,7 +134,7 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
             </div>
           )}
           {d.findings.filter((f) => f.severity !== 'INFO').map((f, i) => (
-            <div key={i} className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">{f.message}</div>
+            <div key={i} className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">{findingText(lang, f)}</div>
           ))}
           {d.premiumCents ? <div className="text-xs text-zinc-600">{t(lang, 'payPremium')}: {usd(d.premiumCents)}</div> : null}
           {voided ? (
