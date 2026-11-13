@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { hhmm, hrs, type DayView } from '../../lib/timecards';
+import BreakQuestions, { complete, initStates, toPayload, type QState } from '../../timecards/BreakQuestions';
 
 export default function ConfirmDay({ token }: { token: string }) {
   const [day, setDay] = useState<DayView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [rests, setRests] = useState(true);
+  const [qs, setQs] = useState<QState[]>([]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -14,7 +15,9 @@ export default function ConfirmDay({ token }: { token: string }) {
     fetch(`/api/public-timecards/${encodeURIComponent(token)}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(r.status === 404 ? 'This link has expired. Open the salon app to confirm your hours.' : 'Could not load your hours.');
-        setDay((await r.json()) as DayView);
+        const dv = (await r.json()) as DayView;
+        setDay(dv);
+        setQs(initStates(dv.breakQuestions ?? [], dv.workerAnswers ?? []));
       })
       .catch((e: Error) => setError(e.message));
   }, [token]);
@@ -26,7 +29,7 @@ export default function ConfirmDay({ token }: { token: string }) {
       const r = await fetch(`/api/public-timecards/${encodeURIComponent(token)}/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ restsTaken: rests }),
+        body: JSON.stringify({ restsTaken: !qs.some((x) => x.kind === 'REST' && x.answer === 'NO'), answers: toPayload(day!.date, qs) }),
       });
       if (!r.ok) {
         let msg = 'Could not confirm. Open the salon app to edit your hours.';
@@ -71,12 +74,11 @@ export default function ConfirmDay({ token }: { token: string }) {
         </div>
       ))}
       <p className="text-sm">Paid time: {hrs(day.paidMinutes)} h</p>
-      <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" checked={rests} onChange={(e) => setRests(e.target.checked)} className="mt-1" />
-        <span>I was able to take my rest breaks.</span>
-      </label>
+      {day.breakQuestions && day.breakQuestions.length > 0 && (
+        <BreakQuestions lang="EN" questions={day.breakQuestions} states={qs} onChange={setQs} />
+      )}
       {error && <p className="text-sm text-red-700">{error}</p>}
-      <button onClick={confirm} disabled={busy} className="w-full rounded-lg bg-black px-4 py-3 text-white disabled:opacity-50">
+      <button onClick={confirm} disabled={busy || !complete(qs)} className="min-h-[48px] w-full rounded-lg bg-black px-4 py-3 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 disabled:opacity-50">
         {busy ? 'Saving...' : 'These hours are correct'}
       </button>
       <p className="text-xs text-gray-500">Something is off? Open the salon app, My hours, and edit the day.</p>

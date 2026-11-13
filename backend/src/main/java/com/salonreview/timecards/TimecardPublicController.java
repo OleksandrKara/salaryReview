@@ -14,7 +14,7 @@ import java.util.Map;
 @RequestMapping("/api/public/timecards")
 public class TimecardPublicController {
 
-    public record ConfirmRequest(Boolean restsTaken, Boolean mealWaiver, String note) {}
+    public record ConfirmRequest(Boolean restsTaken, Boolean mealWaiver, String note, java.util.List<TimecardDtos.AnswerDto> answers) {}
 
     private final TimecardLinkSigner signer;
     private final TimecardDayService days;
@@ -40,9 +40,9 @@ public class TimecardPublicController {
     @PostMapping("/{token}/confirm")
     public DayView confirm(@PathVariable String token, @RequestBody(required = false) ConfirmRequest body) {
         var c = claim(token);
-        ConfirmRequest b = body == null ? new ConfirmRequest(null, null, null) : body;
+        ConfirmRequest b = body == null ? new ConfirmRequest(null, null, null, null) : body;
         return reviews.submit(c.businessId(), c.providerId(),
-                new SubmitRequest(c.date().toString(), null, null, null, null, b.mealWaiver(), b.restsTaken(), b.note()));
+                new SubmitRequest(c.date().toString(), null, null, null, null, b.mealWaiver(), b.restsTaken(), b.note(), b.answers()));
     }
 
     @ExceptionHandler(ResponseStatusException.class)

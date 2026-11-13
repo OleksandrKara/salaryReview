@@ -36,7 +36,7 @@ class TimecardVoidTest {
     }
 
     private DayCalc calc(String source, String status) {
-        return new DayCalc(DAY, 43L, source, List.of(), List.of(), null, 1850, null, status, false, false);
+        return new DayCalc(DAY, 43L, source, List.of(), List.of(), null, 1850, null, status, false, false, false);
     }
 
     @Test

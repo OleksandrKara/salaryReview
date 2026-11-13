@@ -5,7 +5,8 @@ import type { Language } from '../lib/types';
 import { t, tf } from '../lib/i18n';
 import VoidPanel from './VoidPanel';
 import AdjustPanel from './AdjustPanel';
-import { type DayView, type Summary, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
+import { reasonLabel } from './BreakQuestions';
+import { type DayView, type Pattern, type Summary, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
 
 const SEV = {
   INFO: 'bg-zinc-100 text-zinc-700',
@@ -92,6 +93,19 @@ function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; own
           </button>
         )}
       </div>
+      {(d.attentionReasons?.length ?? 0) > 0 || d.needsAttention ? (
+        <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <div className="font-medium">{t(lang, 'tcAttn')}</div>
+          <ul className="mt-1 list-disc pl-5 text-xs">
+            {d.attentionReasons.map((r) => <li key={r} className="break-words">{t(lang, `tcAttn${r}` as 'tcAttnMEAL_MISSING')}</li>)}
+          </ul>
+        </div>
+      ) : null}
+      {(d.workerAnswers ?? []).filter((a) => a.reason).map((a) => (
+        <div key={`${a.kind}${a.index}`} className="mt-1 break-words text-sm text-zinc-700">
+          {t(lang, 'tcWorkerSaid')} ({t(lang, a.kind === 'MEAL' ? 'tcBqMeal' : 'tcBqRest')}): {reasonLabel(lang, a.reason)}
+        </div>
+      ))}
       {fixed && d.status === 'NEEDS_REVIEW' && <div className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-sm text-amber-900">{t(lang, 'tcFixedNotice')}</div>}
       {d.note && <div className="mt-1 text-sm italic text-zinc-600">{d.note}</div>}
       {d.findings.length > 0 && (
@@ -127,8 +141,8 @@ function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; own
             {t(lang, 'tcVoid')}
           </button>
         )}
-        <label className="flex items-center gap-1 text-sm">
-          <input type="checkbox" checked={d.restNotProvided} disabled={busy} onChange={(e) => post('rest-not-provided', { ...base, notProvided: e.target.checked })} />
+        <label className="flex min-h-[44px] items-center gap-2 text-sm">
+          <input className="h-5 w-5 shrink-0" type="checkbox" checked={d.restNotProvided} disabled={busy} onChange={(e) => post('rest-not-provided', { ...base, notProvided: e.target.checked })} />
           {t(lang, 'tcRestNot')}
         </label>
       </div>
@@ -210,7 +224,24 @@ function PayrollTab({ lang }: { lang: Language }) {
   );
 }
 
-type Filter = 'pending' | 'approved' | 'all';
+type Filter = 'pending' | 'approved' | 'attention' | 'all';
+
+function PatternBanner({ lang, patterns }: { lang: Language; patterns: Pattern[] }) {
+  const hot = patterns.filter((p) => p.level !== 'NONE');
+  if (hot.length === 0) return null;
+  return (
+    <section aria-label={t(lang, 'tcPatternTitle')} className="mb-4 rounded-lg border border-zinc-200 bg-white p-3">
+      <h2 className="mb-2 text-sm font-medium">{t(lang, 'tcPatternTitle')}</h2>
+      <ul className="flex flex-wrap gap-2">
+        {hot.map((p) => (
+          <li key={p.providerId} className={`min-w-0 max-w-full break-words rounded-full px-3 py-1.5 text-sm ring-1 ${p.level === 'RED' ? 'bg-red-50 text-red-800 ring-red-300' : 'bg-amber-50 text-amber-900 ring-amber-300'}`}>
+            <span className="font-medium">{p.name}</span> · {tf(lang, 'tcPatternDays', { n: String(p.flaggedDays) })}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export default function TimecardsApproval({ role, language, businessName }: { role: string; language: Language; businessName: string }) {
   const owner = role === 'OWNER';
@@ -223,6 +254,7 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
   const [date, setDate] = useState('');
   const [fixedKeys, setFixedKeys] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
+  const [patterns, setPatterns] = useState<Pattern[]>([]);
   const keyOf = (d: DayView) => `${d.providerId}-${d.date}`;
   const onFixed = (d: DayView) => {
     setFixedKeys((k) => [...k, keyOf(d)]);
@@ -233,6 +265,9 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
     tcFetch<DayView[]>(`queue?days=${period}&scope=all`).then(setRows).catch((e) => setErr(e.message));
   }, [period]);
   useEffect(load, [load]);
+  useEffect(() => {
+    tcFetch<Pattern[]>('patterns').then(setPatterns).catch(() => setPatterns([]));
+  }, [rows]);
   const employees = useMemo(() => {
     const m = new Map<number, string>();
     rows?.forEach((d) => m.set(d.providerId, d.providerName));
@@ -245,9 +280,10 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
   const live = scoped.filter((d) => d.source !== 'VOIDED');
   const pendingN = live.filter((d) => d.status !== 'APPROVED').length;
   const approvedN = live.filter((d) => d.status === 'APPROVED').length;
-  const shown = live.filter((d) => filter === 'all' || (filter === 'approved') === (d.status === 'APPROVED'));
+  const attentionN = live.filter((d) => d.needsAttention).length;
+  const shown = live.filter((d) => filter === 'all' || (filter === 'attention' ? d.needsAttention : (filter === 'approved') === (d.status === 'APPROVED')));
   const voided = scoped.filter((d) => d.source === 'VOIDED');
-  const chip = (on: boolean) => `min-h-[44px] rounded px-3 py-1.5 text-sm ${on ? 'bg-zinc-900 text-white' : 'border border-zinc-300'}`;
+  const chip = (on: boolean) => `min-h-[44px] rounded px-3 py-1.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2 ${on ? 'bg-zinc-900 text-white' : 'border border-zinc-300'}`;
   const sel = 'min-h-[44px] w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm';
   return (
     <div>
@@ -264,9 +300,10 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
         <PayrollTab lang={language} />
       ) : (
         <>
+          <PatternBanner lang={language} patterns={patterns} />
           <div className="mb-3 flex flex-wrap gap-2">
-            {([['pending', 'tcTabPending', pendingN], ['approved', 'tcTabApproved', approvedN], ['all', 'tcTabAll', pendingN + approvedN]] as const).map(([k, label, n]) => (
-              <button key={k} onClick={() => setFilter(k)} className={chip(filter === k)}>
+            {([['pending', 'tcTabPending', pendingN], ['attention', 'tcTabAttention', attentionN], ['approved', 'tcTabApproved', approvedN], ['all', 'tcTabAll', pendingN + approvedN]] as const).map(([k, label, n]) => (
+              <button key={k} onClick={() => setFilter(k)} aria-pressed={filter === k} className={chip(filter === k)}>
                 {t(language, label)} ({n})
               </button>
             ))}

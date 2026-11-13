@@ -1,6 +1,9 @@
 export type Brk = { start: string; end: string; kind: string };
 export type Card = { start: string; end: string; breaks: Brk[] };
 export type Finding = { code: string; severity: 'INFO' | 'WARNING' | 'ALERT'; minutes: number; message: string };
+export type BreakQuestion = { kind: 'MEAL' | 'REST'; index: number; assumedStart: string | null; assumedEnd: string | null };
+export type Answer = { kind: 'MEAL' | 'REST'; index: number; answer: 'YES' | 'NO' | 'DIFF'; start: string | null; end: string | null; reason: string | null };
+export type Pattern = { providerId: number; name: string; flaggedDays: number; level: 'NONE' | 'YELLOW' | 'RED' };
 export type DayView = {
   date: string;
   providerId: number;
@@ -24,6 +27,11 @@ export type DayView = {
   payCents: number | null;
   premiumCents: number | null;
   voidReason?: string | null;
+  breakQuestions: BreakQuestion[];
+  breaksAssumed: boolean;
+  needsAttention: boolean;
+  attentionReasons: string[];
+  workerAnswers: Answer[];
 };
 export type Approver = { userId: number; username: string; email: string | null; role: string };
 export type ProviderSetup = {

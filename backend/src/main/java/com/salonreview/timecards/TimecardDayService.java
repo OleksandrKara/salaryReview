@@ -39,12 +39,13 @@ public class TimecardDayService {
 
     public record ReviewRow(long id, String mode, String status, String proposedJson, boolean mealWaiver,
                             boolean restConfirmed, boolean restNotProvided, String note, Integer squareVersion,
-                            String voidReason) {}
+                            String voidReason, String confirmedBreaksJson, String answersJson) {}
 
     /** Everything the policy and the summary need for one day. */
     public record DayCalc(LocalDate date, Long providerId, String source, List<DayTimecard> timecards,
                           List<DraftAppointment> appointments, DayAnalysis analysis, Integer rateCents,
-                          ReviewRow review, String status, boolean changedInSquare, boolean waiverOnFile) {
+                          ReviewRow review, String status, boolean changedInSquare, boolean waiverOnFile,
+                          boolean generatedBreaks) {
         public long paidMinutes() {
             return analysis == null ? 0 : analysis.paidMinutes();
         }
@@ -58,6 +59,7 @@ public class TimecardDayService {
 
         List<DayTimecard> cards = squareCards(businessId, providerId, date);
         String source;
+        boolean generated = false;
         if (!cards.isEmpty()) {
             source = "SQUARE";
         } else if (review != null && "VOIDED".equals(review.status())) {
@@ -70,20 +72,25 @@ public class TimecardDayService {
             if (draft.isPresent()) {
                 cards = List.of(draft.get().timecard());
                 source = "DRAFT";
+                generated = true;
             } else {
                 source = "NONE";
             }
         }
 
+        if (review != null && review.confirmedBreaksJson() != null && !cards.isEmpty()) {
+            cards = applyConfirmed(cards, review.confirmedBreaksJson());
+        }
+        List<DayTimecard> evidence = generated ? stripRests(cards) : cards;
         boolean mealWaiver = review != null && review.mealWaiver();
         boolean restNotProvided = review != null && review.restNotProvided();
         DayAnalysis analysis = null;
-        if (!cards.isEmpty()) {
+        if (!evidence.isEmpty()) {
             int r = rate == null ? 0 : rate;
             LocalDate ack = freeGapAckSignedAt(providerId);
-            analysis = policy.analyzeDay(new DayInput(date, cards, mealWaiver, restNotProvided, 0, ack), r);
+            analysis = policy.analyzeDay(new DayInput(date, evidence, mealWaiver, restNotProvided, 0, ack), r);
             if (review != null && review.restConfirmed() && analysis.restsRequired() > analysis.restsEvidenced()) {
-                analysis = policy.analyzeDay(new DayInput(date, cards, mealWaiver, restNotProvided,
+                analysis = policy.analyzeDay(new DayInput(date, evidence, mealWaiver, restNotProvided,
                         analysis.restsRequired() - analysis.restsEvidenced(), ack), r);
             }
         }
@@ -103,7 +110,7 @@ public class TimecardDayService {
             }
         }
         return new DayCalc(date, providerId, source, cards, appts, analysis, rate, review, status, changed,
-                activeWaiver(businessId, providerId));
+                activeWaiver(businessId, providerId), generated);
     }
 
     public DayView view(Long businessId, Long providerId, LocalDate date, boolean money) {
@@ -129,24 +136,182 @@ public class TimecardDayService {
         }
         ReviewRow rv = c.review();
         Integer payCents = c.rateCents() == null ? null : CaWagePolicy.cents(pay, c.rateCents());
+        List<AnswerDto> answers = parseAnswers(rv == null ? null : rv.answersJson());
+        List<String> reasons = attentionReasons(c, a, answers);
+        boolean editableDay = !"APPROVED".equals(c.status()) && !"VOIDED".equals(c.status()) && !"NONE".equals(c.source());
+        List<BreakQuestionDto> questions = editableDay && a != null
+                ? breakQuestions(c.timecards(), a, paid, c.generatedBreaks(), rv != null && rv.mealWaiver())
+                : List.of();
         return new DayView(date.toString(), providerId, name, c.source(), c.status(), c.changedInSquare(),
                 cardDtos(c.timecards()), apptDtos(c.appointments()), paid, pay.regularMinutes(),
                 pay.overtimeMinutes(), pay.doubleTimeMinutes(),
                 rv != null && rv.mealWaiver(), rv != null && rv.restConfirmed(), rv != null && rv.restNotProvided(),
                 c.waiverOnFile(), rv == null ? null : rv.note(), findings,
                 money ? c.rateCents() : null, money ? payCents : null, money ? premium : null,
-                rv == null ? null : rv.voidReason());
+                rv == null ? null : rv.voidReason(), questions, c.generatedBreaks() && !questions.isEmpty(),
+                !reasons.isEmpty(), reasons, answers);
+    }
+
+    // ---- break questions ----
+
+    private static final java.util.Set<FindingCode> ATTENTION_CODES = java.util.EnumSet.of(FindingCode.MEAL_MISSING,
+            FindingCode.MEAL_PREMIUM_OWED, FindingCode.SECOND_MEAL_MISSING, FindingCode.REST_MISSING,
+            FindingCode.REST_PREMIUM_OWED);
+
+    static int mealsRequired(long paid, boolean waiver) {
+        int n = paid > RULES.secondMealRequiredAfterMinutes() ? 2 : paid > RULES.mealRequiredAfterMinutes() ? 1 : 0;
+        if (waiver) {
+            if (paid <= RULES.mealWaiverMaxMinutes()) return 0;
+            if (paid > RULES.secondMealRequiredAfterMinutes() && paid <= RULES.secondMealWaiverMaxMinutes()) return Math.min(n, 1);
+        }
+        return n;
+    }
+
+    /**
+     * Break questions the worker must answer. Only breaks the CA rules require for the paid length of the day are asked.
+     * Auto-proposed breaks (generated) are always asked as assumptions; breaks from Square or already confirmed are
+     * evidence and are asked again only where the rules are not met.
+     */
+    static List<BreakQuestionDto> breakQuestions(List<DayTimecard> cards, DayAnalysis a, long paid, boolean generated, boolean waiver) {
+        int meals = mealsRequired(paid, waiver);
+        int rests = RULES.restsRequired(paid);
+        boolean askMeals = meals > 0;
+        boolean askRests = rests > 0;
+        if (!generated) {
+            boolean mealGap = a.findings().stream().anyMatch(f -> f.code() == FindingCode.MEAL_MISSING
+                    || f.code() == FindingCode.SECOND_MEAL_MISSING);
+            askMeals = meals > 0 && mealGap;
+            askRests = rests > 0 && a.restsEvidenced() < rests;
+        }
+        List<TimecardBreak> mealBreaks = new ArrayList<>();
+        List<TimecardBreak> restBreaks = new ArrayList<>();
+        for (DayTimecard c : cards) {
+            for (TimecardBreak b : c.breaks()) {
+                (b.kind() == BreakKind.UNPAID ? mealBreaks : restBreaks).add(b);
+            }
+        }
+        Comparator<TimecardBreak> byStart = Comparator.comparing(b -> b.span().start());
+        mealBreaks.sort(byStart);
+        restBreaks.sort(byStart);
+        List<BreakQuestionDto> out = new ArrayList<>();
+        if (askMeals) {
+            for (int i = 0; i < meals; i++) out.add(question("MEAL", i, i < mealBreaks.size() ? mealBreaks.get(i) : null));
+        }
+        if (askRests) {
+            for (int i = 0; i < rests; i++) out.add(question("REST", i, i < restBreaks.size() ? restBreaks.get(i) : null));
+        }
+        return out;
+    }
+
+    private static BreakQuestionDto question(String kind, int i, TimecardBreak b) {
+        return new BreakQuestionDto(kind, i, b == null ? null : b.span().start().toString(),
+                b == null ? null : b.span().end().toString());
+    }
+
+    /** Required-break shortfalls the manager should look at: rule findings plus the worker's own "no" answers. */
+    List<String> attentionReasons(DayCalc c, DayAnalysis a, List<AnswerDto> answers) {
+        ReviewRow rv = c.review();
+        boolean answered = rv != null && rv.answersJson() != null;
+        boolean reviewed = rv != null && (answered || java.util.Set.of("WORKER_CONFIRMED", "APPROVED",
+                "CONFIRMED_PENDING_WRITE").contains(c.status()));
+        if (!reviewed || a == null || "VOIDED".equals(c.status())) return List.of();
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        for (Finding f : a.findings()) {
+            if (ATTENTION_CODES.contains(f.code())) out.add(f.code().name());
+        }
+        for (AnswerDto an : answers) {
+            if ("NO".equals(an.answer())) out.add("MEAL".equals(an.kind()) ? "WORKER_NO_MEAL" : "WORKER_NO_REST");
+        }
+        return new ArrayList<>(out);
+    }
+
+    static List<AnswerDto> parseAnswers(String json) {
+        List<AnswerDto> out = new ArrayList<>();
+        if (json == null) return out;
+        try {
+            for (JsonNode n : MAPPER.readTree(json)) {
+                out.add(new AnswerDto(n.path("kind").asText(), n.path("index").asInt(), n.path("answer").asText(),
+                        n.hasNonNull("start") ? n.get("start").asText() : null,
+                        n.hasNonNull("end") ? n.get("end").asText() : null,
+                        n.hasNonNull("reason") ? n.get("reason").asText() : null));
+            }
+        } catch (Exception ignored) {
+            // unreadable answers are shown as none
+        }
+        return out;
+    }
+
+    static String answersJson(List<AnswerDto> answers) {
+        ArrayNode arr = MAPPER.createArrayNode();
+        for (AnswerDto a : answers) {
+            ObjectNode n = arr.addObject();
+            n.put("kind", a.kind());
+            n.put("index", a.index());
+            n.put("answer", a.answer());
+            if (a.start() != null) n.put("start", a.start());
+            if (a.end() != null) n.put("end", a.end());
+            if (a.reason() != null) n.put("reason", a.reason());
+        }
+        return arr.toString();
+    }
+
+    static String confirmedBreaksJson(List<TimecardBreak> breaks) {
+        ObjectNode root = MAPPER.createObjectNode();
+        ArrayNode arr = root.putArray("breaks");
+        for (TimecardBreak b : breaks) {
+            ObjectNode n = arr.addObject();
+            n.put("start", b.span().start().toString());
+            n.put("end", b.span().end().toString());
+            n.put("kind", b.kind().name());
+        }
+        return root.toString();
+    }
+
+    static List<TimecardBreak> parseConfirmedBreaks(String json) {
+        List<TimecardBreak> out = new ArrayList<>();
+        try {
+            for (JsonNode b : MAPPER.readTree(json).path("breaks")) {
+                out.add(new TimecardBreak(new TimeSpan(Instant.parse(b.get("start").asText()),
+                        Instant.parse(b.get("end").asText())), BreakKind.valueOf(b.get("kind").asText())));
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Unreadable confirmed breaks", e);
+        }
+        return out;
+    }
+
+    /** The worker's confirmed breaks replace the card's breaks; each lands on the card that contains it. */
+    static List<DayTimecard> applyConfirmed(List<DayTimecard> cards, String json) {
+        List<TimecardBreak> confirmed = parseConfirmedBreaks(json);
+        List<DayTimecard> out = new ArrayList<>();
+        for (DayTimecard c : cards) {
+            List<TimecardBreak> bs = new ArrayList<>();
+            for (TimecardBreak b : confirmed) {
+                if (!b.span().start().isBefore(c.span().start()) && !b.span().end().isAfter(c.span().end())) bs.add(b);
+            }
+            bs.sort(Comparator.comparing(b -> b.span().start()));
+            out.add(new DayTimecard(c.span(), bs));
+        }
+        return out;
+    }
+
+    static List<DayTimecard> stripRests(List<DayTimecard> cards) {
+        List<DayTimecard> out = new ArrayList<>();
+        for (DayTimecard c : cards) {
+            out.add(new DayTimecard(c.span(), c.breaks().stream().filter(b -> b.kind() != BreakKind.PAID_REST).toList()));
+        }
+        return out;
     }
 
     // ---- loading ----
 
     public Optional<ReviewRow> review(Long businessId, Long providerId, LocalDate date) {
         List<ReviewRow> rows = jdbc.query("SELECT id, mode, status, proposed_json, meal_waiver, rest_confirmed, "
-                        + "rest_not_provided, note, square_version, void_reason FROM timecard_review "
+                        + "rest_not_provided, note, square_version, void_reason, confirmed_breaks_json, break_answers_json FROM timecard_review "
                         + "WHERE business_id = ? AND provider_id = ? AND work_date = ?",
                 (rs, i) -> new ReviewRow(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
                         rs.getBoolean(5), rs.getBoolean(6), rs.getBoolean(7), rs.getString(8),
-                        (Integer) rs.getObject(9), rs.getString(10)),
+                        (Integer) rs.getObject(9), rs.getString(10), rs.getString(11), rs.getString(12)),
                 businessId, providerId, java.sql.Date.valueOf(date));
         return rows.stream().findFirst();
     }
@@ -157,6 +322,17 @@ public class TimecardDayService {
                         + "AND (effective_to IS NULL OR effective_to >= ?) ORDER BY effective_from DESC LIMIT 1",
                 Integer.class, businessId, providerId, java.sql.Date.valueOf(date), java.sql.Date.valueOf(date));
         return r.isEmpty() ? null : r.get(0);
+    }
+
+    /** Policy analysis of candidate cards; generated (auto-proposed) rests are not evidence. */
+    DayAnalysis analyze(Long providerId, List<DayTimecard> cards, LocalDate date, Integer rate, boolean generated,
+                        boolean mealWaiver) {
+        return policy.analyzeDay(new DayInput(date, generated ? stripRests(cards) : cards, mealWaiver, false, 0,
+                freeGapAckSignedAt(providerId)), rate == null ? 0 : rate);
+    }
+
+    List<DayTimecard> mirrorCards(Long businessId, Long providerId, LocalDate date) {
+        return squareCards(businessId, providerId, date);
     }
 
     /** Paid minutes of a candidate set of timecards (used to validate worker edits). */
