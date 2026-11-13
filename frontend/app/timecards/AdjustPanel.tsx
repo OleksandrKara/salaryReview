@@ -5,14 +5,20 @@ import type { Language } from '../lib/types';
 import { t } from '../lib/i18n';
 import { hhmm, laToIso } from '../lib/timecards';
 
-export default function AdjustPanel({ lang, date, start, end, fromSquare, hasMeal, busy, err, onConfirm, onClose }: {
-  lang: Language; date: string; start: string; end: string; fromSquare: boolean; hasMeal: boolean; busy: boolean; err: string;
-  onConfirm: (startIso: string, endIso: string, note: string, removeMeal: boolean) => void; onClose: () => void;
+export default function AdjustPanel({ lang, date, start, end, fromSquare, meals, busy, err, onConfirm, onClose }: {
+  lang: Language; date: string; start: string; end: string; fromSquare: boolean; meals: { start: string; end: string }[]; busy: boolean; err: string;
+  onConfirm: (startIso: string, endIso: string, note: string, breaks: { start: string; end: string }[] | null) => void; onClose: () => void;
 }) {
   const [s, setS] = useState(hhmm(start));
   const [e, setE] = useState(hhmm(end));
   const [note, setNote] = useState('');
-  const [noMeal, setNoMeal] = useState(false);
+  const initial = meals.map((m) => ({ s: hhmm(m.start), e: hhmm(m.end) }));
+  const [rows, setRows] = useState(initial);
+  const changed = JSON.stringify(rows) !== JSON.stringify(initial);
+  const setRow = (i: number, k: 's' | 'e', v: string) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const dayOf = (time: string) => (s && time < s ? nextDay(date) : date);
+  const rowsOk = rows.every((r) => r.s && r.e && r.e > r.s);
+  const breaksIso = changed ? rows.map((r) => ({ start: laToIso(dayOf(r.s), r.s), end: laToIso(dayOf(r.e), r.e) })) : null;
   const endIso = e && s && e <= s ? laToIso(nextDay(date), e) : e ? laToIso(date, e) : '';
   const startIso = s ? laToIso(date, s) : '';
   const inputCls = 'w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-base sm:text-sm';
@@ -30,12 +36,23 @@ export default function AdjustPanel({ lang, date, start, end, fromSquare, hasMea
           <input type="time" value={e} onChange={(ev) => setE(ev.target.value)} className={inputCls} />
         </label>
       </div>
-      {hasMeal && (
-        <label className="flex items-start gap-2 text-sm text-zinc-800">
-          <input type="checkbox" checked={noMeal} onChange={(ev) => setNoMeal(ev.target.checked)} className="mt-1" />
-          {t(lang, 'tcAdjustNoMeal')}
-        </label>
-      )}
+      <div className="flex flex-col gap-2">
+        <div className="text-xs text-zinc-700">{t(lang, 'tcAdjustBreaks')}</div>
+        {rows.length === 0 && <div className="text-xs text-zinc-500">{t(lang, 'tcAdjustNoBreaks')}</div>}
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input type="time" aria-label={t(lang, 'tcAdjustBreakFrom')} value={r.s} onChange={(ev) => setRow(i, 's', ev.target.value)} className={inputCls} />
+            <span aria-hidden>-</span>
+            <input type="time" aria-label={t(lang, 'tcAdjustBreakTo')} value={r.e} onChange={(ev) => setRow(i, 'e', ev.target.value)} className={inputCls} />
+            <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} className="shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm">
+              {t(lang, 'tcAdjustBreakRemove')}
+            </button>
+          </div>
+        ))}
+        <button type="button" onClick={() => setRows([...rows, { s: '', e: '' }])} className="w-full self-start rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm sm:w-auto">
+          {t(lang, 'tcAdjustBreakAdd')}
+        </button>
+      </div>
       <label className="flex flex-col gap-1 text-xs text-zinc-700">
         {t(lang, 'tcAdjustReason')}
         <input maxLength={300} value={note} onChange={(ev) => setNote(ev.target.value)} placeholder={t(lang, 'tcAdjustReasonPh')} className={inputCls} />
@@ -43,8 +60,8 @@ export default function AdjustPanel({ lang, date, start, end, fromSquare, hasMea
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <button
           type="button"
-          disabled={busy || !startIso || !endIso || !note.trim()}
-          onClick={() => onConfirm(startIso, endIso, note.trim(), noMeal)}
+          disabled={busy || !startIso || !endIso || !note.trim() || !rowsOk}
+          onClick={() => onConfirm(startIso, endIso, note.trim(), breaksIso)}
           className="w-full rounded-md bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 sm:w-auto"
         >
           {t(lang, 'tcAdjustSave')}

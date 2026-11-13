@@ -134,10 +134,10 @@ function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; own
       </div>
       {d.source === 'SQUARE' && <div className="mt-2 text-xs text-zinc-500">{t(lang, 'tcVoidSquare')}</div>}
       {adjusting && card && (
-        <AdjustPanel lang={lang} date={d.date} start={card.start} end={card.end} fromSquare={d.source === 'SQUARE'} hasMeal={card.breaks.some((b) => b.kind === 'UNPAID')} busy={busy} err={err}
+        <AdjustPanel lang={lang} date={d.date} start={card.start} end={card.end} fromSquare={d.source === 'SQUARE'} meals={card.breaks.filter((b) => b.kind === 'UNPAID')} busy={busy} err={err}
           onClose={() => setAdjusting(false)}
-          onConfirm={async (start, end, note, removeMeal) => {
-            if (await post('adjust', { ...base, start, end, note, removeMeal })) {
+          onConfirm={async (start, end, note, breaks) => {
+            if (await post('adjust', { ...base, start, end, note, breaks })) {
               setAdjusting(false);
               onFixed?.(d);
             }
