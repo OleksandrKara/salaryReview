@@ -159,6 +159,7 @@ const STRINGS = {
   tcAdjustHintDraft: { EN: 'The proposed hours change. The day returns to review: check it and approve again.', RU: 'Предложенные часы изменятся. День вернётся на проверку: проверьте и утвердите снова.' },
   tcAdjustStart: { EN: 'Start', RU: 'Начало' },
   tcAdjustEnd: { EN: 'End', RU: 'Конец' },
+  tcAdjustNoMeal: { EN: 'No meal break was taken: remove the unpaid meal from this day', RU: 'Обеда не было: убрать неоплачиваемый обед из этого дня' },
   tcAdjustReason: { EN: 'Reason', RU: 'Причина' },
   tcAdjustReasonPh: { EN: 'e.g. complex pedicure ran longer', RU: 'например, сложный педикюр занял больше времени' },
   tcAdjustSave: { EN: 'Save hours', RU: 'Сохранить часы' },
