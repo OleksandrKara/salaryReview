@@ -68,7 +68,7 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
   const voided = d.source === 'VOIDED';
   const manual = d.source === 'DRAFT' && d.appointments.length === 0 && d.status !== 'APPROVED' && tone !== 'today';
   const { wd, md } = weekday(d.date, lang);
-  const field = 'min-h-[44px] w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 sm:text-sm';
+  const field = 'block min-h-[44px] w-full min-w-0 max-w-full appearance-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 sm:text-sm';
   const waived = waiver && d.paidMinutes <= 360;
   const shownIdx = (d.breakQuestions ?? []).map((q, i) => i).filter((i) => !(waived && d.breakQuestions[i].kind === 'MEAL'));
   const shownQs = shownIdx.map((i) => d.breakQuestions[i]);
@@ -120,7 +120,7 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
           <div className="text-xs text-zinc-500 tabular-nums">
             {hrs(d.paidMinutes)} {t(lang, 'tcHours')}
             {d.overtimeMinutes > 0 && ` · OT ${hrs(d.overtimeMinutes + d.doubleTimeMinutes)}`}
-            {d.payCents != null && ` · ${usd(d.payCents + (d.premiumCents ?? 0))}`}
+            {d.payCents != null && ` · ${usd(d.payCents)}`}
           </div>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ring-1 ${TONE[tone].chip}`}>{label(tone, lang)}</span>
@@ -133,10 +133,9 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
               {d.timecards.flatMap((c) => c.breaks).map((b) => `${b.kind === 'UNPAID' ? t(lang, 'payMeal') : t(lang, 'payRest')} ${hhmm(b.start)}–${hhmm(b.end)}`).join(', ')}
             </div>
           )}
-          {d.findings.filter((f) => f.severity !== 'INFO').map((f, i) => (
+          {d.findings.filter((f) => f.severity !== 'INFO' && !HIDDEN_FROM_WORKER.includes(f.code)).map((f, i) => (
             <div key={i} className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">{findingText(lang, f)}</div>
           ))}
-          {d.premiumCents ? <div className="text-xs text-zinc-600">{t(lang, 'payPremium')}: {usd(d.premiumCents)}</div> : null}
           {voided ? (
             <div className="text-xs text-zinc-500">
               {t(lang, 'payVoidedNote')}
@@ -185,7 +184,7 @@ function AddShift({ lang, from, to, onDone }: { lang: Language; from: string; to
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const field = 'min-h-[44px] w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 sm:text-sm';
+  const field = 'block min-h-[44px] w-full min-w-0 max-w-full appearance-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 sm:text-sm';
   const send = async () => {
     setBusy(true);
     setErr('');
@@ -337,6 +336,9 @@ function WaiverBlock({ lang, w, reload }: { lang: Language; w: Waiver; reload: (
     </details>
   );
 }
+
+// Meal/rest findings and their premiums are for the manager only: showing a payout for skipped breaks would discourage taking them.
+const HIDDEN_FROM_WORKER = ['MEAL_MISSING', 'MEAL_PREMIUM_OWED', 'MEAL_WAIVED', 'SECOND_MEAL_MISSING', 'REST_MISSING', 'REST_PREMIUM_OWED'];
 
 export default function MyPay({ language, year, month }: { language: Language; year: number; month: number }) {
   const [days, setDays] = useState<DayView[] | null>(null);
