@@ -766,9 +766,8 @@ public class TelegramNotificationService {
         LeadAlertContext ctx = leadContext(businessId, n.phoneNumber(), null);
         boolean hasPhone = n.phoneNumber() != null && !n.phoneNumber().replaceAll("\\D", "").isEmpty();
         String chat = hasPhone ? chatLink(n.phoneNumber(), businessId) : null;
-        // The CRM lead is often created only after this alert, so the phone link is used even then;
-        // the page resolves it once the lead exists and falls back to the leads list.
-        String lead = hasPhone ? leadLink(n.phoneNumber(), businessId) : leadUrl(ctx, n.phoneNumber(), businessId);
+        String lead = ctx.found() && ctx.leadId() != null ? leadLinkById(ctx.leadId(), businessId)
+                : hasPhone ? leadLink(n.phoneNumber(), businessId) : leadUrl(ctx, n.phoneNumber(), businessId);
         return sendLeadAlert(businessId, formatConsultationRequestMessage(n, ctx, chat, lead), lead);
     }
 

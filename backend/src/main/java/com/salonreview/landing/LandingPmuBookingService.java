@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonreview.marketing.LeadIntakeService;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.telegram.ConsultationRequestNotification;
 import com.salonreview.telegram.TelegramNotificationService;
@@ -48,14 +49,17 @@ public class LandingPmuBookingService {
     private final TelegramNotificationService telegram;
     private final TwilioSmsService sms;
     private final GeoIpService geoIp;
+    private final LeadIntakeService leadIntake;
 
     public LandingPmuBookingService(LandingSquareGateway square, LandingFourHandService customers,
-                                    TelegramNotificationService telegram, TwilioSmsService sms, GeoIpService geoIp) {
+                                    TelegramNotificationService telegram, TwilioSmsService sms, GeoIpService geoIp,
+                                    LeadIntakeService leadIntake) {
         this.square = square;
         this.customers = customers;
         this.telegram = telegram;
         this.sms = sms;
         this.geoIp = geoIp;
+        this.leadIntake = leadIntake;
     }
 
     private LandingDefinitions.Consultation definition(Request r) {
@@ -107,6 +111,7 @@ public class LandingPmuBookingService {
         String artist = artistName(businessId, r.teamMemberId());
         boolean online = d.slug().startsWith("online");
         notifyClient(businessId, r, startAt, online, locationAddress, artist);
+        captureLead(businessId, r, booking.path("id").asText());
         notifyStaff(businessId, r, startAt, online, locationAddress, artist);
         return new Confirmation(booking.path("id").asText(), booking.path("status").asText(), startAt, d.name(), artist,
                 customerId);
@@ -171,6 +176,17 @@ public class LandingPmuBookingService {
                     "detailsClause", detailsClause(startAt, online, address, artist)));
         } catch (RuntimeException e) {
             log.warn("Consultation confirmation SMS failed (booking unaffected): {}", e.getMessage());
+        }
+    }
+
+    private void captureLead(long businessId, Request r, String bookingId) {
+        try {
+            String source = r.tracking() == null ? null : LandingTracking.classify(r.tracking());
+            String name = ((r.givenName() == null ? "" : r.givenName()) + " " + (r.familyName() == null ? "" : r.familyName())).trim();
+            leadIntake.capture(new LeadIntakeService.Lead(businessId, "Booking", source, r.phone(), r.email(), name,
+                    "Consultation booking", "booking:" + bookingId, null));
+        } catch (RuntimeException e) {
+            log.warn("Consultation lead capture failed (booking unaffected): {}", e.getMessage());
         }
     }
 

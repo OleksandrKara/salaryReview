@@ -92,7 +92,8 @@ class LandingPmuConsultationTest {
         LandingWriteRepository repository = new LandingWriteRepository(jdbc);
         LandingAbuseGuard guard = new LandingAbuseGuard(repository, new TurnstileVerifier("", "http://127.0.0.1:1/unused"));
         LandingFourHandService fourHand = new LandingFourHandService(provider, telegram, sms, businesses);
-        LandingPmuBookingService bookings = new LandingPmuBookingService(gateway, fourHand, telegram, sms, geoIp);
+        LandingPmuBookingService bookings = new LandingPmuBookingService(gateway, fourHand, telegram, sms, geoIp,
+                org.mockito.Mockito.mock(com.salonreview.marketing.LeadIntakeService.class));
         mvc = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, true, false, new LandingBusinessResolver(businesses),
                 repository, guard, fourHand, bookings, null, null)).setControllerAdvice(new LandingWriteAdvice(org.mockito.Mockito.mock(LandingFailureAlerter.class))).build();
         disabled = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, false, false,
