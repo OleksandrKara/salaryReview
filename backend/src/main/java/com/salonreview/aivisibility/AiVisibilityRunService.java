@@ -99,7 +99,52 @@ public class AiVisibilityRunService {
         return execute(settings, questions, run);
     }
 
+    /** Start of the current scheduled-run week: the latest Monday 06:00 PT at or before now. */
+    static Instant weekStart(Instant now) {
+        java.time.ZonedDateTime t = now.atZone(PT);
+        java.time.ZonedDateTime monday = t.toLocalDate().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+                .atTime(6, 0).atZone(PT);
+        if (monday.toInstant().isAfter(now)) monday = monday.minusWeeks(1);
+        return monday.toInstant();
+    }
+
+    /** Catches up a weekly run that stopped early (budget, outage): background re-check of the ACTIVE
+     * questions that lack a finished check on some engine or point since this week's start, skipping the
+     * checks already paid for. Empty when nothing is missing, or when a run is already in progress. */
+    public Optional<AiVisibilityRun> startMissingRecheck(Long businessId) {
+        AiVisibilitySettings settings = settingsRepo.findById(businessId)
+                .orElseThrow(() -> new IllegalStateException("AI visibility is not configured for this business"));
+        Instant since = weekStart(Instant.now());
+        Instant activeAfter = Instant.now().minus(STALE_AFTER);
+        boolean busy = runs.findByFinishedAtIsNullAndStartedAtBefore(Instant.now()).stream()
+                .anyMatch(r -> r.getBusinessId().equals(businessId) && r.getClaimedAt() != null && r.getClaimedAt().isAfter(activeAfter));
+        if (busy) return Optional.empty();
+        java.util.Set<String> done = new java.util.HashSet<>();
+        for (AiVisibilityCheck c : checks.findByBusinessIdAndCheckedAtAfterOrderByCheckedAtDesc(businessId, since)) {
+            if (c.getStatus() != AiVisibilityCheck.Status.ERROR) done.add(c.getQueryId() + "|" + c.getEngine() + "|" + c.getSearchPoint());
+        }
+        List<AiVisibilityQuery> missing = queries.findByBusinessIdAndStatusInOrderBySortOrderAscIdAsc(businessId, List.of(AiVisibilityQuery.Status.ACTIVE)).stream()
+                .filter(q -> enginesFor(q).stream().anyMatch(e -> pointsFor(settings, q, e).stream()
+                        .anyMatch(pt -> !done.contains(q.getId() + "|" + e + "|" + (pt == null ? null : pt.get("label"))))))
+                .toList();
+        if (missing.isEmpty()) return Optional.empty();
+        AiVisibilityRun run = runs.save(AiVisibilityRun.builder().businessId(businessId).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY)
+                .queryIds(new java.util.ArrayList<>(missing.stream().map(AiVisibilityQuery::getId).toList())).claimedAt(Instant.now()).build());
+        manualExecutor.submit(() -> currentBusinessContext.runAs(businessId, () -> {
+            try {
+                execute(settings, missing, run, done);
+            } catch (RuntimeException e) {
+                log.warn("AI visibility catch-up failed for business {} ({} questions): {}", businessId, missing.size(), e.toString());
+            }
+        }));
+        return Optional.of(run);
+    }
+
     AiVisibilityRun execute(AiVisibilitySettings settings, List<AiVisibilityQuery> questions, AiVisibilityRun run) {
+        return execute(settings, questions, run, java.util.Set.of());
+    }
+
+    AiVisibilityRun execute(AiVisibilitySettings settings, List<AiVisibilityQuery> questions, AiVisibilityRun run, java.util.Set<String> alreadyDone) {
         Long businessId = settings.getBusinessId();
         if (!props.hasCredentials()) {
             log.info("AI visibility run skipped for business {}: DATAFORSEO_LOGIN/PASSWORD not set", businessId);
@@ -110,7 +155,7 @@ public class AiVisibilityRunService {
         BigDecimal spent = monthSpend(businessId).subtract(run.getCostUsd());
         Map<Engine, Integer> consecutiveFailures = new EnumMap<>(Engine.class);
         // A resumed run (see resumeStaleRuns) skips what it already paid for before the restart.
-        java.util.Set<String> done = new java.util.HashSet<>();
+        java.util.Set<String> done = new java.util.HashSet<>(alreadyDone);
         if (run.getId() != null) for (AiVisibilityCheck c : checks.findByRunId(run.getId())) done.add(c.getQueryId() + "|" + c.getEngine() + "|" + c.getSearchPoint());
         outer:
         for (AiVisibilityQuery q : questions) {

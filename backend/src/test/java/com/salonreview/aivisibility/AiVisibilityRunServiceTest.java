@@ -148,4 +148,22 @@ class AiVisibilityRunServiceTest {
         assertThat(resumed.getFinishedAt()).isNotNull();
     }
 
+
+    @Test
+    void weekStartIsMondaySixAmPacific() {
+        var tue = java.time.ZonedDateTime.of(2026, 11, 17, 10, 0, 0, 0, AiVisibilityRunService.PT).toInstant();
+        var monEarly = java.time.ZonedDateTime.of(2026, 11, 16, 5, 0, 0, 0, AiVisibilityRunService.PT).toInstant();
+        assertThat(AiVisibilityRunService.weekStart(tue)).isEqualTo(java.time.ZonedDateTime.of(2026, 11, 16, 6, 0, 0, 0, AiVisibilityRunService.PT).toInstant());
+        assertThat(AiVisibilityRunService.weekStart(monEarly)).isEqualTo(java.time.ZonedDateTime.of(2026, 11, 9, 6, 0, 0, 0, AiVisibilityRunService.PT).toInstant());
+    }
+
+    @Test
+    void executeSkipsChecksAlreadyDoneThisWeek() {
+        var done = java.util.Set.of("1|" + Engine.CHATGPT + "|null");
+        AiVisibilityRun run = AiVisibilityRun.builder().businessId(1L).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY).build();
+        run.setId(7L);
+        service.execute(settings, List.of(q(1)), run, done);
+        assertThat(saved).hasSize(Engine.values().length - 1);
+        assertThat(saved).noneMatch(c -> c.getEngine() == Engine.CHATGPT);
+    }
 }

@@ -20,9 +20,12 @@ public class InternalAiVisibilityController {
     private final AiVisibilityQueryService readModel;
     private final AiVisibilityAdminService admin;
     private final com.salonreview.aivisibility.AiReadinessService readiness;
+    private final com.salonreview.aivisibility.AiVisibilityRunService runService;
 
     public InternalAiVisibilityController(InternalApiProperties internalApi, AiVisibilityQueryService readModel, AiVisibilityAdminService admin,
-                                          com.salonreview.aivisibility.AiReadinessService readiness) {
+                                          com.salonreview.aivisibility.AiReadinessService readiness,
+                                          com.salonreview.aivisibility.AiVisibilityRunService runService) {
+        this.runService = runService;
         this.internalApi = internalApi;
         this.readModel = readModel;
         this.admin = admin;
@@ -35,6 +38,16 @@ public class InternalAiVisibilityController {
                                           @PathVariable Long businessId) {
         if (!keyMatches(key)) return ResponseEntity.status(401).build();
         return ResponseEntity.ok(readiness.runAndStore(businessId));
+    }
+
+    /** Catches up this week's scheduled run (e.g. after a budget stop): re-checks only what is missing. */
+    @PostMapping("/recheck-missing")
+    public ResponseEntity<?> recheckMissing(@RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
+                                            @PathVariable Long businessId) {
+        if (!keyMatches(key)) return ResponseEntity.status(401).build();
+        return runService.startMissingRecheck(businessId)
+                .<ResponseEntity<?>>map(r -> ResponseEntity.ok(Map.of("runId", r.getId(), "questions", r.getQueryIds().size())))
+                .orElseGet(() -> ResponseEntity.ok(Map.of("runId", 0, "questions", 0)));
     }
 
     @GetMapping("/summary")
