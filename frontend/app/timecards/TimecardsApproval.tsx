@@ -100,6 +100,8 @@ function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; own
             {d.attentionReasons.map((r) => <li key={r} className="break-words">{t(lang, `tcAttn${r}` as 'tcAttnMEAL_MISSING')}</li>)}
           </ul>
         </div>
+      ) : d.findings.length === 0 && d.source !== 'NONE' ? (
+        <div className="mt-2 text-xs text-emerald-700">{t(lang, 'tcClean')}</div>
       ) : null}
       {(d.workerAnswers ?? []).filter((a) => a.reason).map((a) => (
         <div key={`${a.kind}${a.index}`} className="mt-1 break-words text-sm text-zinc-700">

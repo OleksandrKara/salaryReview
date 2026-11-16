@@ -18,7 +18,7 @@ export default function AdjustPanel({ lang, date, start, end, fromSquare, meals,
   const setRow = (i: number, k: 's' | 'e' | 'k', v: string) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const dayOf = (time: string) => (s && time < s ? nextDay(date) : date);
   const rowsOk = rows.every((r) => r.s && r.e && r.e > r.s);
-  const breaksIso = changed ? rows.map((r) => ({ start: laToIso(dayOf(r.s), r.s), end: laToIso(dayOf(r.e), r.e), kind: r.k })) : null;
+  const breaksIso = changed && rowsOk ? rows.map((r) => ({ start: laToIso(dayOf(r.s), r.s), end: laToIso(dayOf(r.e), r.e), kind: r.k })) : null;
   const endIso = e && s && e <= s ? laToIso(nextDay(date), e) : e ? laToIso(date, e) : '';
   const startIso = s ? laToIso(date, s) : '';
   const focus = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-1';
