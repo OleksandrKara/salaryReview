@@ -282,8 +282,9 @@ public class AiVisibilityPageService {
                 PageFetcher.Fetched f = fetcher.fetch(url, canPay);
                 fetchedThisMonth++;
                 if (f.cost() != null && f.cost().signum() > 0) {
-                    if (run == null) run = runs.save(AiVisibilityRun.builder().businessId(businessId).trigger(AiVisibilityRun.Trigger.PAGE_FETCH).build());
+                    if (run == null) run = runs.save(AiVisibilityRun.builder().businessId(businessId).trigger(AiVisibilityRun.Trigger.PAGE_FETCH).claimedAt(Instant.now()).build());
                     run.setCostUsd(run.getCostUsd().add(f.cost()));
+                    run.setClaimedAt(Instant.now());
                     runs.save(run);
                 }
                 store(page, f);
