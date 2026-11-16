@@ -166,4 +166,17 @@ class AiVisibilityRunServiceTest {
         assertThat(saved).hasSize(Engine.values().length - 1);
         assertThat(saved).noneMatch(c -> c.getEngine() == Engine.CHATGPT);
     }
+
+    @Test
+    void staleResumeClosesPageFetchRunInsteadOfRerunningTheWeek() {
+        AiVisibilityRun pf = AiVisibilityRun.builder().id(9L).businessId(1L).trigger(AiVisibilityRun.Trigger.PAGE_FETCH)
+                .startedAt(java.time.Instant.now().minusSeconds(900)).build();
+        when(runs.findByFinishedAtIsNullAndStartedAtBefore(any())).thenReturn(List.of(pf));
+        when(runs.claim(eq(9L), any())).thenReturn(1);
+        when(runs.findById(9L)).thenReturn(java.util.Optional.of(pf));
+        service.resumeStaleRuns();
+        assertThat(pf.getFinishedAt()).isNotNull();
+        assertThat(pf.getStoppedReason()).isEqualTo("INTERRUPTED");
+        assertThat(saved).isEmpty();
+    }
 }

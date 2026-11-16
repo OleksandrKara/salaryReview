@@ -260,7 +260,9 @@ public class AiVisibilityRunService {
                 if (runs.claim(r.getId(), Instant.now().minus(STALE_AFTER)) != 1) continue;
                 AiVisibilityRun run = runs.findById(r.getId()).orElse(null);
                 if (run == null) continue;
-                if (run.getStartedAt().isBefore(Instant.now().minus(GIVE_UP_AFTER)) || settingsRepo.findById(run.getBusinessId()).isEmpty()) {
+                // A page-fetch run holds no questions: resuming it would re-run the whole weekly check.
+                if (run.getTrigger() == AiVisibilityRun.Trigger.PAGE_FETCH || run.getStartedAt().isBefore(Instant.now().minus(GIVE_UP_AFTER))
+                        || settingsRepo.findById(run.getBusinessId()).isEmpty()) {
                     run.setFinishedAt(Instant.now());
                     run.setStoppedReason("INTERRUPTED");
                     runs.save(run);
