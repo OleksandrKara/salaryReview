@@ -182,6 +182,49 @@ public class MarketingContactsRepository {
                 last10s.toArray());
     }
 
+    public record SquareName(String last10, String customerId, String givenName, String familyName) {}
+
+    /** Every Square customer in the local mirror carrying one of these phone numbers (shared and duplicate profiles included), newest first. */
+    public List<SquareName> findSquareNamesByPhones(long businessId, Collection<String> phoneNumbers) {
+        if (phoneNumbers.isEmpty()) return List.of();
+        List<String> last10s = phoneNumbers.stream().map(PhoneNumbers::last10Digits).distinct().collect(Collectors.toList());
+        String placeholders = last10s.stream().map(p -> "?").collect(Collectors.joining(","));
+        List<Object> args = new java.util.ArrayList<>();
+        args.add(businessId);
+        args.addAll(last10s);
+        return jdbcTemplate.query("SELECT RIGHT(regexp_replace(phone_number, '[^0-9]', '', 'g'), 10) AS last10, square_customer_id,"
+                + " given_name, family_name FROM square_customer WHERE business_id = ? AND RIGHT(regexp_replace(COALESCE(phone_number, ''), '[^0-9]', '', 'g'), 10) IN ("
+                + placeholders + ") ORDER BY square_created_at DESC NULLS LAST",
+                (rs, i) -> new SquareName(rs.getString("last10"), rs.getString("square_customer_id"),
+                        rs.getString("given_name"), rs.getString("family_name")), args.toArray());
+    }
+
+    public record LeadName(String last10, String name) {}
+
+    /** Names typed into lead forms or captured by calls and texts for these phone numbers, newest first. */
+    public List<LeadName> findLeadNamesByPhones(long businessId, Collection<String> phoneNumbers) {
+        if (phoneNumbers.isEmpty()) return List.of();
+        List<String> last10s = phoneNumbers.stream().map(PhoneNumbers::last10Digits).distinct().collect(Collectors.toList());
+        String placeholders = last10s.stream().map(p -> "?").collect(Collectors.joining(","));
+        List<Object> args = new java.util.ArrayList<>();
+        args.add(businessId);
+        args.addAll(last10s);
+        return jdbcTemplate.query("SELECT RIGHT(regexp_replace(phone_number, '[^0-9]', '', 'g'), 10) AS last10, name FROM lead_intake"
+                + " WHERE business_id = ? AND COALESCE(name, '') <> '' AND RIGHT(regexp_replace(COALESCE(phone_number, ''), '[^0-9]', '', 'g'), 10) IN ("
+                + placeholders + ") ORDER BY created_at DESC",
+                (rs, i) -> new LeadName(rs.getString("last10"), rs.getString("name")), args.toArray());
+    }
+
+    public void setContactGivenName(long businessId, String phoneNumber, String givenName) {
+        jdbcTemplate.update("UPDATE marketing.contacts SET given_name = ?, updated_at = now() WHERE business_id = ?"
+                + " AND RIGHT(regexp_replace(phone_number, '[^0-9]', '', 'g'), 10) = ?", givenName, businessId, PhoneNumbers.last10Digits(phoneNumber));
+    }
+
+    public void setMirrorName(long businessId, String squareCustomerId, String givenName, String familyName) {
+        jdbcTemplate.update("UPDATE square_customer SET given_name = ?, family_name = ? WHERE business_id = ? AND square_customer_id = ?",
+                givenName, familyName, businessId, squareCustomerId);
+    }
+
     /** Contacts eligible for {@code LeadFollowUpScheduler}'s poll — old enough ({@code
      * updatedAt <= olderThan}) but not so old the poll's own scan window has moved past them
      * ({@code updatedAt >= newerThan}), and never already processed by this automation

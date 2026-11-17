@@ -118,7 +118,8 @@ public class SmsActivityController {
                                    String lastMessageDeliveryErrorMessage, boolean hasNegativeFeedback,
                                    boolean vip, Integer visitCount, boolean blocked, boolean optedOut,
                                    boolean clickedGoogleReview, boolean clickedYelpReview,
-                                   boolean clickedFeedbackForm, boolean flaggedAsSpam) {}
+                                   boolean clickedFeedbackForm, boolean flaggedAsSpam,
+                                   List<String> nameAlternates) {}
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
@@ -286,6 +287,20 @@ public class SmsActivityController {
      * MessagesNotifierIcon) actually reflects it afterward rather than reverting on the next poll.
      * See SmsMessageLogService#markThreadRead's own doc for why the single-message {@link #markRead}
      * endpoint alone wasn't enough here. */
+    public record RenameRequest(String name) {}
+
+    public record RenameResult(String givenName, String familyName, List<String> nameAlternates) {}
+
+    @PutMapping("/conversations/{phoneNumber}/name")
+    public RenameResult rename(@PathVariable String phoneNumber, @RequestBody RenameRequest req) {
+        try {
+            MarketingContactsService.ContactNameInfo info = contactsService.renameCustomer(phoneNumber, req.name());
+            return new RenameResult(info.givenName(), info.familyName(), info.alternateNames());
+        } catch (MarketingContactsService.NameChangeException e) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
     @PostMapping("/conversations/{phoneNumber}/read")
     public void markThreadRead(@PathVariable String phoneNumber) {
         service.markThreadRead(currentBusinessContext.id(), phoneNumber);
@@ -405,6 +420,7 @@ public class SmsActivityController {
                 p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage(), p.getHasNegativeFeedback(),
                 nameInfo != null && nameInfo.vip(),
                 nameInfo == null ? null : nameInfo.visitCount(),
-                blocked, optedOut, clickedGoogleReview, clickedYelpReview, clickedFeedbackForm, flaggedAsSpam);
+                blocked, optedOut, clickedGoogleReview, clickedYelpReview, clickedFeedbackForm, flaggedAsSpam,
+                nameInfo == null || nameInfo.alternateNames() == null ? List.of() : nameInfo.alternateNames());
     }
 }

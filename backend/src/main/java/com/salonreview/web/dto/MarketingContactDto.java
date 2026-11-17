@@ -89,7 +89,15 @@ public record MarketingContactDto(
              * is known (there's nothing to count) — distinguishes "0 real visits on record" from
              * "not applicable" in the UI. */
             Integer visitCount
-    ) {}
+    ) {
+        public Contact withName(String given, String family) {
+            return new Contact(id, given, family, phoneNumber, emailAddress, originalTrafficSource, marketingTrafficSource,
+                    channel, utmSource, utmMedium, utmCampaign, landingPageSlug, variantName, deviceType, osName, osVersion,
+                    browserName, browserVersion, smsMarketingConsent, emailMarketingConsent, squareProfileUrl, submissions,
+                    appointments, createdAt, updatedAt, googleReviewSentAt, googleReviewClickedAt, yelpReviewSentAt,
+                    yelpReviewClickedAt, feedbackFormSentAt, feedbackFormClickedAt, vip, visitCount);
+        }
+    }
 
     public record Submission(
             String submissionType,

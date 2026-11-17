@@ -123,6 +123,18 @@ public class LeadsController {
         return leads.detail(id);
     }
 
+    public record NameRequest(String name) {}
+
+    @PutMapping("/{id}/name")
+    public LeadFollowUpService.NameInfo rename(@PathVariable long id, @RequestBody NameRequest req, @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        try {
+            return leads.renameLead(id, req.name());
+        } catch (com.salonreview.marketing.MarketingContactsService.NameChangeException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
     @GetMapping(value = "/{id}/emails/{emailId}", produces = "text/html")
     public String emailHtml(@PathVariable long id, @PathVariable long emailId, @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);

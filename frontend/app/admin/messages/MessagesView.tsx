@@ -751,6 +751,13 @@ export default function MessagesView({
     }
   }
 
+  async function renameContact(phoneNumber: string, name: string) {
+    const r = await api.renameSmsContact(phoneNumber, name);
+    setConversations((cs) => cs.map((c) => (c.phoneNumber === phoneNumber
+      ? { ...c, givenName: r.givenName, familyName: r.familyName, nameAlternates: r.nameAlternates }
+      : c)));
+  }
+
   function requestSend() {
     if ((!draft.trim() && attachedFiles.length === 0) || !selectedPhone || sending) return;
     setConfirmOpen(true);
@@ -1552,6 +1559,9 @@ export default function MessagesView({
             clickedYelpReview={selectedConversation?.clickedYelpReview ?? false}
             clickedFeedbackForm={selectedConversation?.clickedFeedbackForm ?? false}
             flaggedAsSpam={selectedConversation?.flaggedAsSpam ?? false}
+            nameAlternates={selectedConversation?.nameAlternates ?? []}
+            onRename={(n) => renameContact(selectedPhone, n)}
+            language={language}
             onClose={() => setShowContactPanel(false)}
           />
         </div>

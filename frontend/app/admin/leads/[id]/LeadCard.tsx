@@ -20,6 +20,7 @@ import { isActive } from '../leadActions';
 import CopyButton from '../CopyButton';
 import LeadOwnerPanel from '../LeadOwnerPanel';
 import { ownerChangeSentence, parseOwnerChange } from '../../../lib/ownerEvent';
+import NameMismatch from '../../NameMismatch';
 import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
 import type { Language, Lead, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
 
@@ -187,6 +188,12 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
     return true;
   }
 
+  async function renameLead(name: string) {
+    const res = await fetch(`/api/leads/${lead.id}/name`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    if (!res.ok) throw new Error('rename');
+    await reload();
+  }
+
   async function addNote(e?: React.FormEvent) {
     e?.preventDefault();
     if (!note.trim()) return;
@@ -209,7 +216,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
       ? t(language, `leadSrc_${s.replace('-', '_')}` as 'leadSrc_Other')
       : s;
 
-  const title = lead.name ?? lead.phoneNumber ?? lead.email ?? '';
+  const title = data.nameInfo?.name ?? lead.name ?? lead.phoneNumber ?? lead.email ?? '';
   const chat = lead.phoneNumber ? `/admin/messages?phone=${encodeURIComponent(lead.phoneNumber)}` : null;
   const overdue = lead.callbackAt != null && new Date(lead.callbackAt).getTime() <= now && (lead.status === 'NEW' || lead.status === 'CONTACTED');
 
@@ -313,6 +320,9 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h2 className="break-words text-lg font-semibold">{title}</h2>
+            {data.nameInfo && data.nameInfo.alternates.length > 0 && (
+              <NameMismatch language={language} currentName={title} alternates={data.nameInfo.alternates} canRename={data.nameInfo.canRename} onRename={renameLead} />
+            )}
             {b && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {b.vip && <Pill tone="bg-amber-50 text-amber-800" icon={<VipIcon size={12} />}>VIP{b.visitCount != null ? ` · ${b.visitCount} ${t(language, 'crmBadgeVisitsOf')}` : ''}</Pill>}

@@ -34,6 +34,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -298,6 +299,41 @@ class MarketingContactsServiceTest {
                 service.resolveDisplayNames(List.of("(858) 555-0100"));
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Name resolution: Square beats a placeholder typed into a form, and the placeholder is not offered as an alternate")
+    void squareNameBeatsJunkFormName() {
+        when(repository.findNamesByPhoneNumbers(any())).thenReturn(List.of(
+                new MarketingContactsRepository.PhoneName("(858) 555-0100", "8585550100", "Test test", "SQCUST123", true)));
+        when(square.customerGivenNames(any())).thenReturn(Map.of("SQCUST123", "Jane"));
+        when(square.customerFamilyNames(any())).thenReturn(Map.of("SQCUST123", "Doe"));
+        when(square.customerSegmentIdsBatch(any())).thenReturn(Map.of());
+        when(repository.findLeadNamesByPhones(anyLong(), any())).thenReturn(List.of(
+                new MarketingContactsRepository.LeadName("8585550100", "Tests test")));
+
+        MarketingContactsService.ContactNameInfo info = service.resolveDisplayNames(List.of("(858) 555-0100")).get("(858) 555-0100");
+
+        assertThat(info.givenName()).isEqualTo("Jane");
+        assertThat(info.familyName()).isEqualTo("Doe");
+        assertThat(info.alternateNames()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Name resolution: a different real name for the same phone is offered, never merged; a short form of the same first name is not")
+    void differentRealNameIsOfferedAsAlternate() {
+        when(repository.findNamesByPhoneNumbers(any())).thenReturn(List.of(
+                new MarketingContactsRepository.PhoneName("(858) 555-0100", "8585550100", "Sasha", "SQCUST123", true)));
+        when(square.customerGivenNames(any())).thenReturn(Map.of("SQCUST123", "Alexandra"));
+        when(square.customerFamilyNames(any())).thenReturn(Map.of("SQCUST123", "Kim"));
+        when(square.customerSegmentIdsBatch(any())).thenReturn(Map.of());
+        when(repository.findLeadNamesByPhones(anyLong(), any())).thenReturn(List.of(
+                new MarketingContactsRepository.LeadName("8585550100", "Alex")));
+
+        MarketingContactsService.ContactNameInfo info = service.resolveDisplayNames(List.of("(858) 555-0100")).get("(858) 555-0100");
+
+        assertThat(info.givenName()).isEqualTo("Alexandra");
+        assertThat(info.alternateNames()).containsExactly("Sasha");
     }
 
     @Test
