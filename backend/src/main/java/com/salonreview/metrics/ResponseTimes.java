@@ -99,6 +99,31 @@ public final class ResponseTimes {
         return !inboundAt.isAfter(lastAutomatedAt.plus(AUTOMATION_ANSWER_WINDOW));
     }
 
+    private static final Set<String> KEYWORDS = Set.of("STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT",
+            "START", "UNSTOP", "YES", "HELP", "INFO");
+
+    /** STOP/START/HELP-style compliance words: handled by Twilio and the opt-out flow, never a wait. */
+    public static boolean isKeyword(String body) {
+        return body != null && KEYWORDS.contains(body.trim().toUpperCase().replaceAll("[^A-Z]", ""));
+    }
+
+    /**
+     * The alert-time twin of the queue rules in {@code ManagerMetricsService.load}: a text needs a person unless it is a
+     * compliance keyword, a courtesy, or a plain answer to an automated text (a non-question, or a bare number). Photos
+     * always need a person. {@code afterAutomation}: an automated text went to this phone recently.
+     */
+    public static boolean needsHumanReply(String body, boolean hasAttachment, boolean afterAutomation) {
+        if (hasAttachment) return true;
+        if (isKeyword(body) || isCourtesy(body)) return false;
+        if (afterAutomation && (isNumberReply(body) || !isAsk(body))) return false;
+        return true;
+    }
+
+    /** A bare 1-4 answering the review request: the apology goes out by itself, but staff should see it. */
+    public static boolean isLowRatingReply(String body) {
+        return body != null && body.trim().matches("(?s)^[1-4][\\s!.\\p{So}\\p{Sk}]*$");
+    }
+
     public static boolean isCourtesy(String body) {
         if (body == null || body.isBlank()) return false;
         String raw = body.trim();

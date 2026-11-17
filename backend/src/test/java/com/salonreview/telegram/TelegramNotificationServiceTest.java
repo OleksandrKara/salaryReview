@@ -196,6 +196,58 @@ class TelegramNotificationServiceTest {
     }
 
     @Test
+    @DisplayName("a 5 answering the review request, a courtesy or STOP is information, with no Need to reply line or link")
+    void inboundAlertSkipsNeedToReplyWhenNothingToAnswer() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        for (String[] c : new String[][] {{"5", "checkout_review_request"}, {"Five!", "checkout_review_request"},
+                {"Thanks!", null}, {"ok", "appointment_reminder"}, {"STOP", null}, {"👍", null},
+                {"Ok I will be there", "appointment_reminder"}}) {
+            String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", c[0], c[1], null, 1L, 0, java.util.List.of(), 7L);
+            assertThat(text).as(c[0]).doesNotContain("Need to reply").doesNotContain("needs-reply");
+            assertThat(text).as(c[0]).contains("💬 Open chat").contains("🧲 Open lead");
+        }
+    }
+
+    @Test
+    @DisplayName("questions, requests, complaints, photos and unprompted texts keep Need to reply")
+    void inboundAlertKeepsNeedToReplyWhenAPersonMustAnswer() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        for (String[] c : new String[][] {{"Can I move my appointment?", "appointment_reminder"},
+                {"I need to reschedule", "appointment_reminder"}, {"I am not happy with the result", "checkout_review_request"},
+                {"Hi, do you have time Friday", null}, {"Hello", null}, {"5", null}, {"Please call me back", "checkout_review_request"}}) {
+            String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", c[0], c[1], null, 1L, 0, java.util.List.of(), 7L);
+            assertThat(text).as(c[0]).contains("⏳ <b>Need to reply</b>").contains("tab=needs-reply\">📋 Need to reply</a>");
+        }
+        String photo = service.formatInboundSmsAlert("+18585550100", "Jane Doe", "", "appointment_reminder", null, 1L, 1,
+                java.util.List.of(new com.salonreview.domain.SmsMessageMedia()), 7L);
+        assertThat(photo).contains("Need to reply");
+    }
+
+    @Test
+    @DisplayName("a 1-4 on the review request shows a Low rating line instead of the Need to reply queue link")
+    void inboundAlertFlagsLowRating() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", "3", "checkout_review_request", null, 1L, 0, java.util.List.of(), 7L);
+
+        assertThat(text).contains("⚠️ <b>Low rating</b>").doesNotContain("Need to reply");
+        assertThat(service.formatInboundSmsAlert("+18585550100", "Jane Doe", "5", "checkout_review_request")).doesNotContain("Low rating");
+    }
+
+    @Test
+    @DisplayName("the sweeper's delayed-alert note does not change whether the text needs a reply")
+    void delayedAlertPrefixIgnoredWhenJudging() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe",
+                TelegramNotificationService.DELAYED_ALERT_PREFIX + "5", "checkout_review_request");
+
+        assertThat(text).doesNotContain("Need to reply");
+    }
+
+    @Test
     @DisplayName("inbound alert HTML-escapes a customer's own message body so it can't break formatting")
     void inboundAlertEscapesMessageBody() {
         TelegramNotificationService service = service(mock(TelegramConfigService.class));

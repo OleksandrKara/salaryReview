@@ -45,7 +45,7 @@ public class InboundSmsAlertSweeper {
                     messageLog.markTelegramAlerted(m.getId());
                     continue;
                 }
-                String body = "(delayed alert, the first one did not go through)\n" + m.getBody();
+                String body = TelegramNotificationService.DELAYED_ALERT_PREFIX + m.getBody();
                 if (telegram.sendInboundSmsAlert(m.getBusinessId(), m.getPhoneNumber(), null, body, m.getAutomationKey())) {
                     messageLog.markTelegramAlerted(m.getId());
                     log.warn("Inbound SMS {} had no Telegram alert, re-sent by sweeper", m.getId());

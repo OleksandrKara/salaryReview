@@ -34,8 +34,6 @@ public class ManagerMetricsService {
     /** An open shift older than this is a forgotten clock-out; it stops counting as coverage. */
     private static final Duration MAX_OPEN_SHIFT = Duration.ofHours(14);
     private static final Set<String> OPT_OUT = Set.of("STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT");
-    private static final Set<String> KEYWORDS = Set.of("STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT",
-            "START", "UNSTOP", "YES", "HELP", "INFO");
     private static final String PROCESSED_TYPES = "'STATUS','ATTEMPT','REACHED_OUT','NOTE','CALL','AGREEMENT','CALLBACK','LOST_REASON','SOURCE'";
 
     /** Users who work for a business: those whose home business it is plus anyone with a membership in it. */
@@ -307,7 +305,7 @@ public class ManagerMetricsService {
             String phone = rs.getString(2);
             if (!in && (auto != null || rs.getString(6) != null)) lastAutomated.put(phone, at);
             String word = body == null ? "" : body.trim().toUpperCase().replaceAll("[^A-Z]", "");
-            boolean keyword = KEYWORDS.contains(word);
+            boolean keyword = ResponseTimes.isKeyword(body);
             boolean optOut = in && OPT_OUT.contains(word);
             boolean human = !in && auto == null && rs.getString(6) == null && "SENT".equals(rs.getString(7));
             boolean answersAuto = in && (ResponseTimes.answersAutomation(auto != null, lastAutomated.get(phone), at, body)
