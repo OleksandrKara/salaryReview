@@ -151,3 +151,21 @@ const STATIC_FINDINGS = ['MEAL_MISSING', 'MEAL_PREMIUM_OWED', 'MEAL_WAIVED', 'SE
 export function findingText(lang: Language, f: Finding): string {
   return STATIC_FINDINGS.includes(f.code) ? t(lang, `tcFind${f.code}` as Parameters<typeof t>[1]) : f.message;
 }
+
+export type WaiverDoc = { id: number; documentType: string; label: string | null; fileName: string };
+export type WaiverRow = {
+  providerId: number;
+  name: string;
+  w2: boolean;
+  signed: boolean;
+  status: 'NONE' | 'PENDING' | 'ACTIVE' | 'REVOKING' | 'REVOKED';
+  signedDate: string | null;
+  effectiveFrom: string | null;
+  revokedDate: string | null;
+  source: string | null;
+  recordedBy: string | null;
+  signedName: string | null;
+  document: WaiverDoc | null;
+};
+export type WaiverAffectedDay = { date: string; status: string; premiumBeforeCents: number; premiumAfterCents: number; changeCents: number; returnedToReview: boolean };
+export type WaiverPreview = { providerId: number; name: string; from: string; effect: string; days: WaiverAffectedDay[]; totalChangeCents: number; returnedToReviewCount: number; applied: boolean };

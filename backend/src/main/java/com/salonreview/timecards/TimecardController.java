@@ -45,15 +45,18 @@ public class TimecardController {
     private final TimecardAdminService admin;
     private final PayPeriodSummaryService summaries;
     private final JdbcTemplate jdbc;
+    private final MealWaiverService waiverService;
 
     public TimecardController(CurrentBusinessContext business, TimecardDayService days, TimecardReviewService reviews,
-                              TimecardAdminService admin, PayPeriodSummaryService summaries, JdbcTemplate jdbc) {
+                              TimecardAdminService admin, PayPeriodSummaryService summaries, JdbcTemplate jdbc,
+                              MealWaiverService waiverService) {
         this.business = business;
         this.days = days;
         this.reviews = reviews;
         this.admin = admin;
         this.summaries = summaries;
         this.jdbc = jdbc;
+        this.waiverService = waiverService;
     }
 
     // ---- owner setup ----
@@ -76,6 +79,28 @@ public class TimecardController {
     @PostMapping("/admin/providers/{id}/import-phone")
     public ProviderSetup importPhone(@PathVariable Long id) {
         return admin.importPhoneFromSquare(business.id(), id);
+    }
+
+    @GetMapping("/admin/waivers")
+    public List<MealWaiverService.WaiverRow> waivers() {
+        return waiverService.overview(business.id());
+    }
+
+    @GetMapping("/admin/waivers/{id}/documents")
+    public List<MealWaiverService.DocOption> waiverDocs(@PathVariable Long id) {
+        return waiverService.documents(business.id(), id);
+    }
+
+    @PostMapping("/admin/waivers/{id}/record")
+    public MealWaiverService.Preview recordWaiver(@PathVariable Long id, @RequestBody MealWaiverService.RecordRequest r,
+                                                  @AuthenticationPrincipal AppUserPrincipal me) {
+        return waiverService.record(business.id(), id, r, me.getUsername());
+    }
+
+    @PostMapping("/admin/waivers/{id}/revoke")
+    public MealWaiverService.Preview revokeWaiver(@PathVariable Long id, @RequestBody MealWaiverService.RevokeRequest r,
+                                                  @AuthenticationPrincipal AppUserPrincipal me) {
+        return waiverService.revoke(business.id(), id, r, me.getUsername());
     }
 
     @PostMapping("/admin/providers/{id}/waiver/revoke")

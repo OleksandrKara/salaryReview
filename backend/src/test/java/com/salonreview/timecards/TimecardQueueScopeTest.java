@@ -41,7 +41,7 @@ class TimecardQueueScopeTest {
         when(reviews.canApprove(anyLong(), anyLong(), anyString(), anyLong())).thenReturn(true);
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForList(anyString(), eq(Long.class), any(Object[].class))).thenReturn(List.of(43L));
-        controller = new TimecardController(business, days, reviews, null, null, jdbc);
+        controller = new TimecardController(business, days, reviews, null, null, jdbc, null);
         me = mock(AppUserPrincipal.class);
         when(me.getRole()).thenReturn(Role.MANAGER);
         when(me.getUserId()).thenReturn(7L);

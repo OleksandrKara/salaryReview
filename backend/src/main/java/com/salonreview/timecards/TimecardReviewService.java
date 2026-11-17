@@ -81,11 +81,12 @@ public class TimecardReviewService {
         }
         boolean waiver = Boolean.TRUE.equals(req.mealWaiver());
         if (waiver && !days.activeWaiver(businessId, providerId)) throw bad("Sign the meal waiver first");
+        boolean waiverEff = waiver || days.waiverAppliesOn(businessId, providerId, date);
         boolean generated = c.generatedBreaks() && mode.equals("DRAFT");
         List<AnswerDto> answers = req.answers() == null ? List.of() : req.answers();
         long paid0 = days.paidMinutesOf(cards, date, c.rateCents());
         List<BreakQuestionDto> questions = days.breakQuestions(cards,
-                days.analyze(providerId, cards, date, c.rateCents(), generated, waiver), paid0, generated, waiver);
+                days.analyze(providerId, cards, date, c.rateCents(), generated, waiverEff), paid0, generated, waiverEff);
         String confirmedJson = null;
         String answersJson = null;
         boolean manualShift = c.source().equals("NONE") || c.source().equals("VOIDED");
@@ -114,9 +115,9 @@ public class TimecardReviewService {
             answersJson = TimecardDayService.answersJson(kept);
             cards = TimecardDayService.applyConfirmed(cards, confirmedJson);
             if (mode.equals("DRAFT")) proposed = TimecardDayService.proposedJson(cards);
-            DayAnalysis after = days.analyze(providerId, cards, date, c.rateCents(), false, waiver);
+            DayAnalysis after = days.analyze(providerId, cards, date, c.rateCents(), false, waiverEff);
             List<BreakQuestionDto> residual = days.breakQuestions(cards, after,
-                    days.paidMinutesOf(cards, date, c.rateCents()), false, waiver);
+                    days.paidMinutesOf(cards, date, c.rateCents()), false, waiverEff);
             for (BreakQuestionDto q : residual) {
                 boolean covered = kept.stream().anyMatch(x -> q.kind().equals(x.kind()) && q.index() == x.index());
                 if (!covered) throw bad("Answer the break questions");
