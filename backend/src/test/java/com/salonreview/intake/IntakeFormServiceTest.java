@@ -1,6 +1,5 @@
 package com.salonreview.intake;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.SquareCredentialCipher;
 import com.salonreview.domain.IntakeForm;
 import com.salonreview.domain.Provider;
@@ -41,7 +40,7 @@ class IntakeFormServiceTest {
     void setUp() {
         String key = Base64.getEncoder().encodeToString(new byte[32]);
         service = new IntakeFormService(forms, mock(SquareCustomerMirrorRepository.class), providers, sms,
-                new SquareCredentialCipher(key), new ObjectMapper(), "https://salon.akluxnails.com/");
+                new SquareCredentialCipher(key), "https://salon.akluxnails.com/");
     }
 
     IntakeForm form() {

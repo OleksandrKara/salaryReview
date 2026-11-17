@@ -52,19 +52,18 @@ public class IntakeFormService {
     private final ProviderRepository providers;
     private final TwilioSmsService sms;
     private final SquareCredentialCipher cipher;
-    private final ObjectMapper mapper;
+    private final ObjectMapper mapper = new ObjectMapper();
     private final String publicBaseUrl;
     private final SecureRandom random = new SecureRandom();
 
     public IntakeFormService(IntakeFormRepository forms, SquareCustomerMirrorRepository customers,
                              ProviderRepository providers, TwilioSmsService sms, SquareCredentialCipher cipher,
-                             ObjectMapper mapper, @Value("${app.public-base-url}") String publicBaseUrl) {
+                             @Value("${app.public-base-url}") String publicBaseUrl) {
         this.forms = forms;
         this.customers = customers;
         this.providers = providers;
         this.sms = sms;
         this.cipher = cipher;
-        this.mapper = mapper;
         this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
 
