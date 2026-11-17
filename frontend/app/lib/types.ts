@@ -2597,6 +2597,7 @@ export interface Lead {
   callbackAt: string | null;
   createdAt: string;
   lastTouchAt: string;
+  lastActivityAt?: string | null;
   touches: number;
   squareCustomerId: string | null;
   squareUrl: string | null;
@@ -2795,3 +2796,6 @@ export interface NeedsReplyItem {
 }
 
 export interface NeedsReplyQueue { count: number; oldestSeconds: number | null; items: NeedsReplyItem[] }
+
+export type LeadSearchPage = { total: number; items: { lead: Lead; lastActivityAt: string | null }[] };
+export type LeadFilterOptions = { sources: { source: string; count: number }[]; statuses: Record<string, number> };

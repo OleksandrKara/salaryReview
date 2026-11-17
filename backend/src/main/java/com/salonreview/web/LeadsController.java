@@ -57,6 +57,36 @@ public class LeadsController {
         return academyOnly(me) ? all.stream().filter(LeadView::academy).toList() : all;
     }
 
+    private LeadFollowUpService.LeadFilter filter(java.util.List<String> source, java.util.List<String> status, String createdFrom, String createdTo,
+                                                   String activityFrom, String activityTo, String sort, String dir, AppUserPrincipal me) {
+        if (sort != null && !sort.isBlank() && !"created".equals(sort) && !"activity".equals(sort)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bad sort");
+        return new LeadFollowUpService.LeadFilter(source, status, day(createdFrom), day(createdTo), day(activityFrom), day(activityTo),
+                sort == null || sort.isBlank() ? null : sort, "asc".equals(dir), academyOnly(me));
+    }
+
+    private static java.time.LocalDate day(String v) {
+        if (v == null || v.isBlank()) return null;
+        try { return java.time.LocalDate.parse(v); } catch (java.time.format.DateTimeParseException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bad date"); }
+    }
+
+    /** Server-side filtered and sorted leads list (HubSpot-style filters). Dates are Los Angeles calendar days. */
+    @GetMapping("/search")
+    public LeadFollowUpService.SearchPage search(@RequestParam(required = false) java.util.List<String> source, @RequestParam(required = false) java.util.List<String> status,
+                                                 @RequestParam(required = false) String createdFrom, @RequestParam(required = false) String createdTo,
+                                                 @RequestParam(required = false) String activityFrom, @RequestParam(required = false) String activityTo,
+                                                 @RequestParam(required = false) String sort, @RequestParam(required = false) String dir,
+                                                 @RequestParam(defaultValue = "0") int offset, @RequestParam(defaultValue = "1000") int limit,
+                                                 @AuthenticationPrincipal AppUserPrincipal me) {
+        return leads.search(filter(source, status, createdFrom, createdTo, activityFrom, activityTo, sort, dir, me), offset, limit);
+    }
+
+    @GetMapping("/filter-options")
+    public LeadFollowUpService.FilterOptions filterOptions(@RequestParam(required = false) String createdFrom, @RequestParam(required = false) String createdTo,
+                                                           @RequestParam(required = false) String activityFrom, @RequestParam(required = false) String activityTo,
+                                                           @AuthenticationPrincipal AppUserPrincipal me) {
+        return leads.filterOptions(filter(null, null, createdFrom, createdTo, activityFrom, activityTo, null, null, me));
+    }
+
     /** Pre-CRM archive, visible to everyone who has access to leads. */
     @GetMapping("/outdated")
     public LeadFollowUpService.OutdatedPage outdated(@RequestParam(required = false) String q, @RequestParam(required = false) String seg,

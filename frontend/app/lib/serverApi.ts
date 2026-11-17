@@ -49,6 +49,7 @@ import type {
   ReviewsOverview,
   MissedBooking,
   Lead,
+  LeadSearchPage,
   LeadDetail, LostReport,
   Redo,
   RevenueDayDetail,
@@ -285,6 +286,8 @@ export const serverApi = {
   listRedos: () => serverFetch<Redo[]>(`/api/redos`),
 
   listLeads: () => serverFetch<Lead[]>(`/api/leads`),
+
+  searchLeads: (qs: string) => serverFetch<LeadSearchPage>(`/api/leads/search?${qs}`),
 
   getLostReport: (days: number) => serverFetch<LostReport>(`/api/leads/lost-report?days=${days}`),
 
