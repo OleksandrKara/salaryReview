@@ -34,6 +34,9 @@ import java.util.Optional;
 /** Creates, sends and records first-visit intake forms. Answers are never logged or put in a text. */
 @Service
 public class IntakeFormService {
+    // Answers are health data. In the app they are encrypted at rest and shown only to owner, managers and
+    // the assigned technician; a summary also goes into the Square customer note (IntakeSquareNote), so
+    // anyone with Square access sees it. Never log answers, put them in SMS, Telegram or analytics.
 
     private static final Logger log = LoggerFactory.getLogger(IntakeFormService.class);
 
@@ -207,7 +210,35 @@ public class IntakeFormService {
 
     // ---- client side -------------------------------------------------------------------------
 
-    public record PublicView(boolean signed, String firstName, String businessName, String when, boolean expired) {}
+    public record PublicView(boolean signed, String firstName, String businessName, String when, boolean expired,
+                             String consentText, String privacyUrl) {}
+
+    static final String CONSENT_VERSION = "2026-11-17";
+
+    /** The line the client ticks. Names the legal entity so it reads the same for any salon business. */
+    static String consentText(String legalName) {
+        return "I understand my answers are used only to provide my service safely, and I agree that the team of "
+                + legalName + " (my technician, managers and owner) can see them, including in the scheduling "
+                + "system they use.";
+    }
+
+    private String legalName(Long businessId) {
+        if (businesses == null) {
+            return "this salon";
+        }
+        return businesses.findById(businessId)
+                .map(b -> b.getLegalName() != null && !b.getLegalName().isBlank() ? b.getLegalName().trim()
+                        : (b.getName() == null || b.getName().isBlank() ? "this salon" : b.getName().trim()))
+                .orElse("this salon");
+    }
+
+    private String privacyUrl(Long businessId) {
+        if (businesses == null) {
+            return null;
+        }
+        return businesses.findById(businessId).map(b -> b.getPrivacyPolicyUrl() == null
+                || b.getPrivacyPolicyUrl().isBlank() ? null : b.getPrivacyPolicyUrl().trim()).orElse(null);
+    }
 
     public Optional<PublicView> openForClient(String token) {
         return openForClient(token, true);
@@ -223,13 +254,15 @@ public class IntakeFormService {
             }
             boolean expired = !f.isSigned() && f.getAppointmentStartAt().isBefore(Instant.now().minusSeconds(48 * 3600));
             return new PublicView(f.isSigned(), f.getFirstName(), businessName(f.getBusinessId()),
-                    WHEN.format(f.getAppointmentStartAt().atZone(PACIFIC)), expired);
+                    WHEN.format(f.getAppointmentStartAt().atZone(PACIFIC)), expired,
+                    consentText(legalName(f.getBusinessId())), privacyUrl(f.getBusinessId()));
         });
     }
 
     public enum SubmitResult { OK, ALREADY_SIGNED, NOT_FOUND }
 
-    public SubmitResult submit(String token, Map<String, String> rawAnswers, String signatureName, boolean agreed) {
+    public SubmitResult submit(String token, Map<String, String> rawAnswers, String signatureName, boolean agreed,
+                               boolean consent) {
         IntakeForm f = forms.findByToken(token).orElse(null);
         if (f == null) {
             return SubmitResult.NOT_FOUND;
@@ -242,12 +275,17 @@ public class IntakeFormService {
         if (!agreed || name.length() < 2 || name.length() > 120) {
             throw new IntakeAnswers.Invalid("signature");
         }
+        if (!consent) {
+            throw new IntakeAnswers.Invalid("consent");
+        }
         try {
             f.setAnswersEncrypted(cipher.encrypt(mapper.writeValueAsString(answers)));
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("could not serialise intake answers");
         }
         f.setSignatureName(name);
+        f.setConsentText(consentText(legalName(f.getBusinessId())));
+        f.setConsentVersion(CONSENT_VERSION);
         f.setNeedsAttention(IntakeAnswers.needsAttention(answers));
         f.setStatus(IntakeForm.SIGNED);
         f.setSignedAt(Instant.now());

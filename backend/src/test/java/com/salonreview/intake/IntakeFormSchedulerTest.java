@@ -243,6 +243,32 @@ class IntakeFormSchedulerTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void squareSyncOfSignedFormWritesAnswersBlockAndKeepsStaffNote() {
+        IntakeForm f = pending(DAY);
+        f.setStatus(IntakeForm.SIGNED);
+        f.setSignedAt(DAY);
+        f.setSignedVia(IntakeForm.VIA_CLIENT_FORM);
+        java.util.Map<String, String> answers = new java.util.HashMap<>();
+        answers.put("service", "MANICURE");
+        answers.put("fungal", "YES");
+        answers.put("skin", "NO");
+        answers.put("allergies", "NO");
+        answers.put("sensitivity", "NO");
+        answers.put("enhancements", "NO");
+        when(service.decryptAnswers(f)).thenReturn(answers);
+        when(forms.findNeedingSquareSync(IntakeFormScheduler.MAX_SQUARE_SYNC_ATTEMPTS)).thenReturn(List.of(f));
+        at(DAY, Set.of(1L)).syncSquare();
+        org.mockito.ArgumentCaptor<java.util.function.UnaryOperator<String>> change =
+                org.mockito.ArgumentCaptor.forClass(java.util.function.UnaryOperator.class);
+        verify(square).updateCustomerNote(org.mockito.ArgumentMatchers.eq("C1"), change.capture());
+        String note = change.getValue().apply("Prefers Lucy");
+        assertThat(note).startsWith("[INTAKE FORM] SIGNED").contains("ATTENTION: fungal/contagious condition YES")
+                .endsWith("[/INTAKE FORM]\nPrefers Lucy");
+        assertThat(f.getSquareSyncedStatus()).isEqualTo("SIGNED2");
+    }
+
+    @Test
     void squareSyncFailureAlertsOwnerOnlyOnLastAttempt() {
         IntakeForm f = pending(DAY);
         f.setSquareSyncAttempts(IntakeFormScheduler.MAX_SQUARE_SYNC_ATTEMPTS - 1);

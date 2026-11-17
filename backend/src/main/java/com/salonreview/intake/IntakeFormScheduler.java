@@ -29,7 +29,7 @@ import java.util.Arrays;
 /**
  * First-visit intake form flow: finds new clients shortly after they book, texts them one link,
  * texts one reminder about a day before the visit if still unsigned, and mirrors the status onto
- * the Square customer note. Runs only for businesses listed in {@code intake.form.businesses} AND
+ * the Square customer note (status, plus the answers once signed). Runs only for businesses listed in {@code intake.form.businesses} AND
  * with the first_visit_intake_form automation switched on; otherwise it does nothing at all.
  */
 @Component
@@ -229,10 +229,10 @@ public class IntakeFormScheduler {
                 continue;
             }
             try {
-                String line = IntakeSquareNote.line(f);
+                String block = IntakeSquareNote.block(f, service.decryptAnswers(f));
                 squareProvider.forBusiness(f.getBusinessId()).updateCustomerNote(
-                        f.getSquareCustomerId(), note -> IntakeSquareNote.merge(note, line));
-                f.setSquareSyncedStatus(f.getStatus());
+                        f.getSquareCustomerId(), note -> IntakeSquareNote.merge(note, block));
+                f.setSquareSyncedStatus(IntakeSquareNote.syncKey(f));
                 f.setSquareSyncAttempts(0);
             } catch (RuntimeException e) {
                 f.setSquareSyncAttempts(f.getSquareSyncAttempts() + 1);

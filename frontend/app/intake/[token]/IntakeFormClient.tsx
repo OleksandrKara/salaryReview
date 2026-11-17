@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-interface View { signed: boolean; firstName: string | null; businessName: string; when: string; expired: boolean }
+interface View { signed: boolean; firstName: string | null; businessName: string; when: string; expired: boolean; consentText: string; privacyUrl: string | null }
 type Answers = Record<string, string>;
 type Screen = 'loading' | 'form' | 'notfound' | 'signed' | 'expired' | 'done' | 'error';
 
@@ -65,6 +65,7 @@ export default function IntakeFormClient({ token }: { token: string }) {
   const [a, setA] = useState<Answers>({});
   const [sig, setSig] = useState('');
   const [agreed, setAgreed] = useState(false);
+  const [consent, setConsent] = useState(false);
   const [bad, setBad] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -94,6 +95,7 @@ export default function IntakeFormClient({ token }: { token: string }) {
     if (a.heardFrom === 'OTHER' && !a.heardOther?.trim()) return 'heardOther';
     if (sig.trim().length < 2) return 'signature';
     if (!agreed) return 'agreed';
+    if (!consent) return 'consent';
     return null;
   }
 
@@ -111,7 +113,7 @@ export default function IntakeFormClient({ token }: { token: string }) {
     try {
       const r = await fetch(`/api/public/intake/${encodeURIComponent(token)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers: a, signatureName: sig.trim(), agreed }),
+        body: JSON.stringify({ answers: a, signatureName: sig.trim(), agreed, consent }),
       });
       if (r.ok) return setScreen('done');
       if (r.status === 409) return setScreen('signed');
@@ -151,17 +153,26 @@ export default function IntakeFormClient({ token }: { token: string }) {
         {a.heardFrom === 'OTHER' && <Text name="heardOther" label="Please tell us how" value={a.heardOther ?? ''} onChange={set('heardOther')} invalid={bad === 'heardOther'} max={500} rows={2} required />}
         <Text name="notes" label="Anything else your technician should know?" value={a.notes ?? ''} onChange={set('notes')} invalid={false} max={1000} />
 
-        <div className={`rounded-2xl border bg-white p-4 ${bad === 'signature' || bad === 'agreed' ? 'border-red-400 ring-1 ring-red-300' : 'border-stone-200'}`}>
+        <div className={`rounded-2xl border bg-white p-4 ${bad === 'signature' || bad === 'agreed' || bad === 'consent' ? 'border-red-400 ring-1 ring-red-300' : 'border-stone-200'}`}>
           <label data-field="agreed" className="flex cursor-pointer items-start gap-3 text-[15px] text-stone-800">
             <input type="checkbox" checked={agreed} onChange={(e) => { setAgreed(e.target.checked); setBad(null); }} className="mt-1 h-5 w-5 shrink-0 accent-stone-900" />
             <span>I confirm that my answers are accurate and I understand that nail services may not be suitable if I have a contagious condition or broken skin.</span>
+          </label>
+          <label data-field="consent" className="mt-4 flex cursor-pointer items-start gap-3 text-[15px] text-stone-800">
+            <input type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setBad(null); }} className="mt-1 h-5 w-5 shrink-0 accent-stone-900" />
+            <span>
+              {view?.consentText}
+              {view?.privacyUrl && (
+                <> <a href={view.privacyUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">Privacy policy</a></>
+              )}
+            </span>
           </label>
           <label data-field="signature" className="mt-4 block">
             <span className="mb-1 block text-sm font-medium text-stone-700">Type your full name to sign</span>
             <input value={sig} onChange={(e) => { setSig(e.target.value); setBad(null); }} autoComplete="name" maxLength={120}
               className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-stone-900" />
           </label>
-          {(bad === 'signature' || bad === 'agreed') && <p role="alert" className="mt-2 text-sm text-red-700">Please tick the box and type your full name.</p>}
+          {(bad === 'signature' || bad === 'agreed' || bad === 'consent') && <p role="alert" className="mt-2 text-sm text-red-700">Please tick both boxes and type your full name.</p>}
         </div>
 
         {problem && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800">{problem}</p>}

@@ -35,6 +35,8 @@ public interface IntakeFormRepository extends JpaRepository<IntakeForm, Long> {
     List<IntakeForm> findByStatusAndInitialSmsStateIsNull(String status);
 
     @Query("select f from IntakeForm f where f.squareSyncAttempts < :maxAttempts "
-            + "and (f.squareSyncedStatus is null or f.squareSyncedStatus <> f.status) and f.status <> 'PENDING'")
+            + "and f.status <> 'PENDING' and (f.squareSyncedStatus is null "
+            + "or (f.status = 'SIGNED' and f.squareSyncedStatus <> 'SIGNED2') "
+            + "or (f.status <> 'SIGNED' and f.squareSyncedStatus <> f.status))")
     List<IntakeForm> findNeedingSquareSync(@Param("maxAttempts") int maxAttempts);
 }

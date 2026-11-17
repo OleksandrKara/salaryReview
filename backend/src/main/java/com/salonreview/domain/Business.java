@@ -23,6 +23,13 @@ public class Business {
     @Column(nullable = false)
     private String name;
 
+    /** Legal entity shown in consent lines (e.g. "X LLC dba Y"); null means use {@link #name}. */
+    @Column(name = "legal_name")
+    private String legalName;
+
+    @Column(name = "privacy_policy_url")
+    private String privacyPolicyUrl;
+
     @Column(name = "short_code", nullable = false, unique = true)
     private String shortCode;
 
