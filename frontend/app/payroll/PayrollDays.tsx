@@ -88,10 +88,7 @@ function DayTable({ days, lang, open, toggle }: { days: DayLine[]; lang: Languag
           <th className="px-2 py-1.5 text-left font-normal">{t(lang, 'pbDays')}</th>
           <th className={th}>{t(lang, 'pbShift')}</th>
           <th className={th}>{t(lang, 'pbHours')}</th>
-          <th className={th}>{t(lang, 'pbRate')}</th>
-          <th className={th}>{t(lang, 'pbRegular')}</th>
-          <th className={th}>{t(lang, 'pbOvertime')}</th>
-          <th className={th}>{t(lang, 'pbDoubleTime')}</th>
+          <th className={th}>{t(lang, 'tcColWages')}</th>
           <th className={th}>{t(lang, 'tcColPremiums')}</th>
           <th className={th}>{t(lang, 'pbDayTotal')}</th>
         </tr>
@@ -104,22 +101,19 @@ function DayTable({ days, lang, open, toggle }: { days: DayLine[]; lang: Languag
             <FragmentRow key={k}>
               <tr className="cursor-pointer border-b hover:bg-zinc-50" onClick={() => toggle(k)}>
                 <td className="px-2 py-1.5">
-                  <button type="button" aria-expanded={open.has(k)} className="text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900">
+                  <button type="button" aria-expanded={open.has(k)} className="min-h-[44px] w-full py-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900">
                     {dayLabel(d.date, lang)}
                     {!d.approved && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">{t(lang, 'pbNotApproved')}</span>}
                   </button>
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{d.inAt && d.outAt ? `${hhmm(d.inAt)}-${hhmm(d.outAt)}` : ''}<span className="block text-xs text-zinc-500">{breakText(d, lang)}</span></td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{d.inAt && d.outAt ? `${hhmm(d.inAt)}-${hhmm(d.outAt)}` : ''}<span className="block text-xs text-zinc-500">{breakText(d, lang)}</span></td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{hrs(d.paidMinutes)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{usd(d.rateCents)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{usd(d.regularPayCents)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{d.overtimeMinutes ? usd(d.overtimePayCents) : ''}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{d.doubleTimeMinutes ? usd(d.doubleTimePayCents) : ''}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{usd(d.regularPayCents + d.overtimePayCents + d.doubleTimePayCents)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{prem ? usd(prem) : ''}</td>
                 <td className="px-2 py-1.5 text-right font-medium tabular-nums">{usd(d.dayTotalCents)}</td>
               </tr>
               {open.has(k) && (
-                <tr className="border-b bg-zinc-50"><td colSpan={9} className="px-4 pb-3"><DayDetails d={d} lang={lang} /></td></tr>
+                <tr className="border-b bg-zinc-50"><td colSpan={6} className="px-4 pb-3"><DayDetails d={d} lang={lang} /></td></tr>
               )}
             </FragmentRow>
           );
@@ -144,7 +138,7 @@ function ProviderCard({ p, lang, owner }: { p: ProviderSummary; lang: Language; 
     <section className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:p-4" aria-label={p.name}>
       <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
         className="flex min-h-[48px] w-full items-center justify-between gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900">
-        <h2 className="min-w-0 text-lg font-semibold">{p.name}</h2>
+        <h2 className="min-w-0 break-words text-lg font-semibold">{p.name}</h2>
         <span className="flex shrink-0 items-center gap-2">
           <span className="text-xl font-semibold tabular-nums">{usd(p.totalToPayCents)}</span>
           <span aria-hidden className={`text-zinc-400 transition-transform ${expanded ? 'rotate-90' : ''}`}>›</span>
