@@ -15,6 +15,9 @@ import java.util.Optional;
 
 public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
 
+    boolean existsByBusinessIdAndPhoneNumberAndDirectionAndStatusAndBodyAndCreatedAtAfter(
+            Long businessId, String phoneNumber, String direction, String status, String body, Instant after);
+
     @Query("SELECT m FROM SmsMessage m WHERE m.direction = 'INBOUND' AND m.telegramAlertedAt IS NULL "
             + "AND m.createdAt < :before AND m.createdAt > :after ORDER BY m.id")
     List<SmsMessage> findUnalertedInbound(@Param("before") Instant before, @Param("after") Instant after);
