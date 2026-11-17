@@ -82,6 +82,13 @@ public class SmsMessageLogService {
         return saved;
     }
 
+    /** True if the exact same text was already SENT to this number within the window, used to stop
+     * a double click or re-press of Send from texting the client twice. */
+    public boolean wasSentRecently(Long businessId, String phoneNumber, String body, java.time.Duration window) {
+        return repository.existsByBusinessIdAndPhoneNumberAndDirectionAndStatusAndBodyAndCreatedAtAfter(
+                businessId, PhoneNumbers.normalize(phoneNumber), "OUTBOUND", "SENT", body, Instant.now().minus(window));
+    }
+
     /** {@code linkTarget}/{@code clickToken} are set when this outbound message contains a
      * click-tracked {@code /r/{clickToken}} short link (see {@code ShortLinkController}) — both
      * {@code null} for messages with no link. */

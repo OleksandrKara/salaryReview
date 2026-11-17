@@ -20,6 +20,7 @@ import EmailFollowUpCard from './EmailFollowUpCard';
 import { dispatchSmsUnreadCountChanged } from '../../lib/smsUnreadEvent';
 import ConfirmSendDialog from './ConfirmSendDialog';
 import { channelFor } from './confirmSend';
+import { hasBoldMarkers, parseBold, sendFailureMessage, smsLengthState, stripBoldMarkers, SMS_MAX_CHARS } from './smsText';
 
 // A compact, generally-useful set for the composer's "insert emoji" button — not exhaustive (no
 // full category picker), just enough to cover common reply copy without switching keyboards.
@@ -306,7 +307,10 @@ export default function MessagesView({
   useEffect(() => {
     const el = draftInputRef.current;
     if (!el) return;
-    const maxHeightPx = 128; // ~5-6 lines at the composer's font size — matches the max-h-32 cap below
+    // Phones keep the compact ~5-line cap; laptops get up to 40% of the window (max 320px) so a
+    // long message is readable without scrolling inside a tiny box.
+    const desktop = typeof window !== 'undefined' && window.innerWidth >= 640;
+    const maxHeightPx = desktop ? Math.min(Math.round(window.innerHeight * 0.26), 240) : 128;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, maxHeightPx)}px`;
     el.scrollTop = el.scrollHeight;
@@ -769,6 +773,7 @@ export default function MessagesView({
     // is blocked.
     if ((!body && attachedFiles.length === 0) || !selectedPhone || sending) return;
     setSending(true);
+    setDraftError(null);
     try {
       const result = attachedFiles.length > 0
         ? await api.sendSmsReplyWithMedia(selectedPhone, body, attachedFiles)
@@ -776,6 +781,7 @@ export default function MessagesView({
       if (result.sent) {
         setDraft('');
         setAttachedFiles([]);
+        draftInputRef.current?.focus();
         // A manager sending their own reply always expects to see it land at the bottom, even if
         // they'd scrolled up to reference something earlier in the thread first.
         isNearBottomRef.current = true;
@@ -786,7 +792,11 @@ export default function MessagesView({
         setThread(freshThread);
         if (freshSummary) upsertConversation(freshSummary);
         refreshUnreadBadge();
+      } else {
+        setDraftError(sendFailureMessage(result.reason));
       }
+    } catch {
+      setDraftError('Could not send. Please check your connection and try again. Your text is still in the box.');
     } finally {
       setSending(false);
       setConfirmOpen(false);
@@ -902,7 +912,7 @@ export default function MessagesView({
           in-flow side-by-side desktop layout, unchanged from before. */}
       <div
         data-testid="conversation-list"
-        className={`absolute inset-0 flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 transition-transform sm:static sm:flex sm:w-96 sm:translate-x-0 ${selectedPhone ? '-translate-x-full' : 'translate-x-0'}`}
+        className={`absolute inset-0 flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 transition-transform sm:static sm:flex sm:w-72 sm:translate-x-0 lg:w-80 2xl:w-96 ${selectedPhone ? '-translate-x-full' : 'translate-x-0'}`}
       >
         {(conversations.length > 0 || filter === 'unread') && (
           // text-base (16px), not text-sm, on mobile — matches the composer input's own note
@@ -1214,7 +1224,7 @@ export default function MessagesView({
                 data-testid="thread-header-info-button"
                 onClick={() => setShowContactPanel((v) => !v)}
                 aria-label="Contact info"
-                className="flex h-11 w-11 shrink-0 items-center justify-center text-zinc-400 hover:text-zinc-600 sm:hidden"
+                className="flex h-11 w-11 shrink-0 items-center justify-center text-zinc-400 hover:text-zinc-600 lg:hidden"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
@@ -1272,7 +1282,7 @@ export default function MessagesView({
                           <div
                             data-testid="thread-message-bubble"
                             data-direction={m.direction}
-                            className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                            className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm lg:max-w-[65%] ${
                               m.direction === 'OUTBOUND' ? 'bg-sky-600 text-white' : 'bg-zinc-100 text-zinc-900'
                             }`}
                           >
@@ -1288,10 +1298,14 @@ export default function MessagesView({
                                 ))}
                               </div>
                             )}
-                            {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                            {m.body && (
+                              <p className="whitespace-pre-wrap break-words">
+                                {parseBold(m.body).map((part, pi) => (part.bold ? <strong key={pi}>{part.text}</strong> : part.text))}
+                              </p>
+                            )}
                             <p className={`mt-1 text-[10px] tabular-nums ${m.direction === 'OUTBOUND' ? 'text-sky-100' : 'text-zinc-400'}`}>
                               {formatBubbleTime(m.createdAt)}
-                              {m.direction === 'OUTBOUND' && m.status !== 'SENT' ? ' · Not sent' : ''}
+                              {m.direction === 'OUTBOUND' && m.status !== 'SENT' ? (m.reason === 'pending' ? ' · Sending…' : ' · Not sent, client did not receive it') : ''}
                             </p>
                             {/* Twilio's delivery-status callback — distinct from "Not sent" above,
                                 which only means our own send attempt to Twilio failed. This means
@@ -1400,13 +1414,30 @@ export default function MessagesView({
                     {draftError}
                   </p>
                 )}
+                {hasBoldMarkers(draft) && (
+                  <p data-testid="thread-composer-asterisk-notice" className="px-3 pt-2 text-xs text-amber-700">
+                    SMS is plain text: the client will see the asterisks as typed, not bold.{' '}
+                    <button type="button" className="underline" onClick={() => setDraft(stripBoldMarkers(draft))}>
+                      Remove asterisks
+                    </button>
+                  </p>
+                )}
+                {smsLengthState(draft) !== 'ok' && (
+                  <p
+                    data-testid="thread-composer-length"
+                    className={`px-3 pt-2 text-xs ${smsLengthState(draft) === 'too_long' ? 'font-medium text-red-600' : 'text-zinc-500'}`}
+                  >
+                    {draft.length} / {SMS_MAX_CHARS}
+                    {smsLengthState(draft) === 'too_long' ? ' characters. Too long to send, please shorten or split it.' : ' characters. Long messages are sent as several SMS parts.'}
+                  </p>
+                )}
                 <form
                   data-testid="thread-composer"
                   onSubmit={(e) => {
                     e.preventDefault();
                     requestSend();
                   }}
-                  className="flex items-end gap-2 p-3"
+                  className="flex items-end gap-2 p-3 sm:flex-wrap sm:items-center"
                 >
                   <input
                     ref={fileInputRef}
@@ -1420,6 +1451,7 @@ export default function MessagesView({
                       e.target.value = '';
                     }}
                   />
+                  <div className="contents sm:order-2 sm:flex sm:items-center sm:gap-1">
                   <button
                     type="button"
                     data-testid="thread-composer-attach-button"
@@ -1446,6 +1478,7 @@ export default function MessagesView({
                       </span>
                     }
                   />
+                  </div>
                   {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
                       makes iOS Safari auto-zoom the whole page, which is jarring here.
 
@@ -1470,16 +1503,22 @@ export default function MessagesView({
                       that corner on every line (CSS padding applies to the whole box, not just the
                       first line), so typed text can never run under the button regardless of how
                       many lines the draft grows to. */}
-                  <div className="relative min-w-0 flex-1">
+                  <div className="relative min-w-0 flex-1 sm:order-1 sm:basis-full">
                     <textarea
                       ref={draftInputRef}
                       data-testid="thread-composer-input"
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onFocus={scrollComposerIntoView}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          requestSend();
+                        }
+                      }}
                       placeholder={attachedFiles.length > 0 ? 'Add a caption…' : 'Type a reply…'}
                       rows={1}
-                      className="max-h-32 w-full resize-none overflow-y-auto rounded-2xl border border-zinc-300 py-2.5 pl-4 pr-11 text-base leading-normal sm:py-2 sm:pr-9 sm:text-sm"
+                      className="max-h-32 w-full resize-none overflow-y-auto rounded-2xl sm:max-h-[26vh] sm:min-h-[4.5rem] border border-zinc-300 py-2.5 pl-4 pr-11 text-base leading-normal sm:py-2 sm:pr-9 sm:text-sm"
                     />
                     <button
                       type="button"
@@ -1506,8 +1545,9 @@ export default function MessagesView({
                   <button
                     type="submit"
                     data-testid="thread-composer-send-button"
-                    disabled={(!draft.trim() && attachedFiles.length === 0) || sending}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white disabled:opacity-40 sm:h-auto sm:w-auto sm:px-4 sm:py-2"
+                    disabled={(!draft.trim() && attachedFiles.length === 0) || sending || draft.length > SMS_MAX_CHARS}
+                    title="Send (Ctrl+Enter)"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white disabled:opacity-40 sm:order-3 sm:ml-auto sm:h-auto sm:w-auto sm:px-4 sm:py-2"
                     aria-label="Send"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="sm:hidden">
@@ -1541,7 +1581,7 @@ export default function MessagesView({
       {selectedPhone ? (
         <div
           data-testid="contact-info-panel-wrapper"
-          className={`${showContactPanel ? 'flex' : 'hidden'} fixed inset-0 z-20 flex-col bg-white sm:static sm:z-auto sm:flex sm:w-96 sm:shrink-0 sm:border-l sm:border-zinc-200`}
+          className={`${showContactPanel ? 'flex' : 'hidden'} fixed inset-0 z-20 flex-col bg-white lg:static lg:z-auto lg:flex lg:w-72 lg:shrink-0 2xl:w-96 lg:border-l lg:border-zinc-200`}
         >
           <ContactInfoPanel
             canOpenLead={canOpenLead}

@@ -130,7 +130,15 @@ public class TwilioSmsService {
      * gating entirely — see openspec/changes/lead-followup-and-manager-inbox design.md D9. A
      * manager replying to a customer who just texted the salon is a direct conversational reply,
      * not a marketing send, so it's sendable regardless of {@code sms_marketing_consent}. */
+    /** Twilio rejects bodies over 1600 characters (error 21617). */
+    public static final int MAX_BODY_CHARS = 1600;
+    private static final java.time.Duration DUPLICATE_WINDOW = java.time.Duration.ofSeconds(30);
+
     public SmsSendResult sendManual(Long businessId, String phoneNumber, String body, Long sentByUserId) {
+        if (body != null && body.length() > MAX_BODY_CHARS) {
+            log.info("Manual reply rejected: body is {} chars, limit {}", body.length(), MAX_BODY_CHARS);
+            return SmsSendResult.skipped("too_long");
+        }
         if (isBlocked(phoneNumber)) {
             log.info("Manual reply skipped — number is blocked");
             messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "blocked", null, sentByUserId);
@@ -142,6 +150,11 @@ public class TwilioSmsService {
             log.info("Manual reply skipped — Twilio credentials not configured");
             messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "not_configured", null, sentByUserId);
             return SmsSendResult.skipped("not_configured");
+        }
+
+        if (messageLogService.wasSentRecently(businessId, phoneNumber, body, DUPLICATE_WINDOW)) {
+            log.info("Manual reply skipped, identical text was sent to this number in the last 30s");
+            return SmsSendResult.skipped("duplicate_recent");
         }
 
         try {
@@ -172,6 +185,9 @@ public class TwilioSmsService {
 
     public SmsSendResult sendManualWithMedia(Long businessId, String phoneNumber, String body, List<MultipartFile> files, Long sentByUserId) throws IOException {
         String safeBody = body == null ? "" : body;
+        if (safeBody.length() > MAX_BODY_CHARS) {
+            return SmsSendResult.skipped("too_long");
+        }
         if (isBlocked(phoneNumber)) {
             log.info("Manual MMS reply skipped — number is blocked");
             messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "blocked", null, sentByUserId);
@@ -183,6 +199,10 @@ public class TwilioSmsService {
             log.info("Manual MMS reply skipped — Twilio credentials not configured");
             messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "not_configured", null, sentByUserId);
             return SmsSendResult.skipped("not_configured");
+        }
+
+        if (!safeBody.isBlank() && messageLogService.wasSentRecently(businessId, phoneNumber, safeBody, DUPLICATE_WINDOW)) {
+            return SmsSendResult.skipped("duplicate_recent");
         }
 
         SmsMessage reserved = messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "pending", null, sentByUserId);

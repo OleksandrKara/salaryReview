@@ -184,6 +184,29 @@ class TwilioSmsServiceTest {
     }
 
     @Test
+    @DisplayName("sendManual: body over 1600 chars → too_long, no send and no log row")
+    void sendManualTooLongIsRejectedBeforeTwilio() throws Exception {
+        var result = service.sendManual(BUSINESS_ID, PHONE, "x".repeat(1601));
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("too_long");
+        verifyNoInteractions(client, messageLogService);
+    }
+
+    @Test
+    @DisplayName("sendManual: identical text sent in the last 30s → duplicate_recent, no second send")
+    void sendManualDuplicateWithinWindowIsRejected() throws Exception {
+        when(messageLogService.wasSentRecently(eq(BUSINESS_ID), eq(PHONE), eq("same text"), any())).thenReturn(true);
+
+        var result = service.sendManual(BUSINESS_ID, PHONE, "same text");
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("duplicate_recent");
+        verifyNoInteractions(client);
+        verify(messageLogService, never()).logOutbound(any(), any(), any(), any(), any(), anyBoolean(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("sendManual: unset credentials → not_configured, no HTTP attempt")
     void sendManualUnconfiguredSkips() throws Exception {
         when(configService.get(BUSINESS_ID)).thenReturn(TwilioSmsConfig.builder().build());
