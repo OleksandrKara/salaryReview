@@ -332,6 +332,13 @@ public class TelegramNotificationService {
     public boolean sendInboundSmsAlert(Long businessId, String phoneNumber, String customerName, String body,
                                        String automationKey, String websiteContext, int attachmentCount,
                                        List<SmsMessageMedia> media) {
+        return sendInboundSmsAlert(businessId, phoneNumber, customerName, body, automationKey, websiteContext, attachmentCount, media, false);
+    }
+
+    /** {@code askedForDetails}: the last automated text invited a free-text answer (a low-rating apology), so this reply needs a person. */
+    public boolean sendInboundSmsAlert(Long businessId, String phoneNumber, String customerName, String body,
+                                       String automationKey, String websiteContext, int attachmentCount,
+                                       List<SmsMessageMedia> media, boolean askedForDetails) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
@@ -345,7 +352,7 @@ public class TelegramNotificationService {
             if (ctx.found() && ctx.name() != null && !ctx.name().replaceAll("[^A-Za-z\\p{L}]", "").isEmpty()) customerName = ctx.name();
             Long leadId = ctx.found() ? ctx.leadId() : null;
             String inbound = formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId,
-                    attachmentCount, media, leadId);
+                    attachmentCount, media, leadId, askedForDetails);
             String tags = LeadAlertFormat.tagsLine(ctx);
             Map<String, Object> reqBody = Map.of("chat_id", chatId,
                     "text", businessLabel(businessId) + LeadAlertFormat.insertAfterFirstLine(inbound, tags.isEmpty() ? tags : "🏷 " + tags),
@@ -405,6 +412,12 @@ public class TelegramNotificationService {
      * same rules ({@link ResponseTimes#needsHumanReply}); a rating or courtesy answering an automation is just information. */
     String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
                                  String websiteContext, Long businessId, int attachmentCount, List<SmsMessageMedia> media, Long leadId) {
+        return formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId, attachmentCount, media, leadId, false);
+    }
+
+    String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
+                                 String websiteContext, Long businessId, int attachmentCount, List<SmsMessageMedia> media, Long leadId,
+                                 boolean askedForDetails) {
         String displayPhone = formatPhoneDisplay(phoneNumber);
         boolean named = customerName != null && !customerName.isBlank();
         String who = escapeHtml(named ? customerName : displayPhone);
@@ -412,7 +425,7 @@ public class TelegramNotificationService {
         StringBuilder sb = new StringBuilder("📩 <b>New message from ").append(who).append("</b>\n");
         boolean afterAutomation = automationKey != null && !automationKey.isBlank();
         String judged = body != null && body.startsWith(DELAYED_ALERT_PREFIX) ? body.substring(DELAYED_ALERT_PREFIX.length()) : body;
-        boolean needsReply = ResponseTimes.needsHumanReply(judged, attachmentCount > 0, afterAutomation);
+        boolean needsReply = ResponseTimes.needsHumanReply(judged, attachmentCount > 0, afterAutomation, askedForDetails);
         if (needsReply) {
             sb.append("⏳ <b>Need to reply</b>\n");
         } else if (afterAutomation && "checkout_review_request".equals(automationKey) && ResponseTimes.isLowRatingReply(judged)) {

@@ -230,7 +230,8 @@ public class TwilioInboundSmsController {
             boolean alerted = false;
             try {
                 alerted = telegramService.sendInboundSmsAlert(businessId, from, customerName, body, logged.getAutomationKey(), websiteContext,
-                        attachmentCount, media == null ? List.of() : media);
+                        attachmentCount, media == null ? List.of() : media,
+                        messageLogService.lastTextAskedForDetails(businessId, from));
             } catch (RuntimeException e) {
                 log.warn("Inbound SMS Telegram alert threw: {}", e.toString());
             }

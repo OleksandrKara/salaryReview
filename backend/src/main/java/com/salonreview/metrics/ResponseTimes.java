@@ -67,6 +67,26 @@ public final class ResponseTimes {
     private static final java.util.regex.Pattern ASK = java.util.regex.Pattern.compile(
             "(?i)\\b(call|can|could|would|when|where|how|what|why|who|which|please|pls|do you|are you|is there|available|appointment|book|price|cost)\\b");
 
+    /** Statements of intent or need without a question mark ("I have a question", "need to move my appointment"). */
+    private static final java.util.regex.Pattern INTENT = java.util.regex.Pattern.compile(
+            "(?i)\\b(questions?|need|needs|want|wanna|wondering|interested|call me|call back|callback|give me a call|"
+                    + "text me|get back to me|reach out|help me|not working|didn'?t work|isn'?t working|"
+                    + "didn'?t (get|receive|show)|never (got|received|showed|came))\\b");
+
+    private static final java.util.regex.Pattern INTENT_RU = java.util.regex.Pattern.compile(
+            "(?iu)(?<![\\p{L}])(вопрос\\p{L}*|подскаж\\p{L}*|скажите|можно|можете|можешь|когда|где|сколько|цена|цены|стоимость|"
+                    + "запис\\p{L}*|перенес\\p{L}*|перенос\\p{L}*|отмен\\p{L}*|позвон\\p{L}*|перезвон\\p{L}*|нужн\\p{L}*|нужен|"
+                    + "хочу|хотел\\p{L}*|хотим|проблем\\p{L}*|помог\\p{L}*|помощь|жалоб\\p{L}*|недовол\\p{L}*|не работает)(?![\\p{L}])");
+
+    /** Templates that invite a free-text answer: any reply to one is a person's to handle (an apology asks "what happened"). */
+    private static final Set<String> DETAIL_ASK_TEMPLATES = Set.of("checkout_review_negative", "academy_request_confirmation",
+            "consultation_follow_up_thanks", "consultation_follow_up_checkin", "consultation_follow_up_offer",
+            "consultation_follow_up_last_checkin");
+
+    public static boolean asksForDetails(String templateKey) {
+        return templateKey != null && DETAIL_ASK_TEMPLATES.contains(templateKey);
+    }
+
     /** A complaint or a change of plan: a person must answer it, whatever it follows ("Yay, so glad" cannot). */
     private static final java.util.regex.Pattern COMPLAINT = java.util.regex.Pattern.compile(
             "(?i)\\b(however|unfortunately|disappoint\\w*|unhappy|upset|angry|not happy|not satisfied|problem|issue|complain\\w*|refund|"
@@ -74,7 +94,8 @@ public final class ResponseTimes {
 
     /** A question, request or complaint needs a person even when it follows an automated text. */
     public static boolean isAsk(String body) {
-        return body != null && (body.indexOf('?') >= 0 || ASK.matcher(body).find() || COMPLAINT.matcher(body).find());
+        return body != null && (body.indexOf('?') >= 0 || ASK.matcher(body).find() || INTENT.matcher(body).find()
+                || INTENT_RU.matcher(body).find() || COMPLAINT.matcher(body).find());
     }
 
     /** How long after an automated text a bare number ("5", "1") is still taken as the answer to it. */
@@ -110,11 +131,13 @@ public final class ResponseTimes {
     /**
      * The alert-time twin of the queue rules in {@code ManagerMetricsService.load}: a text needs a person unless it is a
      * compliance keyword, a courtesy, or a plain answer to an automated text (a non-question, or a bare number). Photos
-     * always need a person. {@code afterAutomation}: an automated text went to this phone recently.
+     * always need a person. {@code afterAutomation}: an automated text went to this phone recently. {@code askedForDetails}: the last automated text
+     * invited a free-text answer ({@link #asksForDetails}), so any answer is a person's to handle.
      */
-    public static boolean needsHumanReply(String body, boolean hasAttachment, boolean afterAutomation) {
+    public static boolean needsHumanReply(String body, boolean hasAttachment, boolean afterAutomation, boolean askedForDetails) {
         if (hasAttachment) return true;
         if (isKeyword(body) || isCourtesy(body)) return false;
+        if (askedForDetails) return true;
         if (afterAutomation && (isNumberReply(body) || !isAsk(body))) return false;
         return true;
     }

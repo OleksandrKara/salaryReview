@@ -294,6 +294,8 @@ public class ManagerMetricsService {
         Instant lookFrom = from.minus(LOOKBACK);
         List<Shift> shifts = shifts(businessId, lookFrom, to);
         Map<String, Instant> lastAutomated = new HashMap<>();
+        Map<String, String> lastTemplate = new HashMap<>();
+        Map<String, Instant> lastTemplateAt = new HashMap<>();
         List<Msg> msgs = jdbc.query("""
                 SELECT id, phone_number, direction, created_at, automation_key, template_key, status, sent_by_user_id, body, read_at
                 FROM sms_message WHERE business_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at, id
@@ -304,11 +306,19 @@ public class ManagerMetricsService {
             Instant at = rs.getTimestamp(4).toInstant();
             String phone = rs.getString(2);
             if (!in && (auto != null || rs.getString(6) != null)) lastAutomated.put(phone, at);
+            if (!in) {
+                boolean sentAutomated = auto != null || rs.getString(6) != null;
+                if (sentAutomated) { lastTemplate.put(phone, rs.getString(6)); lastTemplateAt.put(phone, at); }
+                else if ("SENT".equals(rs.getString(7))) lastTemplate.remove(phone);
+            }
             String word = body == null ? "" : body.trim().toUpperCase().replaceAll("[^A-Z]", "");
             boolean keyword = ResponseTimes.isKeyword(body);
             boolean optOut = in && OPT_OUT.contains(word);
             boolean human = !in && auto == null && rs.getString(6) == null && "SENT".equals(rs.getString(7));
-            boolean answersAuto = in && (ResponseTimes.answersAutomation(auto != null, lastAutomated.get(phone), at, body)
+            Instant tplAt = lastTemplateAt.get(phone);
+            boolean askedDetails = in && ResponseTimes.asksForDetails(lastTemplate.get(phone))
+                    && tplAt != null && !at.isAfter(tplAt.plus(ResponseTimes.NUMBER_ANSWER_WINDOW));
+            boolean answersAuto = in && !askedDetails && (ResponseTimes.answersAutomation(auto != null, lastAutomated.get(phone), at, body)
                     || ResponseTimes.answersByNumber(lastAutomated.get(phone), at, body));
             boolean automated = !in && (auto != null || rs.getString(6) != null);
             return new Msg(rs.getLong(1), phone, in, at, human,

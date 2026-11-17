@@ -196,6 +196,39 @@ class TelegramNotificationServiceTest {
     }
 
     @Test
+    @DisplayName("statements of intent without a question mark (EN and RU) need a person after an automation")
+    void inboundAlertTreatsIntentAsNeedToReply() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        for (String body : new String[] {"Hi, I have a question", "Need to reschedule", "I wanna cancel", "Call me back",
+                "There is a problem with my nails", "Хочу перенести запись", "У меня вопрос", "Позвоните мне"}) {
+            String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", body, "appointment_reminder", null, 1L, 0, java.util.List.of(), 7L);
+            assertThat(text).as(body).contains("⏳ <b>Need to reply</b>");
+        }
+        for (String body : new String[] {"Ok", "Thanks", "Yes I will be there", "5"}) {
+            String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", body, "appointment_reminder", null, 1L, 0, java.util.List.of(), 7L);
+            assertThat(text).as(body).doesNotContain("Need to reply");
+        }
+    }
+
+    @Test
+    @DisplayName("any free-text reply to the low-rating apology needs a person; STOP and courtesies still do not")
+    void inboundAlertApologyReplyNeedsPerson() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        for (String body : new String[] {"The polish chipped the next day", "Nobody greeted me", "ok i will think"}) {
+            String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", body, "checkout_review_request", null, 1L, 0, java.util.List.of(), 7L, true);
+            assertThat(text).as(body).contains("⏳ <b>Need to reply</b>").contains("tab=needs-reply\">📋 Need to reply</a>");
+        }
+        for (String body : new String[] {"STOP", "Thanks!"}) {
+            String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", body, "checkout_review_request", null, 1L, 0, java.util.List.of(), 7L, true);
+            assertThat(text).as(body).doesNotContain("Need to reply");
+        }
+        String low = service.formatInboundSmsAlert("+18585550100", "Jane Doe", "3", "checkout_review_request", null, 1L, 0, java.util.List.of(), 7L, false);
+        assertThat(low).contains("Low rating").doesNotContain("Need to reply");
+    }
+
+    @Test
     @DisplayName("a 5 answering the review request, a courtesy or STOP is information, with no Need to reply line or link")
     void inboundAlertSkipsNeedToReplyWhenNothingToAnswer() {
         TelegramNotificationService service = service(mock(TelegramConfigService.class));
