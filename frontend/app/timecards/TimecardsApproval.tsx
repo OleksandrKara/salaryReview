@@ -169,15 +169,6 @@ function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; own
   );
 }
 
-function PayrollTab({ lang }: { lang: Language }) {
-  return (
-    <div>
-      <a href="/payroll" className="mb-3 inline-block min-h-[44px] rounded border border-zinc-400 px-3 py-2 text-sm">{t(lang, 'pbOpenPayroll')}</a>
-      <PayrollBreakdown lang={lang} owner />
-    </div>
-  );
-}
-
 type Filter = 'pending' | 'approved' | 'attention' | 'all';
 
 function PatternBanner({ lang, patterns }: { lang: Language; patterns: Pattern[] }) {
@@ -241,7 +232,7 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
   const sel = 'min-h-[44px] w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm';
   return (
     <div>
-      {owner && (
+      {(owner || role === 'MANAGER') && (
         <div className="mb-4 flex gap-2 text-sm">
           {(['queue', 'payroll'] as const).map((k) => (
             <button key={k} onClick={() => setTab(k)} className={chip(tab === k)}>
@@ -250,8 +241,8 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
           ))}
         </div>
       )}
-      {tab === 'payroll' && owner ? (
-        <PayrollTab lang={language} />
+      {tab === 'payroll' && (owner || role === 'MANAGER') ? (
+        <PayrollBreakdown lang={language} owner={owner} />
       ) : (
         <>
           <PatternBanner lang={language} patterns={patterns} />
