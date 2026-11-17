@@ -8,13 +8,16 @@ import com.salonreview.domain.Provider;
 import com.salonreview.domain.SquareBookingMirror;
 import com.salonreview.domain.SquareCustomerMirror;
 import com.salonreview.marketing.ContactNames;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.IntakeFormRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.SquareCustomerMirrorRepository;
+import com.salonreview.sms.SmsEventBroadcaster;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.util.Names;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -65,6 +68,33 @@ public class IntakeFormService {
         this.sms = sms;
         this.cipher = cipher;
         this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
+    }
+
+    private BusinessRepository businesses;
+    private SmsEventBroadcaster events;
+
+    @Autowired(required = false)
+    void setBusinesses(BusinessRepository businesses) {
+        this.businesses = businesses;
+    }
+
+    @Autowired(required = false)
+    void setEvents(SmsEventBroadcaster events) {
+        this.events = events;
+    }
+
+    private String businessName(Long businessId) {
+        if (businesses == null) {
+            return "";
+        }
+        return businesses.findById(businessId).map(b -> b.getName() == null ? "" : b.getName()).orElse("");
+    }
+
+    /** Refreshes any open Messages tab so the status chip under the intake text updates at once. */
+    private void notifyThread(IntakeForm f) {
+        if (events != null) {
+            events.broadcast(f.getPhoneNumber());
+        }
     }
 
     public IntakeForm create(SquareBookingMirror booking, FirstVisitDetector.Result detected) {
@@ -180,13 +210,19 @@ public class IntakeFormService {
     public record PublicView(boolean signed, String firstName, String businessName, String when, boolean expired) {}
 
     public Optional<PublicView> openForClient(String token) {
+        return openForClient(token, true);
+    }
+
+    /** {@code countAsOpen} is false for link-preview crawlers and scripts, which must not mark the form opened. */
+    public Optional<PublicView> openForClient(String token, boolean countAsOpen) {
         return forms.findByToken(token).map(f -> {
-            if (f.getOpenedAt() == null) {
+            if (countAsOpen && f.getOpenedAt() == null) {
                 f.setOpenedAt(Instant.now());
                 forms.save(f);
+                notifyThread(f);
             }
             boolean expired = !f.isSigned() && f.getAppointmentStartAt().isBefore(Instant.now().minusSeconds(48 * 3600));
-            return new PublicView(f.isSigned(), f.getFirstName(), "AK.LUX.NAILS",
+            return new PublicView(f.isSigned(), f.getFirstName(), businessName(f.getBusinessId()),
                     WHEN.format(f.getAppointmentStartAt().atZone(PACIFIC)), expired);
         });
     }
@@ -219,6 +255,7 @@ public class IntakeFormService {
         f.setUpdatedAt(Instant.now());
         forms.save(f);
         log.info("Intake form {} signed", f.getId());
+        notifyThread(f);
         return SubmitResult.OK;
     }
 
@@ -246,5 +283,6 @@ public class IntakeFormService {
         f.setSignedVia(IntakeForm.VIA_STAFF_PAPER);
         f.setUpdatedAt(now);
         forms.save(f);
+        notifyThread(f);
     }
 }

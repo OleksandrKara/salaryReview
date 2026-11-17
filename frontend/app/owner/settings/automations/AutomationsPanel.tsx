@@ -48,6 +48,7 @@ const AUTOMATION_CATEGORY: Record<string, AutomationCategory> = {
   touchup_reminder: 'pmu',
   color_booster_reminder: 'pmu',
   academy_lead_funnel: 'academy',
+  first_visit_intake_form: 'general',
   pmu_booking_staff_alert: 'pmu',
 };
 const CATEGORY_META: Record<AutomationCategory, { label: string; className: string }> = {
@@ -452,6 +453,30 @@ function AutomationCard({
               </span>
             </span>
           )}
+        </div>
+      )}
+
+      {automation.intake && (
+        <div data-testid="automation-intake-funnel" className="flex flex-col gap-1.5 border-t border-zinc-100 pt-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 tabular-nums">{automation.intake.sent} sent</span>
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700 tabular-nums">
+              {formatRate(automation.intake.opened, automation.intake.sent) ?? '0%'} opened · {automation.intake.opened}
+            </span>
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 tabular-nums">
+              {formatRate(automation.intake.signed + automation.intake.signedOnPaper, automation.intake.sent) ?? '0%'} signed · {automation.intake.signed + automation.intake.signedOnPaper}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] tabular-nums text-zinc-500">
+            <span>{automation.intake.signed} online</span>
+            <span>{automation.intake.signedOnPaper} on paper</span>
+            <span>{automation.intake.unsigned} not signed</span>
+            <span>{automation.intake.remindersSent} reminders</span>
+            <span>{automation.intake.signedAfterReminder} signed after reminder</span>
+            {automation.intake.medianMinutesToSign != null && (
+              <span>median {automation.intake.medianMinutesToSign < 90 ? `${Math.round(automation.intake.medianMinutesToSign)} min` : `${(automation.intake.medianMinutesToSign / 60).toFixed(1)} h`} to sign</span>
+            )}
+          </div>
         </div>
       )}
 

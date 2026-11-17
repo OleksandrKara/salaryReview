@@ -63,6 +63,18 @@ public class SmsActivityController {
     private final CurrentBusinessContext currentBusinessContext;
     private final WinbackEmailSendRepository winbackEmailSendRepository;
 
+    private com.salonreview.intake.IntakeSmsStatus intakeStatus;
+
+    /** Setter so existing tests that build this controller directly stay unchanged. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setIntakeStatus(com.salonreview.intake.IntakeSmsStatus intakeStatus) {
+        this.intakeStatus = intakeStatus;
+    }
+
+    private Map<Long, com.salonreview.intake.IntakeSmsStatus.Chip> intakeChips(List<SmsMessage> messages) {
+        return intakeStatus == null ? Map.of() : intakeStatus.forMessages(currentBusinessContext.id(), messages);
+    }
+
     public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService,
                                   MarketingContactsService contactsService,
                                   BlockedNumberRepository blockedNumberRepository,
@@ -109,7 +121,8 @@ public class SmsActivityController {
                                  String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt,
                                  String deliveryStatus, String deliveryErrorMessage, Instant deliveryUpdatedAt,
                                  List<SmsMediaDto> media, List<SmsReactionDto> reactions,
-                                 EmailFollowUpDto emailFollowUp) {}
+                                 EmailFollowUpDto emailFollowUp,
+                                 com.salonreview.intake.IntakeSmsStatus.Chip intake) {}
 
     public record ConversationDto(String phoneNumber, Instant lastMessageAt, String lastMessageBody,
                                    String lastMessageDirection, long unreadCount,
@@ -158,7 +171,8 @@ public class SmsActivityController {
         List<Long> ids = messages.stream().map(SmsMessage::getId).toList();
         Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(ids);
         Map<Long, List<SmsReactionService.ReactionDto>> reactions = reactionService.reactionsForMessages(ids);
-        return messages.stream().map(m -> toDto(m, media, reactions, Map.of())).toList();
+        var chips = intakeChips(messages);
+        return messages.stream().map(m -> toDto(m, media, reactions, Map.of(), chips)).toList();
     }
 
     /** Outbound messages that did not reach the client (Twilio rejected, or later undelivered). */
@@ -289,7 +303,8 @@ public class SmsActivityController {
         Map<Long, List<SmsReactionService.ReactionDto>> reactions = reactionService.reactionsForMessages(ids);
         Map<Long, WinbackEmailSend> emailFollowUps = winbackEmailSendRepository.findBySmsMessageIdIn(ids).stream()
                 .collect(java.util.stream.Collectors.toMap(WinbackEmailSend::getSmsMessageId, w -> w));
-        return messages.stream().map(m -> toDto(m, media, reactions, emailFollowUps)).toList();
+        var chips = intakeChips(messages);
+        return messages.stream().map(m -> toDto(m, media, reactions, emailFollowUps, chips)).toList();
     }
 
     /** Marks every unread inbound message in this phone number's thread read — called when the
@@ -398,7 +413,8 @@ public class SmsActivityController {
 
     private static SmsMessageDto toDto(SmsMessage m, Map<Long, List<SmsMediaService.MediaInfo>> mediaByMessage,
                                         Map<Long, List<SmsReactionService.ReactionDto>> reactionsByMessage,
-                                        Map<Long, WinbackEmailSend> emailFollowUpsByMessage) {
+                                        Map<Long, WinbackEmailSend> emailFollowUpsByMessage,
+                                        Map<Long, com.salonreview.intake.IntakeSmsStatus.Chip> intakeByMessage) {
         List<SmsMediaDto> media = mediaByMessage.getOrDefault(m.getId(), Collections.emptyList()).stream()
                 .map(mi -> new SmsMediaDto(mi.url(), mi.contentType()))
                 .toList();
@@ -413,7 +429,7 @@ public class SmsActivityController {
                 m.getTemplateKey(), m.getBody(), m.getStatus(), m.getReason(),
                 m.getLinkTarget(), m.getClickedAt(), m.getReadAt(), m.getCreatedAt(),
                 m.getDeliveryStatus(), m.getDeliveryErrorMessage(), m.getDeliveryUpdatedAt(), media, reactions,
-                emailFollowUp);
+                emailFollowUp, intakeByMessage.get(m.getId()));
     }
 
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,

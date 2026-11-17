@@ -12,6 +12,8 @@ import java.util.Optional;
 
 public interface IntakeFormRepository extends JpaRepository<IntakeForm, Long> {
 
+    List<IntakeForm> findByBusinessIdAndPhoneNumberIn(Long businessId, Collection<String> phoneNumbers);
+
     Optional<IntakeForm> findByToken(String token);
 
     Optional<IntakeForm> findByIdAndBusinessId(Long id, Long businessId);

@@ -574,6 +574,27 @@ export interface SmsAutomationSummary {
   // Multi-step sequences (currently academy_lead_funnel, see AcademyLeadFunnelStats): one row per
   // step with its own 30-day numbers. null for every single-message automation.
   steps?: AutomationStepStat[] | null;
+  // Intake-form funnel (first_visit_intake_form only, last 30 days). null for every other automation.
+  intake?: IntakeFunnelStats | null;
+}
+
+export interface IntakeFunnelStats {
+  sent: number;
+  opened: number;
+  signed: number;
+  signedOnPaper: number;
+  unsigned: number;
+  remindersSent: number;
+  signedAfterReminder: number;
+  medianMinutesToSign: number | null;
+}
+
+// Status of the intake form behind an intake-form SMS, derived server-side (IntakeSmsStatus).
+export interface IntakeSmsChip {
+  state: 'SIGNED' | 'OPENED' | 'NOT_SIGNED';
+  openedAt: string | null;
+  signedAt: string | null;
+  signedVia: 'CLIENT_FORM' | 'STAFF_PAPER' | null;
 }
 
 export interface AutomationStepStat {
@@ -651,6 +672,7 @@ export interface SmsMessageDto {
   media: SmsMediaDto[];
   reactions: SmsReactionDto[];
   emailFollowUp: EmailFollowUpDto | null;
+  intake?: IntakeSmsChip | null;
 }
 
 // One conversation (grouped by phone number) in the manager-facing /admin/messages inbox — see

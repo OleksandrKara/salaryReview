@@ -1,5 +1,6 @@
 'use client';
 
+import IntakeSmsChip from '../../../lib/IntakeSmsChip';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../../lib/api';
 import type { SmsMessageDirection, SmsMessageDto } from '../../../lib/types';
@@ -7,6 +8,7 @@ import type { SmsMessageDirection, SmsMessageDto } from '../../../lib/types';
 const AUTOMATION_LABELS: Record<string, string> = {
   four_hand_request: '4-hand request',
   checkout_review_request: 'Checkout review request',
+  first_visit_intake_form: 'Intake form (first visit)',
 };
 
 const DIRECTION_OPTIONS: { value: SmsMessageDirection | ''; label: string }[] = [
@@ -250,7 +252,7 @@ export default function SmsActivityLog() {
                         {m.body}
                       </td>
                       <td className="px-3 py-2.5"><StatusPill message={m} /></td>
-                      <td className="whitespace-nowrap px-3 py-2.5"><LinkClickBadge message={m} /></td>
+                      <td className="whitespace-nowrap px-3 py-2.5"><LinkClickBadge message={m} /><IntakeSmsChip chip={m.intake} /></td>
                     </tr>
                   );
                 })}
@@ -286,6 +288,7 @@ function MessageCard({ message, onMarkRead }: { message: SmsMessageDto; onMarkRe
         </span>
         <div className="flex items-center gap-1.5">
           <LinkClickBadge message={message} />
+          <IntakeSmsChip chip={message.intake} />
           <StatusPill message={message} />
         </div>
       </div>

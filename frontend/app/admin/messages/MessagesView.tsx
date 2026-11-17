@@ -1,5 +1,6 @@
 'use client';
 
+import IntakeSmsChip from '../../lib/IntakeSmsChip';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../../lib/api';
@@ -1392,6 +1393,7 @@ export default function MessagesView({
                                 {m.clickedAt ? ` · Opened ${formatBubbleTime(m.clickedAt)}` : ' · Not opened yet'}
                               </p>
                             ) : null}
+                            {m.intake ? <p className="mt-1"><IntakeSmsChip chip={m.intake} /></p> : null}
                           </div>
                           {m.reactions.length > 0 && (
                             <div data-testid="thread-message-reactions" className="mt-0.5 flex flex-wrap gap-1">
