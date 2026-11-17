@@ -76,9 +76,17 @@ public class TwilioSmsClient {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(form.toString(), StandardCharsets.UTF_8))
                 .build();
-        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> res;
+        try {
+            res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (java.net.http.HttpTimeoutException e) {
+            throw new TwilioSendException("Twilio API timed out", 0, "timeout", e);
+        } catch (IOException e) {
+            throw new TwilioSendException("Twilio API unreachable: " + e.getMessage(), 0, "network", e);
+        }
         if (res.statusCode() < 200 || res.statusCode() >= 300) {
-            throw new IOException("Twilio API returned " + res.statusCode() + ": " + res.body());
+            throw new TwilioSendException("Twilio API returned " + res.statusCode() + ": " + res.body(),
+                    res.statusCode(), errorCodeOf(res.body()), null);
         }
         try {
             return mapper.readValue(res.body(), MessageResponse.class).sid();
@@ -86,6 +94,38 @@ public class TwilioSmsClient {
             return null; // sent successfully; SID just isn't recorded — not worth failing the send over
         }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record MessageStatus(String status, Integer error_code) {}
+
+    /** Current delivery state of a sent message, used by the reconciler for rows whose status
+     * callback never arrived. Throws on any non-2xx response or transport failure. */
+    public MessageStatus fetchStatus(TwilioSmsConfig config, String messageSid) throws IOException, InterruptedException {
+        String credentials = config.getApiKey() + ":" + config.getApiSecret();
+        String auth = Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.twilio.com/2010-04-01/Accounts/" + config.getAccountSid() + "/Messages/" + messageSid + ".json"))
+                .timeout(Duration.ofSeconds(8))
+                .header("Authorization", "Basic " + auth)
+                .GET()
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (res.statusCode() < 200 || res.statusCode() >= 300) {
+            throw new IOException("Twilio status fetch returned " + res.statusCode());
+        }
+        return mapper.readValue(res.body(), MessageStatus.class);
+    }
+
+    static String errorCodeOf(String body) {
+        try {
+            var code = mapper_static.readTree(body).get("code");
+            return code == null || code.isNull() ? null : code.asText();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static final ObjectMapper mapper_static = new ObjectMapper();
 
     /** Downloads one inbound MMS attachment from Twilio's {@code MediaUrl{n}} webhook param — same
      * Basic Auth pair as {@link #send}, since Twilio requires it on media fetches too. Throws on

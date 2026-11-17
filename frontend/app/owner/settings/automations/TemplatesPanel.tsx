@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { api } from '../../../lib/api';
 import { Spinner } from '../../../components/Spinner';
+import { isOverSmsLimit, smsLengthWarning } from '../../../admin/messages/smsText';
 import type { SmsAutomationSummary, SmsTemplateVariantView, SmsTemplateView } from '../../../lib/types';
 
 // Owner-editable wording for every automated SMS, grouped under the automation card it belongs
@@ -251,6 +252,16 @@ function VariantEditor({
         rows={3}
         className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm"
       />
+      {(() => {
+        const w = smsLengthWarning(value);
+        if (!w) return null;
+        return (
+          <p data-testid="template-length-warning" role={w.level === 'error' ? 'alert' : undefined}
+            className={`mt-1 text-xs ${w.level === 'error' ? 'font-medium text-red-600' : 'text-zinc-500'}`}>
+            {w.text} Variables such as {'{{name}}'} are replaced when sending, so the real text is a bit longer.
+          </p>
+        );
+      })()}
       {variables.length > 0 && (
         <p className="mt-1 text-xs text-zinc-400">Available: {variables.map((v) => `{{${v}}}`).join(', ')}</p>
       )}
@@ -259,7 +270,7 @@ function VariantEditor({
         <button
           type="button"
           onClick={save}
-          disabled={!dirty || saving}
+          disabled={!dirty || saving || isOverSmsLimit(value)}
           className="inline-flex items-center gap-1.5 rounded bg-zinc-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-40"
         >
           {saving && <Spinner className="h-3 w-3" />}

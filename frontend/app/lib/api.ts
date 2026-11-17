@@ -60,6 +60,7 @@ import type {
   SmsConversationPageDto,
   SmsConversationSearchHitDto,
   SmsReplyResult,
+  SmsFailedMessage,
   SmsDraftResult,
   MarketingContact,
   MarketingContactEnrichment,
@@ -501,6 +502,9 @@ export const api = {
 
   unblockSmsNumber: (phoneNumber: string) =>
     proxyVoid(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/block`, 'DELETE'),
+
+  getFailedSms: (days = 14) =>
+    proxyGet<SmsFailedMessage[]>(`/api/owner/automations/activity/failed?days=${days}`),
 
   sendSmsReply: (phoneNumber: string, body: string) =>
     proxyJson<SmsReplyResult>(`/api/owner/automations/activity/reply`, 'POST', { phoneNumber, body }),

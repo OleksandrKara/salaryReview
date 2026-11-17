@@ -28,13 +28,21 @@ public class TwilioSmsService {
 
     private static final Logger log = LoggerFactory.getLogger(TwilioSmsService.class);
 
-    public record SmsSendResult(boolean sent, String reason) {
+    public record SmsSendResult(boolean sent, String reason, String detail) {
+        public SmsSendResult(boolean sent, String reason) {
+            this(sent, reason, null);
+        }
+
         static SmsSendResult ok() {
             return new SmsSendResult(true, null);
         }
 
         static SmsSendResult skipped(String reason) {
             return new SmsSendResult(false, reason);
+        }
+
+        static SmsSendResult failed(Exception e) {
+            return new SmsSendResult(false, "send_failed", SmsMessageLogService.describeError(SmsMessageLogService.errorCodeOf(e)));
         }
     }
 
@@ -91,6 +99,12 @@ public class TwilioSmsService {
         String body = templateService.render(businessId, templateKey, phoneNumber, renderVars);
         String automationKey = template.automationKey();
 
+        if (body != null && body.length() > MAX_BODY_CHARS) {
+            log.warn("SMS template '{}' rejected: rendered body is {} chars, limit {}", templateKey, body.length(), MAX_BODY_CHARS);
+            messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "too_long", null);
+            return SmsSendResult.skipped("too_long");
+        }
+
         if (isBlocked(phoneNumber)) {
             log.info("SMS template '{}' skipped — number is blocked", templateKey);
             messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "blocked", null);
@@ -121,8 +135,8 @@ public class TwilioSmsService {
             return SmsSendResult.ok();
         } catch (Exception e) {
             log.warn("SMS template '{}' send failed (caller unaffected): {}", templateKey, e.getMessage());
-            messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "send_failed", null);
-            return SmsSendResult.skipped("send_failed");
+            messageLogService.logOutboundFailure(businessId, templateKey, automationKey, phoneNumber, body, null, e);
+            return SmsSendResult.failed(e);
         }
     }
 
@@ -132,9 +146,28 @@ public class TwilioSmsService {
      * not a marketing send, so it's sendable regardless of {@code sms_marketing_consent}. */
     /** Twilio rejects bodies over 1600 characters (error 21617). */
     public static final int MAX_BODY_CHARS = 1600;
+    /** Twilio accepts at most 5 MB of media per message. */
+    public static final long MAX_MEDIA_BYTES = 5L * 1024 * 1024;
     private static final java.time.Duration DUPLICATE_WINDOW = java.time.Duration.ofSeconds(30);
 
+    /** Pre-send checks that need no Twilio call, shared by every human-typed send. Returns the
+     * rejection reason or null. Landlines cannot be known up front; Twilio reports them after
+     * the send (21614 / 30006) and that lands on the row and the failed list. */
+    static String preSendRejection(String phoneNumber, String body, boolean hasMedia) {
+        String text = body == null ? "" : body;
+        if (text.length() > MAX_BODY_CHARS) return "too_long";
+        if (text.isBlank() && !hasMedia) return "empty";
+        String digits = phoneNumber == null ? "" : phoneNumber.replaceAll("\\D", "");
+        if (digits.length() < 10 || digits.length() > 15) return "invalid_phone";
+        return null;
+    }
+
     public SmsSendResult sendManual(Long businessId, String phoneNumber, String body, Long sentByUserId) {
+        String rejection = preSendRejection(phoneNumber, body, false);
+        if (rejection != null) {
+            log.info("Manual reply rejected before send: {}", rejection);
+            return SmsSendResult.skipped(rejection);
+        }
         if (body != null && body.length() > MAX_BODY_CHARS) {
             log.info("Manual reply rejected: body is {} chars, limit {}", body.length(), MAX_BODY_CHARS);
             return SmsSendResult.skipped("too_long");
@@ -163,8 +196,8 @@ public class TwilioSmsService {
             return SmsSendResult.ok();
         } catch (Exception e) {
             log.warn("Manual reply send failed (caller unaffected): {}", e.getMessage());
-            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "send_failed", null, sentByUserId);
-            return SmsSendResult.skipped("send_failed");
+            messageLogService.logOutboundFailure(businessId, null, null, phoneNumber, body, sentByUserId, e);
+            return SmsSendResult.failed(e);
         }
     }
 
@@ -185,8 +218,12 @@ public class TwilioSmsService {
 
     public SmsSendResult sendManualWithMedia(Long businessId, String phoneNumber, String body, List<MultipartFile> files, Long sentByUserId) throws IOException {
         String safeBody = body == null ? "" : body;
-        if (safeBody.length() > MAX_BODY_CHARS) {
-            return SmsSendResult.skipped("too_long");
+        String rejection = preSendRejection(phoneNumber, safeBody, files != null && !files.isEmpty());
+        if (rejection != null) {
+            return SmsSendResult.skipped(rejection);
+        }
+        if (files != null && files.stream().anyMatch(f -> f.getSize() > MAX_MEDIA_BYTES)) {
+            return SmsSendResult.skipped("media_too_large");
         }
         if (isBlocked(phoneNumber)) {
             log.info("Manual MMS reply skipped — number is blocked");
@@ -221,10 +258,8 @@ public class TwilioSmsService {
             return SmsSendResult.ok();
         } catch (Exception e) {
             log.warn("Manual MMS reply send failed (caller unaffected): {}", e.getMessage());
-            reserved.setStatus("NOT_SENT");
-            reserved.setReason("send_failed");
-            messageLogService.save(reserved);
-            return SmsSendResult.skipped("send_failed");
+            messageLogService.recordSendFailure(reserved, e);
+            return SmsSendResult.failed(e);
         }
     }
 }

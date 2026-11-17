@@ -40,10 +40,36 @@ public class SmsMessageLogService {
             Map.entry("30007", "Filtered as spam by carrier"),
             Map.entry("30008", "Unknown error from carrier"),
             Map.entry("30034", "Number/campaign not registered with carriers (A2P 10DLC)"),
+            Map.entry("30032", "Toll-free number not verified yet"),
+            Map.entry("30009", "Missing message segment"),
+            Map.entry("30010", "Message price exceeds max price"),
             Map.entry("21211", "Invalid phone number"),
+            Map.entry("21214", "Phone number cannot receive SMS"),
             Map.entry("21408", "Region not enabled for this account"),
-            Map.entry("21610", "Recipient has opted out (replied STOP)")
+            Map.entry("21606", "Sending number cannot send SMS"),
+            Map.entry("21610", "Recipient has opted out (replied STOP)"),
+            Map.entry("21611", "Sending number queue is full"),
+            Map.entry("21612", "Twilio cannot route to this number"),
+            Map.entry("21614", "Not a mobile number (landline)"),
+            Map.entry("21617", "Message is longer than 1600 characters"),
+            Map.entry("21618", "Message body is empty"),
+            Map.entry("20003", "Twilio authentication failed (check credentials)"),
+            Map.entry("20429", "Twilio rate limit, too many requests"),
+            Map.entry("timeout", "Twilio did not answer in time, delivery unknown"),
+            Map.entry("network", "Could not reach Twilio, delivery unknown")
     );
+
+    public static String describeError(String code) {
+        if (code == null) return null;
+        return DELIVERY_ERROR_MESSAGES.getOrDefault(code, "Delivery error (code " + code + ")");
+    }
+
+    /** Twilio's own error code from a failed send, or "unknown" for anything that is not a
+     * {@link TwilioSendException}. */
+    public static String errorCodeOf(Exception e) {
+        if (e instanceof TwilioSendException t && t.twilioCode() != null) return t.twilioCode();
+        return "unknown";
+    }
 
     /** Subset of {@link #DELIVERY_ERROR_MESSAGES} that means "this customer doesn't want our
      * texts" — carrier-side spam filtering or an explicit STOP opt-out — as opposed to a merely
@@ -57,6 +83,39 @@ public class SmsMessageLogService {
     public SmsMessageLogService(SmsMessageRepository repository, SmsEventBroadcaster events) {
         this.repository = repository;
         this.events = events;
+    }
+
+    private SmsFailureAlertService failureAlerts;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setFailureAlerts(SmsFailureAlertService failureAlerts) {
+        this.failureAlerts = failureAlerts;
+    }
+
+    /** Logs a send that Twilio rejected or that never got an answer, keeping the real error code
+     * on the row (delivery_status "failed") instead of a bare "send_failed". */
+    public SmsMessage logOutboundFailure(Long businessId, String templateKey, String automationKey, String phoneNumber,
+                                          String body, Long sentByUserId, Exception cause) {
+        SmsMessage saved = logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "send_failed", null, sentByUserId);
+        return recordSendFailure(saved, cause);
+    }
+
+    /** Marks an already-saved row as a failed send with the error code and alerts the owner.
+     * Manual sends skip the alert: the manager sees the error on screen at that moment. */
+    public SmsMessage recordSendFailure(SmsMessage m, Exception cause) {
+        String code = errorCodeOf(cause);
+        m.setStatus("NOT_SENT");
+        m.setReason("send_failed");
+        m.setDeliveryStatus("failed");
+        m.setDeliveryErrorCode(code);
+        m.setDeliveryErrorMessage(describeError(code));
+        m.setDeliveryUpdatedAt(Instant.now());
+        SmsMessage saved = repository.save(m);
+        events.broadcast(saved.getPhoneNumber());
+        if (saved.getSentByUserId() == null && failureAlerts != null) {
+            failureAlerts.alert(saved, code, describeError(code), "send failed");
+        }
+        return saved;
     }
 
     public SmsMessage logOutbound(Long businessId, String templateKey, String automationKey, String phoneNumber,
@@ -80,6 +139,25 @@ public class SmsMessageLogService {
                 .build());
         events.broadcast(saved.getPhoneNumber());
         return saved;
+    }
+
+    public record FailedMessage(long id, String phoneNumber, String body, Instant createdAt, String errorCode,
+                                String errorMessage, String source, boolean resolved) {}
+
+    /** Outbound messages that did not reach the client in the last {@code days} days. {@code resolved}
+     * means a later message to or from the same number went through, so the client was reached
+     * anyway. */
+    public List<FailedMessage> failedOutbound(Long businessId, int days) {
+        Instant since = Instant.now().minus(java.time.Duration.ofDays(days));
+        return repository.findFailedOutbound(businessId, since, org.springframework.data.domain.PageRequest.of(0, 100)).stream()
+                .map(m -> new FailedMessage(m.getId(), m.getPhoneNumber(), m.getBody(), m.getCreatedAt(),
+                        m.getDeliveryErrorCode(), m.getDeliveryErrorMessage() != null ? m.getDeliveryErrorMessage()
+                                : describeError(m.getDeliveryErrorCode()),
+                        m.getSentByUserId() != null ? "manual" : (m.getAutomationKey() != null ? m.getAutomationKey()
+                                : (m.getTemplateKey() != null ? m.getTemplateKey() : "other")),
+                        repository.existsByBusinessIdAndPhoneNumberAndStatusInAndCreatedAtAfter(
+                                businessId, m.getPhoneNumber(), List.of("SENT", "RECEIVED"), m.getCreatedAt())))
+                .toList();
     }
 
     /** True if the exact same text was already SENT to this number within the window, used to stop
@@ -312,11 +390,14 @@ public class SmsMessageLogService {
         repository.findByTwilioMessageSid(twilioMessageSid).ifPresent(m -> {
             m.setDeliveryStatus(deliveryStatus);
             m.setDeliveryErrorCode(errorCode);
-            m.setDeliveryErrorMessage(errorCode == null ? null
-                    : DELIVERY_ERROR_MESSAGES.getOrDefault(errorCode, "Delivery error (code " + errorCode + ")"));
+            m.setDeliveryErrorMessage(describeError(errorCode));
             m.setDeliveryUpdatedAt(Instant.now());
             repository.save(m);
             events.broadcast(m.getPhoneNumber());
+            boolean bad = "failed".equals(deliveryStatus) || "undelivered".equals(deliveryStatus);
+            if (bad && failureAlerts != null) {
+                failureAlerts.alert(m, errorCode, describeError(errorCode), deliveryStatus);
+            }
         });
     }
 

@@ -136,7 +136,7 @@ public class CheckoutReviewReplyService {
             updateReserved(reserved, body, true, null, twilioMessageSid);
         } catch (Exception e) {
             log.warn("Checkout-review branch reply send failed (caller unaffected): {}", e.getMessage());
-            updateReserved(reserved, body, false, "send_failed", null);
+            messageLogService.recordSendFailure(reserved, e);
         }
     }
 
