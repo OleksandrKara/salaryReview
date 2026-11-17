@@ -53,7 +53,30 @@ export type ProviderSetup = {
   squareLinked: boolean;
   freeGapAckSignedAt: string | null;
 };
-export type DayLine = { date: string; source: string; status: string; paidMinutes: number; approved: boolean };
+export type DayLine = {
+  date: string;
+  source: string;
+  status: string;
+  paidMinutes: number;
+  regularMinutes: number;
+  overtimeMinutes: number;
+  doubleTimeMinutes: number;
+  rateCents: number;
+  premiumCents: number;
+  approved: boolean;
+  openFindings: number;
+  inAt: string | null;
+  outAt: string | null;
+  unpaidGapMinutes: number;
+  regularPayCents: number;
+  overtimePayCents: number;
+  doubleTimePayCents: number;
+  mealPremiumCents: number;
+  restPremiumCents: number;
+  splitShiftPremiumCents: number;
+  dayTotalCents: number;
+  notes: string[];
+};
 export type ProviderSummary = {
   providerId: number;
   name: string;
