@@ -238,6 +238,11 @@ public class SecurityConfig {
                                     userPermissions.leadsScope(p.getUserId(), p.getRole(), businessId)
                                             != com.salonreview.service.UserPermissionService.LeadsScope.NONE);
                         })
+                        // First-visit intake forms: the form itself is public by token (IntakePublicController);
+                        // the staff API admits all three staff roles and IntakeStaffService narrows a provider
+                        // to her own clients. Listed before the owner/manager catch-alls so it wins.
+                        .requestMatchers("/api/public/intake/**").permitAll()
+                        .requestMatchers("/api/intake-forms/**").hasAnyRole("OWNER", "MANAGER", "PROVIDER")
                         .requestMatchers("/api/redos/**", "/api/providers/**", "/api/missed-bookings/**")
                                 .hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/settlements/**", "/api/square/**", "/api/pay-periods/**",

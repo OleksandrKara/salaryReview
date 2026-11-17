@@ -11,6 +11,7 @@ import SalaryPopupButton from '../components/SalaryPopupButton';
 import PageHeader from '../components/PageHeader';
 import { SyncBadge } from '../components/SyncBadge';
 import { InfoTip } from '../components/InfoTip';
+import MyIntake from '../admin/intake/MyIntake';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -47,6 +48,7 @@ export default async function MyReportPage({
         <div className="-mt-4 mb-4">
           <MonthNav base="/me" year={curYear} month={curMonth} prev={prev} next={next} language={lang} />
         </div>
+        <MyIntake language={lang} />
         <MyPay language={lang ?? 'EN'} year={curYear} month={curMonth} />
       </main>
     );
@@ -98,6 +100,7 @@ export default async function MyReportPage({
       <div className="-mt-4 mb-4">
         <MonthNav base="/me" year={year} month={month} prev={prev} next={next} language={lang} />
       </div>
+      <MyIntake language={lang} />
       <div className="mb-4"><SyncBadge syncedAt={detail.syncedAt} timezone={detail.timezone} language={lang} /></div>
 
       {fellBack && (

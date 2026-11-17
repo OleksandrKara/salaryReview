@@ -226,3 +226,10 @@ tasks:
   assignee-chat-id: ${TASKS_ASSIGNEE_CHAT_ID:}
   owner-chat-id: ${TASKS_OWNER_CHAT_ID:}
   bot-business-id: ${TASKS_BOT_BUSINESS_ID:1}
+
+# First-visit intake form for new AK.LUX.NAILS clients (IntakeFormScheduler). Business ids that run it
+# (blank = fully off: nothing is detected or created). Texts additionally need the
+# first_visit_intake_form automation switched on in the SMS hub.
+intake:
+  form:
+    businesses: ${INTAKE_FORM_BUSINESSES:}

@@ -18,6 +18,8 @@ public interface SquareCustomerMirrorRepository extends JpaRepository<SquareCust
      * same way {@code SquareClient#normalizePhone} does before calling this, or it won't match. */
     List<SquareCustomerMirror> findByBusinessIdAndPhoneNumber(Long businessId, String phoneNumber);
 
+    List<SquareCustomerMirror> findByBusinessIdAndEmailAddressIgnoreCase(Long businessId, String emailAddress);
+
     /** The reverse direction of the lookup above — a customer's own display name given Square's
      * customer id, e.g. from a booking's {@code customer_id} field (see {@code
      * SameDayBookingAlertService}). Zero live Square calls either way; this table is already kept

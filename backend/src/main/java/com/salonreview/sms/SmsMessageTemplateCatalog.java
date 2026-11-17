@@ -85,6 +85,40 @@ public final class SmsMessageTemplateCatalog {
                     List.of("Hi {{name}}! Your consultation with {{businessName}} is confirmed. {{detailsClause}}"),
                     List.of("name", "businessName", "detailsClause")
             )),
+            // First-visit intake form (IntakeFormScheduler): one text after booking, one reminder a day
+            // before if still unsigned. Plain characters only so each stays one segment; no health
+            // details ever go into the text. {{when}} is "Thursday, Nov 19 at 2:30 PM".
+            Map.entry("intake_form_request_with_technician", new TemplateDefault(
+                    "intake_form_request_with_technician", "first_visit_intake_form", SmsMessageClass.TRANSACTIONAL,
+                    "Intake form (technician known)",
+                    List.of("{{greeting}} It's {{sender}} from {{businessName}}. {{technician}} is looking forward to "
+                            + "seeing you on {{when}}! Please fill out our quick nail health form (about 2 minutes) "
+                            + "so she can prepare for you: {{link}}"),
+                    List.of("greeting", "sender", "businessName", "technician", "when", "link")
+            )),
+            Map.entry("intake_form_request_no_technician", new TemplateDefault(
+                    "intake_form_request_no_technician", "first_visit_intake_form", SmsMessageClass.TRANSACTIONAL,
+                    "Intake form (no technician on file)",
+                    List.of("{{greeting}} It's {{sender}} from {{businessName}}. We're looking forward to seeing you on "
+                            + "{{when}}! Please fill out our quick nail health form (about 2 minutes) so your "
+                            + "technician can prepare for you: {{link}}"),
+                    List.of("greeting", "sender", "businessName", "when", "link")
+            )),
+            Map.entry("intake_form_reminder_with_technician", new TemplateDefault(
+                    "intake_form_reminder_with_technician", "first_visit_intake_form", SmsMessageClass.TRANSACTIONAL,
+                    "Intake form reminder (technician known)",
+                    List.of("{{greeting}} {{sender}} from {{businessName}} here. A quick reminder: {{technician}} would "
+                            + "love to have your nail health form before your visit on {{when}}. It takes about "
+                            + "2 minutes: {{link}}"),
+                    List.of("greeting", "sender", "businessName", "technician", "when", "link")
+            )),
+            Map.entry("intake_form_reminder_no_technician", new TemplateDefault(
+                    "intake_form_reminder_no_technician", "first_visit_intake_form", SmsMessageClass.TRANSACTIONAL,
+                    "Intake form reminder (no technician on file)",
+                    List.of("{{greeting}} {{sender}} from {{businessName}} here. A quick reminder to fill out your nail "
+                            + "health form before your visit on {{when}}. It takes about 2 minutes: {{link}}"),
+                    List.of("greeting", "sender", "businessName", "when", "link")
+            )),
             Map.entry("checkout_rating_request_with_technician", new TemplateDefault(
                     "checkout_rating_request_with_technician", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
                     "Rating request (technician known)",

@@ -1134,6 +1134,34 @@ public class SquareClient {
         }
     }
 
+    /** Read-modify-write of a customer's free-text note, guarded by the customer's version so a
+     * concurrent staff edit makes Square reject the write (409) instead of being overwritten. Unlike
+     * {@link #customerNote}, a failed read throws: a failed read must never turn into an overwrite. */
+    public void updateCustomerNote(String customerId, java.util.function.UnaryOperator<String> change) {
+        com.fasterxml.jackson.databind.JsonNode n = throttled(() ->
+                http.get().uri("/v2/customers/{id}", customerId).retrieve().body(com.fasterxml.jackson.databind.JsonNode.class));
+        com.fasterxml.jackson.databind.JsonNode c = n == null ? null : n.path("customer");
+        if (c == null || c.path("id").isMissingNode()) {
+            throw new IllegalStateException("Square customer not found");
+        }
+        String current = c.path("note").asText("");
+        String updated = change.apply(current);
+        if (updated.equals(current)) {
+            return;
+        }
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("note", updated);
+        if (c.hasNonNull("version")) {
+            body.put("version", c.path("version").asLong());
+        }
+        throttled(() -> http.put()
+                .uri("/v2/customers/{customerId}", customerId)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity());
+        customerCache.remove(customerId);
+    }
+
     private java.util.Optional<Customer> fetchCustomer(String id) {
         try {
             CustomerResponse resp = throttled(() ->
