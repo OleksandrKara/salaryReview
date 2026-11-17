@@ -1191,34 +1191,28 @@ public class SquareClient {
         }
     }
 
-    /** Just the order's {@code source.name} — Square's own record of which product/channel
-     * created the order ("Point of Sale" for a real in-salon checkout, "Invoices" for a Square
-     * Invoice payment, etc.). Fetched via a second, narrow request rather than adding this to
-     * {@link Order} itself — that record is constructed positionally by ~17 unrelated test
-     * fixtures plus the month aggregator and prepaid-service logic, so appending a field there
-     * would force touching all of them for what only {@link
-     * com.salonreview.square.webhook.CheckoutReviewTriggerService} needs. Empty on any failure,
-     * same "never block" contract as {@link #orderById}.
-     *
-     * <p>Added 2026-09-23 after two real customers (owner-confirmed: paid a deposit via a Square
-     * Invoice, never actually visited) got a checkout_review_request "how was your visit" text
-     * and were queued for a same-day-rebooking discount — see that class's own doc for the
-     * 2026-08-17 history of a similar filter being removed for being unreliable at the time.
-     * "Invoices" as the exact string is based on the owner's description of those two specific
-     * orders' behavior, not a verified raw Square payload — if a future false positive/negative
-     * shows up, check this method's actual returned value in the logs before assuming the string
-     * is wrong. */
-    public java.util.Optional<String> orderSourceName(String orderId) {
+    /** Whether an order belongs to a Square Invoice: TRUE when the order source is "Invoices" or one of the
+     * customer's invoices points at this order, FALSE when both lookups succeeded and found nothing, null
+     * when neither could be answered (callers treat null as "maybe an invoice" and do not text). */
+    public Boolean isInvoiceOrder(String orderId, String customerId) {
+        boolean answered = false;
         try {
             OrderSourceResponse resp = throttled(() ->
                     http.get().uri("/v2/orders/{id}", orderId).retrieve().body(OrderSourceResponse.class));
-            return java.util.Optional.ofNullable(resp)
-                    .map(OrderSourceResponse::order)
-                    .map(OrderSourceOnly::source)
-                    .map(OrderSource::name);
+            answered = resp != null && resp.order() != null && resp.order().source() != null
+                    && resp.order().source().name() != null;
+            if (answered && "Invoices".equalsIgnoreCase(resp.order().source().name())) return Boolean.TRUE;
         } catch (RuntimeException e) {
             log.warn("Failed to fetch Square order {} source: {}", orderId, e.getMessage());
-            return java.util.Optional.empty();
+        }
+        try {
+            for (Invoice inv : invoicesForCustomer(customerId)) {
+                if (orderId.equals(inv.orderId())) return Boolean.TRUE;
+            }
+            return answered ? Boolean.FALSE : null;
+        } catch (RuntimeException e) {
+            log.warn("Failed to search Square invoices for customer {}: {}", customerId, e.getMessage());
+            return answered ? Boolean.FALSE : null;
         }
     }
 
@@ -1568,7 +1562,11 @@ public class SquareClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Invoice(String id, String invoiceNumber, String title, String status, String createdAt,
-                          List<PaymentRequest> paymentRequests, PrimaryRecipient primaryRecipient) {
+                          List<PaymentRequest> paymentRequests, PrimaryRecipient primaryRecipient, String orderId) {
+        public Invoice(String id, String invoiceNumber, String title, String status, String createdAt,
+                       List<PaymentRequest> paymentRequests, PrimaryRecipient primaryRecipient) {
+            this(id, invoiceNumber, title, status, createdAt, paymentRequests, primaryRecipient, null);
+        }
         /** The invoice total (sum of its payment requests' computed amounts), in dollars. */
         public BigDecimal total() {
             if (paymentRequests == null) return BigDecimal.ZERO;
@@ -1675,7 +1673,7 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record OrderResponse(Order order) {}
 
-    /** Narrow types for {@link #orderSourceName} — deliberately separate from {@link Order}/
+    /** Narrow types for {@link #isInvoiceOrder} — deliberately separate from {@link Order}/
      * {@link OrderResponse}, see that method's own doc. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)

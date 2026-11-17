@@ -78,24 +78,27 @@ public class CheckoutReviewTriggerService {
                 log.info("Checkout-review/same-day-rebooking triggers skipped for payment {}: online booking deposit, not a visit", payment.id());
                 return;
             }
+            if (payment.isInvoicePayment()) {
+                log.info("Checkout-review/same-day-rebooking triggers skipped for payment {}: Square Invoices payment", payment.id());
+                return;
+            }
             SquareClient square = squareClientProvider.forBusiness(businessId);
             Optional<SquareClient.Order> order = square.orderById(payment.orderId());
             if (order.isEmpty()) {
                 log.warn("Checkout-review trigger: order {} not found for payment {}", payment.orderId(), payment.id());
                 return;
             }
-            // 2026-09-23 live incident: two real customers (owner-confirmed) paid a deposit via a
-            // Square Invoice and never actually visited, but both still got a checkout_review_request
-            // "how was your visit" text and were queued for the same-day-rebooking discount below —
-            // this order source check (separate from Order itself, see SquareClient#orderSourceName's
-            // own doc) skips both for any order Square attributes to its Invoices product. Placed
-            // before the BOOKING-fulfillment discussion right below on purpose: that comment explains
-            // why a *booking link* isn't a safe exclusion signal, this one is a different, narrower
-            // signal (Invoices specifically) that the 2026-08-17 investigation's own 99-order sample
-            // happened not to contain any real example of.
-            if (square.orderSourceName(payment.orderId()).map(name -> "Invoices".equalsIgnoreCase(name)).orElse(false)) {
-                log.info("Checkout-review/same-day-rebooking triggers skipped for payment {} — order source is Invoices (a deposit/balance payment, not an in-salon checkout)",
-                        payment.id());
+            String customerId = order.get().customerId();
+            if (customerId == null) {
+                return; // no customer on the order at all, nothing to text
+            }
+            // Owner rule 2026-11-17: a paid Square Invoice is almost always a deposit, so it never triggers
+            // a text. Unknown linkage (Square lookups failed) is treated as an invoice: skipping a review ask
+            // costs little, texting a depositor before the visit is the bug.
+            Boolean invoiceOrder = square.isInvoiceOrder(payment.orderId(), customerId);
+            if (invoiceOrder == null || invoiceOrder) {
+                log.info("Checkout-review/same-day-rebooking triggers skipped for payment {}: invoice payment ({})",
+                        payment.id(), invoiceOrder == null ? "linkage unknown" : "paid Square invoice");
                 return;
             }
             // 2026-08-17 live incident: design.md D2 originally excluded any order with a
@@ -111,10 +114,6 @@ public class CheckoutReviewTriggerService {
             // no real example in this account's data of what actually needs excluding — see this
             // commit's message for the full investigation.
 
-            String customerId = order.get().customerId();
-            if (customerId == null) {
-                return; // no customer on the order at all — nothing to text
-            }
             // 2026-11 owner report (business 2): a client who prepaid for a procedure days later
             // (no "Deposit for" note, not an Invoice) got "how did we do? You were with ..." with no visit.
             // No accepted booking today but one still ahead means this payment is not a checkout.
