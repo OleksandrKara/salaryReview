@@ -1,5 +1,6 @@
 package com.salonreview.telegram;
 
+import com.salonreview.metrics.ResponseTimes;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.domain.SmsMessageMedia;
 import com.salonreview.domain.TelegramNotificationConfig;
@@ -46,6 +47,9 @@ public class TelegramNotificationService {
 
     private final TelegramConfigService configService;
     private final BusinessRepository businesses;
+    /** The sweeper's note on a re-sent alert; stripped before judging whether the text needs a reply. */
+    public static final String DELAYED_ALERT_PREFIX = "(delayed alert, the first one did not go through)\n";
+
     private final String publicBaseUrl;
     private final String ownerBotToken;
     private final String ownerChatId;
@@ -397,7 +401,8 @@ public class TelegramNotificationService {
     }
 
     /** With the CRM lead id: the client's name in the header links straight to that lead and the footer
-     * links to the needs-reply list. Every inbound text waits for a human, so the alert says so. */
+     * links to the needs-reply list. The "Need to reply" line and link appear only when the text is in that queue by the
+     * same rules ({@link ResponseTimes#needsHumanReply}); a rating or courtesy answering an automation is just information. */
     String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
                                  String websiteContext, Long businessId, int attachmentCount, List<SmsMessageMedia> media, Long leadId) {
         String displayPhone = formatPhoneDisplay(phoneNumber);
@@ -405,7 +410,14 @@ public class TelegramNotificationService {
         String who = escapeHtml(named ? customerName : displayPhone);
         if (leadId != null) who = "<a href=\"" + escapeHtml(leadLinkById(leadId, businessId)) + "\">" + who + "</a>";
         StringBuilder sb = new StringBuilder("📩 <b>New message from ").append(who).append("</b>\n");
-        sb.append("⏳ <b>Need to reply</b>\n");
+        boolean afterAutomation = automationKey != null && !automationKey.isBlank();
+        String judged = body != null && body.startsWith(DELAYED_ALERT_PREFIX) ? body.substring(DELAYED_ALERT_PREFIX.length()) : body;
+        boolean needsReply = ResponseTimes.needsHumanReply(judged, attachmentCount > 0, afterAutomation);
+        if (needsReply) {
+            sb.append("⏳ <b>Need to reply</b>\n");
+        } else if (afterAutomation && "checkout_review_request".equals(automationKey) && ResponseTimes.isLowRatingReply(judged)) {
+            sb.append("⚠️ <b>Low rating</b>\n");
+        }
         if (named) {
             sb.append("📱 ").append(escapeHtml(displayPhone)).append('\n');
         }
@@ -424,7 +436,9 @@ public class TelegramNotificationService {
         sb.append("<a href=\"").append(escapeHtml(chatLink(phoneNumber, businessId))).append("\">💬 Open chat</a>");
         String lead = leadId != null ? leadLinkById(leadId, businessId) : leadLink(phoneNumber, businessId);
         sb.append("  ·  <a href=\"").append(escapeHtml(lead)).append("\">🧲 Open lead</a>");
-        sb.append("  ·  <a href=\"").append(escapeHtml(needsReplyLink(businessId))).append("\">📋 Need to reply</a>");
+        if (needsReply) {
+            sb.append("  ·  <a href=\"").append(escapeHtml(needsReplyLink(businessId))).append("\">📋 Need to reply</a>");
+        }
         return sb.toString();
     }
 
