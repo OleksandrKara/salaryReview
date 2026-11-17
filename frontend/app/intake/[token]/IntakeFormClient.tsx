@@ -48,11 +48,11 @@ function Text({ name, label, value, onChange, invalid, max, rows = 3, required }
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, name }: { children: React.ReactNode; name?: string }) {
   return (
     <main className="min-h-dvh bg-stone-50 px-4 py-8 text-stone-900 sm:py-12">
       <div className="mx-auto w-full max-w-xl">
-        <p className="mb-6 text-center text-sm font-semibold uppercase tracking-[0.25em] text-stone-500">AK.LUX.NAILS</p>
+        <p className="mb-6 text-center text-sm font-semibold uppercase tracking-[0.25em] text-stone-500">{name ?? ''}</p>
         {children}
       </div>
     </main>
@@ -127,17 +127,17 @@ export default function IntakeFormClient({ token }: { token: string }) {
     }
   }
 
-  if (screen === 'loading') return <Shell><p className="text-center text-stone-500">Loading</p></Shell>;
-  if (screen === 'notfound') return <Shell><Card title="This link is not valid" body="Please use the link from our text message, or call or text us and we will send a new one." /></Shell>;
-  if (screen === 'error') return <Shell><Card title="We could not open the form" body="Please try again in a moment." /></Shell>;
-  if (screen === 'expired') return <Shell><Card title="This form has expired" body="Your visit has passed. Text us and we will send a fresh link if you are booking again." /></Shell>;
-  if (screen === 'signed') return <Shell><Card title="Thank you, your form is already on file" body="Nothing else is needed. See you soon." /></Shell>;
-  if (screen === 'done') return <Shell><Card title="Thank you, your form is signed" body={view ? `We have everything we need for your visit on ${view.when}. See you soon.` : 'See you soon.'} /></Shell>;
+  if (screen === 'loading') return <Shell name={view?.businessName}><p className="text-center text-stone-500">Loading</p></Shell>;
+  if (screen === 'notfound') return <Shell name={view?.businessName}><Card title="This link is not valid" body="Please use the link from our text message, or call or text us and we will send a new one." /></Shell>;
+  if (screen === 'error') return <Shell name={view?.businessName}><Card title="We could not open the form" body="Please try again in a moment." /></Shell>;
+  if (screen === 'expired') return <Shell name={view?.businessName}><Card title="This form has expired" body="Your visit has passed. Text us and we will send a fresh link if you are booking again." /></Shell>;
+  if (screen === 'signed') return <Shell name={view?.businessName}><Card title="Thank you, your form is already on file" body="Nothing else is needed. See you soon." /></Shell>;
+  if (screen === 'done') return <Shell name={view?.businessName}><Card title="Thank you, your form is signed" body={view ? `We have everything we need for your visit on ${view.when}. See you soon.` : 'See you soon.'} /></Shell>;
 
   return (
-    <Shell>
+    <Shell name={view?.businessName}>
       <h1 className="text-2xl font-semibold leading-tight">{view?.firstName ? `Welcome, ${view.firstName}` : 'Welcome'}</h1>
-      <p className="mt-2 text-[15px] text-stone-600">Client intake and nail health form for your visit on {view?.when}. It takes about two minutes and helps your technician prepare.</p>
+      <p className="mt-2 text-[15px] text-stone-600">Client intake and health form for your visit on {view?.when}. It takes about two minutes and helps your technician prepare.</p>
       <form ref={form} onSubmit={submit} noValidate className="mt-6 space-y-4">
         <Choice name="service" legend="What are you booked for?" options={[['MANICURE', 'Manicure'], ['PEDICURE', 'Pedicure'], ['BOTH', 'Both']]} value={a.service} onChange={set('service')} invalid={bad === 'service'} />
         <Choice name="fungal" legend="Do you have a fungal or contagious condition of the nails or skin?" options={YNU} value={a.fungal} onChange={set('fungal')} invalid={bad === 'fungal'} />

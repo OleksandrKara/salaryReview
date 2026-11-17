@@ -46,7 +46,8 @@ public class SmsAutomationService {
                                      long emailConvertedLast30Days,
                                      boolean ready, String readinessReason,
                                      SmsAutomationRegistry.Channel channel,
-                                     List<AcademyLeadFunnelStats.StepStat> steps) {}
+                                     List<AcademyLeadFunnelStats.StepStat> steps,
+                                     com.salonreview.intake.IntakeFormStats.Stats intake) {}
 
     /** Automations with an email fallback leg (see {@code WinbackEmailFallbackScheduler}). Drives
      * whether {@link #list} bothers querying {@link WinbackEmailSendRepository} at all for a given
@@ -77,6 +78,13 @@ public class SmsAutomationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setAcademyStats(AcademyLeadFunnelStats academyStats) {
         this.academyStats = academyStats;
+    }
+
+    private com.salonreview.intake.IntakeFormStats intakeStats;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setIntakeStats(com.salonreview.intake.IntakeFormStats intakeStats) {
+        this.intakeStats = intakeStats;
     }
 
     public SmsAutomationService(SmsAutomationRepository repository, SmsMessageRepository messageRepository,
@@ -227,12 +235,16 @@ public class SmsAutomationService {
                         steps = t.steps();
                     }
 
+                    com.salonreview.intake.IntakeFormStats.Stats intake =
+                            "first_visit_intake_form".equals(meta.key()) && intakeStats != null
+                                    ? intakeStats.since(businessId, since) : null;
+
                     AutomationReadinessService.Readiness readiness = readinessService.readiness(businessId, meta.key());
 
                     return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,
                             meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies,
                             meta.tracksConversion(), converted, tracksEmail, emailSent, emailOpened, emailClicked,
-                            emailConverted, readiness.ready(), readiness.reason(), meta.channel(), steps);
+                            emailConverted, readiness.ready(), readiness.reason(), meta.channel(), steps, intake);
                 })
                 .toList();
     }

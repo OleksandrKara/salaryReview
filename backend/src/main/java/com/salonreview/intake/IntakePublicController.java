@@ -38,7 +38,7 @@ public class IntakePublicController {
         if (limited(req)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
         }
-        return service.openForClient(token)
+        return service.openForClient(token, !isAutomatedClient(req.getHeader("User-Agent")))
                 .<ResponseEntity<?>>map(v -> ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(v))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -58,6 +58,15 @@ public class IntakePublicController {
         } catch (IntakeAnswers.Invalid e) {
             return ResponseEntity.badRequest().body(Map.of("field", e.getMessage()));
         }
+    }
+
+    private static final java.util.regex.Pattern AUTOMATED_AGENT = java.util.regex.Pattern.compile(
+            "bot|crawl|spider|preview|facebookexternalhit|facebot|slurp|headless|curl|wget|python|java/|okhttp|go-http|node-fetch|axios",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** Link-preview fetchers and scripts: a missing user agent counts as automated too. */
+    static boolean isAutomatedClient(String userAgent) {
+        return userAgent == null || userAgent.isBlank() || AUTOMATED_AGENT.matcher(userAgent).find();
     }
 
     private boolean limited(HttpServletRequest req) {

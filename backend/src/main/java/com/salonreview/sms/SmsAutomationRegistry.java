@@ -197,9 +197,9 @@ public final class SmsAutomationRegistry {
             Map.entry("first_visit_intake_form", AutomationMeta.sms(
                     "first_visit_intake_form",
                     "First-visit intake form",
-                    "Every first-time nail client who books: one text with a short health/preferences form "
+                    "Every first-time client who books: one text with a short health and preferences form "
                             + "to sign on their phone, and one reminder about a day before if it is still unsigned. "
-                            + "Status and answers are shown to staff in the CRM; signed status is also written to "
+                            + "Staff see the status and the answers in the CRM; the signed status is also written to "
                             + "the Square customer note.",
                     List.of("intake_form_request_with_technician", "intake_form_request_no_technician"),
                     false, false, false

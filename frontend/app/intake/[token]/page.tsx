@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import IntakeFormClient from './IntakeFormClient';
 
 export const metadata: Metadata = {
-  title: 'Client intake form | AK.LUX.NAILS',
+  title: 'Client intake form',
   robots: { index: false, follow: false },
   referrer: 'no-referrer',
 };

@@ -53,8 +53,30 @@ public class AutomationReadinessService {
                     rolesConfiguredReadiness(businessId, "INITIAL_PROCEDURE", "Initial procedure", "TOUCH_UP", "Touch-up");
             case "color_booster_reminder" ->
                     rolesConfiguredReadiness(businessId, "INITIAL_PROCEDURE", "Initial procedure", "COLOR_BOOSTER", "Color booster");
+            case "first_visit_intake_form" -> intakeFormReadiness(businessId);
             default -> Readiness.READY;
         };
+    }
+
+    private java.util.Set<Long> intakeBusinesses = java.util.Set.of();
+
+    /** Same list the scheduler reads; turning the card on for a business outside it would do nothing. */
+    @org.springframework.beans.factory.annotation.Value("${intake.form.businesses:}")
+    void setIntakeBusinesses(String csv) {
+        java.util.Set<Long> ids = new java.util.HashSet<>();
+        for (String part : csv == null ? new String[0] : csv.split(",")) {
+            try {
+                ids.add(Long.parseLong(part.trim()));
+            } catch (NumberFormatException ignored) {
+                // blank or malformed entries are skipped, same as the scheduler
+            }
+        }
+        this.intakeBusinesses = ids;
+    }
+
+    private Readiness intakeFormReadiness(Long businessId) {
+        return intakeBusinesses.contains(businessId) ? Readiness.READY
+                : Readiness.notReady("The intake form is not rolled out for this business yet");
     }
 
     private Readiness checkoutReviewReadiness(Long businessId) {
