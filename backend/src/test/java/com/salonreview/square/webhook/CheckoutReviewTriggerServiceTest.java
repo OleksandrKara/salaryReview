@@ -81,6 +81,60 @@ class CheckoutReviewTriggerServiceTest {
         verifyNoInteractions(rebookingTrigger);
     }
 
+    private static SquareClient.Booking booking(String status, java.time.Instant start) {
+        return new SquareClient.Booking("b_" + start, status, start.toString(), null, null, "loc_1", "cust_1", null, null, List.of());
+    }
+
+    @Test
+    @DisplayName("prepaid: accepted booking only in the future, none today → no review text, no rebooking")
+    void prepaidForFutureVisitIsSkipped() {
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.bookingsForCustomer(eq("cust_1"), any())).thenReturn(List.of(
+                booking("ACCEPTED", java.time.Instant.now().plus(java.time.Duration.ofDays(4)))));
+
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
+
+        verify(repository, never()).save(any());
+        verifyNoInteractions(rebookingTrigger);
+    }
+
+    @Test
+    @DisplayName("visit today plus a later booking → still a checkout, flow enqueued")
+    void todayVisitWithFutureBookingStillEnqueues() {
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.customerPhone("cust_1")).thenReturn(PHONE);
+        when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
+        when(square.bookingsForCustomer(eq("cust_1"), any())).thenReturn(List.of(
+                booking("ACCEPTED", java.time.Instant.now().minus(java.time.Duration.ofMinutes(5))),
+                booking("ACCEPTED", java.time.Instant.now().plus(java.time.Duration.ofDays(30)))));
+
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
+
+        verify(repository).save(any(SmsReplyFlow.class));
+        verify(rebookingTrigger).enqueue(BUSINESS_ID, "pay_1", "cust_1", PHONE, "Jane");
+    }
+
+    @Test
+    @DisplayName("cancelled future booking does not make a payment a prepaid; lookup failure falls back to a visit")
+    void cancelledOrFailedLookupTreatedAsVisit() {
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.customerPhone("cust_1")).thenReturn(PHONE);
+        when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
+        when(square.bookingsForCustomer(eq("cust_1"), any())).thenReturn(List.of(
+                booking("CANCELLED_BY_CUSTOMER", java.time.Instant.now().plus(java.time.Duration.ofDays(4)))));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
+        verify(repository).save(any(SmsReplyFlow.class));
+
+        reset(repository);
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.bookingsForCustomer(eq("cust_1"), any())).thenThrow(new RuntimeException("square down"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
+        verify(repository).save(any(SmsReplyFlow.class));
+    }
+
     @Test
     @DisplayName("walk-in POS order (no fulfillments) with phone on file → flow row enqueued")
     void walkInOrderEnqueuesFlow() {

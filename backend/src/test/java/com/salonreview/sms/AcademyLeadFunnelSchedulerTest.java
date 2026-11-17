@@ -62,6 +62,15 @@ class AcademyLeadFunnelSchedulerTest {
     }
 
     @Test
+    void paidClientStopsFunnelWithoutSending() {
+        done();
+        when(jdbc.queryForObject(contains("FROM square_payment"), eq(Boolean.class), any(Object[].class))).thenReturn(true);
+        scheduler(DAY).advance(lead(DAY.minusSeconds(30), true), mc, DAY);
+        verify(jdbc).update(contains("stop_via = 'booked_service'"), eq(7L));
+        verifyNoInteractions(sms, mailchimp);
+    }
+
+    @Test
     void failedConfirmationEmailAlertsStaffOnce() throws Exception {
         done();
         when(mailchimp.sendWinbackEmail(any(), anyString(), anyString(), anyString(), anyString(), anyString()))
