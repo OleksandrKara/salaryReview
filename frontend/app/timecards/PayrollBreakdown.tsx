@@ -12,6 +12,10 @@ function shiftHalf(y: number, m: number, h: number, delta: number) {
   return { y: year, m: Math.floor(idx / 2) + 1, h: (idx % 2) + 1 };
 }
 
+function breakText(d: DayLine, lang: Language) {
+  return d.unpaidGapMinutes > 0 ? `${t(lang, 'pbBreak')} ${d.unpaidGapMinutes} ${t(lang, 'pbMin')}` : t(lang, 'pbNoBreak');
+}
+
 function dayLabel(date: string, lang: Language) {
   const d = new Date(`${date}T12:00:00`);
   return d.toLocaleDateString(lang === 'RU' ? 'ru-RU' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -35,7 +39,7 @@ function DayDetails({ d, lang }: { d: DayLine; lang: Language }) {
   return (
     <dl className="mt-2 text-sm">
       {d.inAt && d.outAt && <Row label={t(lang, 'pbShift')} value={`${hhmm(d.inAt)} - ${hhmm(d.outAt)}`} />}
-      {d.unpaidGapMinutes > 0 && <Row label={t(lang, 'pbUnpaidGap')} value={`${hrs(d.unpaidGapMinutes)} h`} />}
+      <Row label={t(lang, 'pbUnpaidGap')} value={d.unpaidGapMinutes > 0 ? `${d.unpaidGapMinutes} ${t(lang, 'pbMin')}` : t(lang, 'pbNoBreak')} />
       <Row label={t(lang, 'pbRate')} value={usd(rate)} />
       <Row label={t(lang, 'pbRegular')} value={usd(d.regularPayCents)} hint={hint(d.regularMinutes, '')} />
       {d.overtimeMinutes > 0 && <Row label={t(lang, 'pbOvertime')} value={usd(d.overtimePayCents)} hint={hint(d.overtimeMinutes, ' x 1.5')} />}
@@ -61,7 +65,7 @@ function DayCard({ d, lang, open, onToggle }: { d: DayLine; lang: Language; open
         <span className="min-w-0">
           <span className="block font-medium">{dayLabel(d.date, lang)}</span>
           <span className="block text-xs text-zinc-500">
-            {hrs(d.paidMinutes)} h
+            {d.inAt && d.outAt ? `${hhmm(d.inAt)}-${hhmm(d.outAt)} · ` : ''}{hrs(d.paidMinutes)} h · {breakText(d, lang)}
             {!d.approved && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">{t(lang, 'pbNotApproved')}</span>}
           </span>
         </span>
@@ -105,7 +109,7 @@ function DayTable({ days, lang, open, toggle }: { days: DayLine[]; lang: Languag
                     {!d.approved && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">{t(lang, 'pbNotApproved')}</span>}
                   </button>
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{d.inAt && d.outAt ? `${hhmm(d.inAt)}-${hhmm(d.outAt)}` : ''}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{d.inAt && d.outAt ? `${hhmm(d.inAt)}-${hhmm(d.outAt)}` : ''}<span className="block text-xs text-zinc-500">{breakText(d, lang)}</span></td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{hrs(d.paidMinutes)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{usd(d.rateCents)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{usd(d.regularPayCents)}</td>
@@ -130,6 +134,7 @@ function FragmentRow({ children }: { children: React.ReactNode }) {
 }
 
 function ProviderCard({ p, lang, owner }: { p: ProviderSummary; lang: Language; owner: boolean }) {
+  const [expanded, setExpanded] = useState(false);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (k: string) => setOpen((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const wages = p.regularPayCents + p.overtimePayCents + p.doubleTimePayCents;
@@ -137,10 +142,14 @@ function ProviderCard({ p, lang, owner }: { p: ProviderSummary; lang: Language; 
   const allOpen = p.days.length > 0 && open.size === p.days.length;
   return (
     <section className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:p-4" aria-label={p.name}>
-      <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-lg font-semibold">{p.name}</h2>
-        <div className="text-xl font-semibold tabular-nums">{usd(p.totalToPayCents)}</div>
-      </header>
+      <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
+        className="flex min-h-[48px] w-full items-center justify-between gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900">
+        <h2 className="min-w-0 text-lg font-semibold">{p.name}</h2>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="text-xl font-semibold tabular-nums">{usd(p.totalToPayCents)}</span>
+          <span aria-hidden className={`text-zinc-400 transition-transform ${expanded ? 'rotate-90' : ''}`}>›</span>
+        </span>
+      </button>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 text-sm sm:grid-cols-4">
         <div><dt className="text-xs text-zinc-500">{t(lang, 'pbHours')}</dt><dd className="tabular-nums">{hrs(p.totalMinutes)}</dd></div>
         <div><dt className="text-xs text-zinc-500">{t(lang, 'pbWages')}</dt><dd className="tabular-nums">{usd(wages)}</dd></div>
@@ -151,7 +160,7 @@ function ProviderCard({ p, lang, owner }: { p: ProviderSummary; lang: Language; 
       {owner && p.commissionComparisonCents != null && (
         <div className="mt-1 text-xs text-zinc-500">{t(lang, 'tcColCommission')}: {usd(p.commissionComparisonCents)}</div>
       )}
-      {p.days.length === 0 ? (
+      {!expanded ? null : p.days.length === 0 ? (
         <p className="mt-3 text-sm text-zinc-500">{t(lang, 'pbNoDays')}</p>
       ) : (
         <>
