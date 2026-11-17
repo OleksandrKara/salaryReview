@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../../lib/api';
-import type { EmailFollowUpDto, MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
+import type { EmailFollowUpDto, Language, MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
 import { Spinner } from '../../components/Spinner';
 import ContactInfoPanel from './ContactInfoPanel';
 import SmsConsentIcon from './SmsConsentIcon';
@@ -18,6 +18,8 @@ import ConversationMenu from './ConversationMenu';
 import EmojiPicker from './EmojiPicker';
 import EmailFollowUpCard from './EmailFollowUpCard';
 import { dispatchSmsUnreadCountChanged } from '../../lib/smsUnreadEvent';
+import ConfirmSendDialog from './ConfirmSendDialog';
+import { channelFor } from './confirmSend';
 
 // A compact, generally-useful set for the composer's "insert emoji" button — not exhaustive (no
 // full category picker), just enough to cover common reply copy without switching keyboards.
@@ -125,6 +127,7 @@ export default function MessagesView({
   initialSelectedPhone,
   initialFilter = 'all',
   canOpenLead = false,
+  language = null,
 }: {
   /** First page only (default 10) — see page.tsx, which now fetches via
    * serverApi.listSmsConversationsPage instead of the old unbounded listSmsConversations, so
@@ -146,6 +149,7 @@ export default function MessagesView({
   initialFilter?: 'all' | 'unread';
   /** Owner, manager, or someone granted CRM access: shows the shortcuts to the lead card. */
   canOpenLead?: boolean;
+  language?: Language | null;
 }) {
   const [conversations, setConversations] = useState(initialConversations);
   // "Unread" is filtered server-side (unreadOnly on the paged endpoint), so it covers every unread
@@ -208,6 +212,7 @@ export default function MessagesView({
   const [showContactPanel, setShowContactPanel] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   // AI "Generate" button state — see generateDraft below. draftError is cleared on the next
   // attempt/thread switch, not on a timer, so it stays visible until the manager either retries or
   // moves on.
@@ -746,6 +751,11 @@ export default function MessagesView({
     }
   }
 
+  function requestSend() {
+    if ((!draft.trim() && attachedFiles.length === 0) || !selectedPhone || sending) return;
+    setConfirmOpen(true);
+  }
+
   async function sendReply() {
     const body = draft.trim();
     // A pure-photo message (no text) is valid — only a genuinely empty send (no text, no photos)
@@ -772,6 +782,7 @@ export default function MessagesView({
       }
     } finally {
       setSending(false);
+      setConfirmOpen(false);
     }
   }
 
@@ -1386,7 +1397,7 @@ export default function MessagesView({
                   data-testid="thread-composer"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    void sendReply();
+                    requestSend();
                   }}
                   className="flex items-end gap-2 p-3"
                 >
@@ -1503,6 +1514,20 @@ export default function MessagesView({
           </>
         )}
       </div>
+
+      {confirmOpen && selectedPhone && (
+        <ConfirmSendDialog
+          language={language}
+          recipientName={displayName(selectedConversation?.givenName, selectedConversation?.familyName)}
+          phone={selectedPhone}
+          channel={channelFor(attachedFiles.length)}
+          body={draft.trim()}
+          photoCount={attachedFiles.length}
+          sending={sending}
+          onConfirm={() => { void sendReply(); }}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      )}
 
       {/* Contact info — mobile: full-screen overlay toggled by the "i" button above; desktop:
           always-visible third column (sm:flex wins over the mobile-only hidden/flex toggle). */}
