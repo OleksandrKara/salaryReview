@@ -115,6 +115,14 @@ public class CheckoutReviewTriggerService {
             if (customerId == null) {
                 return; // no customer on the order at all — nothing to text
             }
+            // 2026-11 owner report (business 2): a client who prepaid for a procedure days later
+            // (no "Deposit for" note, not an Invoice) got "how did we do? You were with ..." with no visit.
+            // No accepted booking today but one still ahead means this payment is not a checkout.
+            if (isPrepaidForFutureVisit(square, customerId)) {
+                log.info("Checkout-review/same-day-rebooking triggers skipped for payment {}: customer has no booking today but one ahead (prepaid, not a visit)",
+                        payment.id());
+                return;
+            }
             // Normalized to E.164 here — Square's own Customer.phoneNumber() returns whatever
             // format was on file (often not E.164), and Twilio's inbound webhook always sends
             // E.164. Without normalizing at this one root-cause write point, the same customer's
@@ -185,6 +193,28 @@ public class CheckoutReviewTriggerService {
         } catch (Exception e) {
             log.warn("Checkout-review trigger failed for payment {} (event ignored): {}",
                     payment == null ? null : payment.id(), e.getMessage());
+        }
+    }
+
+    private static final java.time.Duration PREPAID_MIN_LEAD = java.time.Duration.ofHours(3);
+
+    /** True when the customer has an ACCEPTED booking starting later than {@link #PREPAID_MIN_LEAD} from now
+     * and none starting today (salon time). A failed lookup counts as "not prepaid" (previous behaviour). */
+    boolean isPrepaidForFutureVisit(SquareClient square, String customerId) {
+        try {
+            Instant now = Instant.now();
+            java.time.LocalDate today = now.atZone(SALON_ZONE).toLocalDate();
+            boolean futureAhead = false;
+            for (SquareClient.Booking b : square.bookingsForCustomer(customerId, now.minus(java.time.Duration.ofDays(1)))) {
+                if (b.startAt() == null || !"ACCEPTED".equals(b.status())) continue;
+                Instant start = Instant.parse(b.startAt());
+                if (start.atZone(SALON_ZONE).toLocalDate().equals(today)) return false;
+                if (start.isAfter(now.plus(PREPAID_MIN_LEAD))) futureAhead = true;
+            }
+            return futureAhead;
+        } catch (Exception e) {
+            log.warn("Prepaid check failed for customer {} (treated as a visit): {}", customerId, e.getMessage());
+            return false;
         }
     }
 

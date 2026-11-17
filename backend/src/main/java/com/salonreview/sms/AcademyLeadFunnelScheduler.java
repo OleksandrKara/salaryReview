@@ -172,7 +172,7 @@ public class AcademyLeadFunnelScheduler {
                 continue;
             }
             // A reply by text does not stop the funnel; only a purchase does (booked a procedure, or enrolled in a course by staff).
-            if (boughtService(lead)) {
+            if (boughtService(lead) || paidSince(lead)) {
                 jdbc.update("UPDATE academy_lead SET status = 'converted', stopped_at = now(), stop_via = 'booked_service' WHERE id = ? AND status = 'new'", lead.id());
                 return;
             }
@@ -202,6 +202,22 @@ public class AcademyLeadFunnelScheduler {
                 + "AND ((?::text IS NOT NULL AND right(regexp_replace(coalesce(c.phone_number, ''), '\\D', '', 'g'), 10) = ?) "
                 + "OR (?::text IS NOT NULL AND lower(c.email_address) = ?)) "
                 + "AND NOT " + ConsultationCatalog.isConsultationSql("b", consultations.ids(BUSINESS_ID)) + ")",
+                Boolean.class, BUSINESS_ID, java.sql.Timestamp.from(lead.createdAt()), phone, phone, email, email);
+        return Boolean.TRUE.equals(found);
+    }
+
+    /** A completed Square payment of $100+ after the request (prepaid deposit or invoice with no booking yet),
+     * matched by phone or email. */
+    private boolean paidSince(Lead lead) {
+        String digits = lead.phone() == null ? "" : lead.phone().replaceAll("\\D", "");
+        String phone = digits.length() < 10 ? null : digits.substring(digits.length() - 10);
+        String email = lead.email() == null || lead.email().isBlank() ? null : lead.email().trim().toLowerCase();
+        if (phone == null && email == null) return false;
+        Boolean found = jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM square_payment p JOIN square_customer c "
+                + "ON c.business_id = p.business_id AND c.square_customer_id = p.square_customer_id "
+                + "WHERE p.business_id = ? AND p.status = 'COMPLETED' AND p.total_money >= 100 AND p.created_at >= ? "
+                + "AND ((?::text IS NOT NULL AND right(regexp_replace(coalesce(c.phone_number, ''), '\\D', '', 'g'), 10) = ?) "
+                + "OR (?::text IS NOT NULL AND lower(c.email_address) = ?)))",
                 Boolean.class, BUSINESS_ID, java.sql.Timestamp.from(lead.createdAt()), phone, phone, email, email);
         return Boolean.TRUE.equals(found);
     }
