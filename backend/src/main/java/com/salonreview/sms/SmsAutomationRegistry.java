@@ -199,8 +199,9 @@ public final class SmsAutomationRegistry {
                     "First-visit intake form",
                     "Every first-time client who books: one text with a short health and preferences form "
                             + "to sign on their phone, and one reminder about a day before if it is still unsigned. "
-                            + "Staff see the status and the answers in the CRM; the signed status is also written to "
-                            + "the Square customer note.",
+                            + "Staff see the status and the answers in the CRM, and a short block with the answers "
+                            + "(health data, flagged when something needs attention) is written at the top of the "
+                            + "Square customer note so technicians see it where they work.",
                     List.of("intake_form_request_with_technician", "intake_form_request_no_technician"),
                     false, false, false
             )),

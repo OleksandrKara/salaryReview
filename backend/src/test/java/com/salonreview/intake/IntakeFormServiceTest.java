@@ -56,23 +56,41 @@ class IntakeFormServiceTest {
         Map<String, String> a = IntakeAnswersTest.valid();
         a.put("allergies", "YES");
         a.put("allergiesDetails", "latex gloves");
-        assertThat(service.submit("tok123", a, "Jane Doe", true)).isEqualTo(IntakeFormService.SubmitResult.OK);
+        assertThat(service.submit("tok123", a, "Jane Doe", true, true)).isEqualTo(IntakeFormService.SubmitResult.OK);
         assertThat(f.getAnswersEncrypted()).isNotBlank().doesNotContain("latex").doesNotContain("allergies");
         assertThat(f.isSigned()).isTrue();
         assertThat(f.getSignedVia()).isEqualTo(IntakeForm.VIA_CLIENT_FORM);
         assertThat(f.isNeedsAttention()).isTrue();
         assertThat(service.decryptAnswers(f)).containsEntry("allergiesDetails", "latex gloves");
+        assertThat(f.getConsentText()).contains("the team of this salon").contains("technician, managers and owner");
+        assertThat(f.getConsentVersion()).isEqualTo(IntakeFormService.CONSENT_VERSION);
+    }
+
+    @Test
+    void submitWithoutConsentTickStoresNothing() {
+        IntakeForm f = form();
+        when(forms.findByToken("tok123")).thenReturn(Optional.of(f));
+        assertThatThrownBy(() -> service.submit("tok123", IntakeAnswersTest.valid(), "Jane Doe", true, false))
+                .hasMessage("consent");
+        assertThat(f.isSigned()).isFalse();
+        assertThat(f.getAnswersEncrypted()).isNull();
+    }
+
+    @Test
+    void consentNamesTheLegalEntity() {
+        assertThat(IntakeFormService.consentText("Anna Kara's Brow Studio LLC dba AK.LUX.NAILS"))
+                .contains("the team of Anna Kara's Brow Studio LLC dba AK.LUX.NAILS (my technician, managers and owner)");
     }
 
     @Test
     void secondSubmitDoesNotOverwrite() {
         IntakeForm f = form();
         when(forms.findByToken("tok123")).thenReturn(Optional.of(f));
-        service.submit("tok123", IntakeAnswersTest.valid(), "Jane Doe", true);
+        service.submit("tok123", IntakeAnswersTest.valid(), "Jane Doe", true, true);
         String stored = f.getAnswersEncrypted();
         Map<String, String> other = IntakeAnswersTest.valid();
         other.put("service", "PEDICURE");
-        assertThat(service.submit("tok123", other, "Someone Else", true)).isEqualTo(IntakeFormService.SubmitResult.ALREADY_SIGNED);
+        assertThat(service.submit("tok123", other, "Someone Else", true, true)).isEqualTo(IntakeFormService.SubmitResult.ALREADY_SIGNED);
         assertThat(f.getAnswersEncrypted()).isEqualTo(stored);
         assertThat(f.getSignatureName()).isEqualTo("Jane Doe");
     }
@@ -80,14 +98,14 @@ class IntakeFormServiceTest {
     @Test
     void unknownTokenAndBadInputStoreNothing() {
         when(forms.findByToken("nope")).thenReturn(Optional.empty());
-        assertThat(service.submit("nope", IntakeAnswersTest.valid(), "Jane Doe", true)).isEqualTo(IntakeFormService.SubmitResult.NOT_FOUND);
+        assertThat(service.submit("nope", IntakeAnswersTest.valid(), "Jane Doe", true, true)).isEqualTo(IntakeFormService.SubmitResult.NOT_FOUND);
         IntakeForm f = form();
         when(forms.findByToken("tok123")).thenReturn(Optional.of(f));
-        assertThatThrownBy(() -> service.submit("tok123", IntakeAnswersTest.valid(), "Jane Doe", false)).hasMessage("signature");
-        assertThatThrownBy(() -> service.submit("tok123", IntakeAnswersTest.valid(), " ", true)).hasMessage("signature");
+        assertThatThrownBy(() -> service.submit("tok123", IntakeAnswersTest.valid(), "Jane Doe", false, true)).hasMessage("signature");
+        assertThatThrownBy(() -> service.submit("tok123", IntakeAnswersTest.valid(), " ", true, true)).hasMessage("signature");
         Map<String, String> bad = new HashMap<>(IntakeAnswersTest.valid());
         bad.put("skin", "??");
-        assertThatThrownBy(() -> service.submit("tok123", bad, "Jane Doe", true)).isInstanceOf(IntakeAnswers.Invalid.class);
+        assertThatThrownBy(() -> service.submit("tok123", bad, "Jane Doe", true, true)).isInstanceOf(IntakeAnswers.Invalid.class);
         assertThat(f.isSigned()).isFalse();
         assertThat(f.getAnswersEncrypted()).isNull();
         verify(forms, never()).save(any());

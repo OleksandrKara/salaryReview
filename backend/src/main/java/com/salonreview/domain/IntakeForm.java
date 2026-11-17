@@ -77,6 +77,12 @@ public class IntakeForm {
     @Column(name = "needs_attention", nullable = false)
     private boolean needsAttention;
 
+    @Column(name = "consent_text")
+    private String consentText;
+
+    @Column(name = "consent_version")
+    private String consentVersion;
+
     @Column(name = "signature_name")
     private String signatureName;
 

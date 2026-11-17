@@ -31,7 +31,8 @@ public class IntakePublicController {
         this.service = service;
     }
 
-    public record SubmitRequest(Map<String, String> answers, String signatureName, boolean agreed) {}
+    public record SubmitRequest(Map<String, String> answers, String signatureName, boolean agreed,
+                               boolean consent) {}
 
     @GetMapping("/{token}")
     public ResponseEntity<?> view(@PathVariable String token, HttpServletRequest req) {
@@ -50,7 +51,7 @@ public class IntakePublicController {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
         }
         try {
-            return switch (service.submit(token, body.answers(), body.signatureName(), body.agreed())) {
+            return switch (service.submit(token, body.answers(), body.signatureName(), body.agreed(), body.consent())) {
                 case OK -> ResponseEntity.ok(Map.of("status", "SIGNED"));
                 case ALREADY_SIGNED -> ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("status", "SIGNED"));
                 case NOT_FOUND -> ResponseEntity.notFound().build();
