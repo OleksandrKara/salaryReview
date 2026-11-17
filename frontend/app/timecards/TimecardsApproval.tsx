@@ -93,6 +93,12 @@ function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; own
           </button>
         )}
       </div>
+      {d.waiverOnFile && d.paidMinutes <= 360 && !card?.breaks.some((b) => b.kind === 'UNPAID') && (
+        <div className="mt-2 rounded bg-emerald-50 px-2 py-1.5 text-sm text-emerald-800">{t(lang, 'tcWvDayOnFile')}</div>
+      )}
+      {!d.waiverOnFile && d.paidMinutes <= 360 && d.findings.some((f) => f.code === 'MEAL_PREMIUM_OWED' || f.code === 'MEAL_MISSING') && (
+        <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{t(lang, 'tcWvDayMissing')}</div>
+      )}
       {(d.attentionReasons?.length ?? 0) > 0 || d.needsAttention ? (
         <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           <div className="font-medium">{t(lang, 'tcAttn')}</div>

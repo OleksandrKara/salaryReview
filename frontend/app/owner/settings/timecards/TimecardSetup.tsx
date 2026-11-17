@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import type { Language } from '../../../lib/types';
 import { t } from '../../../lib/i18n';
-import { type Approver, type ProviderSetup, tcFetch } from '../../../lib/timecards';
+import { type Approver, type ProviderSetup, type WaiverRow, tcFetch } from '../../../lib/timecards';
+import WaiverPanel, { WaiverBanner } from './WaiverPanel';
 
-function ProviderCard({ p, candidates, lang, onSaved }: { p: ProviderSetup; candidates: Approver[]; lang: Language; onSaved: (p: ProviderSetup) => void }) {
+function ProviderCard({ p, candidates, lang, onSaved, waiver, onWaiverChanged }: { p: ProviderSetup; candidates: Approver[]; lang: Language; onSaved: (p: ProviderSetup) => void; waiver?: WaiverRow; onWaiverChanged: () => void }) {
   const [workerType, setWorkerType] = useState(p.workerType);
   const [rate, setRate] = useState(p.hourlyRateCents == null ? '' : (p.hourlyRateCents / 100).toFixed(2));
   const [from, setFrom] = useState(p.rateEffectiveFrom ?? new Date().toISOString().slice(0, 10));
@@ -98,6 +99,7 @@ function ProviderCard({ p, candidates, lang, onSaved }: { p: ProviderSetup; cand
           ))}
         </div>
       </fieldset>
+      {p.workerType === 'W2' && waiver && <WaiverPanel row={waiver} lang={lang} onChanged={onWaiverChanged} />}
       <div className="mt-3 flex items-center gap-3">
         <button disabled={busy} onClick={save} className="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-50">{t(lang, 'tcSave')}</button>
         {msg && <span className="text-sm text-zinc-600">{msg}</span>}
@@ -109,18 +111,22 @@ function ProviderCard({ p, candidates, lang, onSaved }: { p: ProviderSetup; cand
 export default function TimecardSetup({ language }: { language: Language }) {
   const [rows, setRows] = useState<ProviderSetup[] | null>(null);
   const [candidates, setCandidates] = useState<Approver[]>([]);
+  const [waivers, setWaivers] = useState<WaiverRow[]>([]);
   const [err, setErr] = useState('');
+  const reloadWaivers = () => { tcFetch<WaiverRow[]>('admin/waivers').then(setWaivers).catch((e) => setErr(e.message)); };
   useEffect(() => {
-    Promise.all([tcFetch<ProviderSetup[]>('admin/providers'), tcFetch<Approver[]>('admin/approver-candidates')])
-      .then(([r, c]) => { setRows(r); setCandidates(c); })
+    Promise.all([tcFetch<ProviderSetup[]>('admin/providers'), tcFetch<Approver[]>('admin/approver-candidates'), tcFetch<WaiverRow[]>('admin/waivers')])
+      .then(([r, c, w]) => { setRows(r); setCandidates(c); setWaivers(w); })
       .catch((e) => setErr(e.message));
   }, []);
   return (
     <div>
       {err && <div className="text-sm text-red-700">{err}</div>}
+      <WaiverBanner rows={waivers.filter((w) => rows?.some((r) => r.providerId === w.providerId && r.workerType === 'W2'))} lang={language} />
       <ul className="flex flex-col gap-3">
         {rows?.map((p) => (
           <ProviderCard key={`${p.providerId}-${p.workerType}-${p.hourlyRateCents}`} p={p} candidates={candidates} lang={language}
+            waiver={waivers.find((w) => w.providerId === p.providerId)} onWaiverChanged={reloadWaivers}
             onSaved={(s) => setRows((cur) => cur && cur.map((x) => (x.providerId === s.providerId ? s : x)))} />
         ))}
       </ul>

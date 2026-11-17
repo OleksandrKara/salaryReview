@@ -52,6 +52,11 @@ public class TimecardDayService {
     }
 
     public DayCalc calc(Long businessId, Long providerId, LocalDate date) {
+        return calc(businessId, providerId, date, null);
+    }
+
+    /** waiverOverride (nullable) replaces the on-file lookup so the owner can preview a waiver before recording it. */
+    public DayCalc calc(Long businessId, Long providerId, LocalDate date, Boolean waiverOverride) {
         ReviewRow review = review(businessId, providerId, date).orElse(null);
         Integer rate = rateOn(businessId, providerId, date);
         List<String> members = memberIds(providerId);
@@ -82,7 +87,8 @@ public class TimecardDayService {
             cards = applyConfirmed(cards, review.confirmedBreaksJson());
         }
         List<DayTimecard> evidence = generated ? stripRests(cards) : cards;
-        boolean mealWaiver = review != null && review.mealWaiver();
+        boolean waiverOnFile = waiverOverride != null ? waiverOverride : waiverAppliesOn(businessId, providerId, date);
+        boolean mealWaiver = waiverOnFile || (waiverOverride == null && review != null && review.mealWaiver());
         boolean restNotProvided = review != null && review.restNotProvided();
         DayAnalysis analysis = null;
         if (!evidence.isEmpty()) {
@@ -110,7 +116,20 @@ public class TimecardDayService {
             }
         }
         return new DayCalc(date, providerId, source, cards, appts, analysis, rate, review, status, changed,
-                activeWaiver(businessId, providerId), generated);
+                waiverOnFile, generated);
+    }
+
+    public int premiumCents(DayCalc c) {
+        DayAnalysis a = c.analysis();
+        if (a == null) return 0;
+        int premium = 0;
+        int rate = c.rateCents() == null ? 0 : c.rateCents();
+        if (a.mealPremium()) premium += CaWagePolicy.mealPremiumCents(rate);
+        if (a.restPremium()) premium += CaWagePolicy.mealPremiumCents(rate);
+        for (Finding f : a.findings()) {
+            if (f.code() == FindingCode.SPLIT_SHIFT_PREMIUM_OWED) premium += (int) f.minutes();
+        }
+        return premium;
     }
 
     public DayView view(Long businessId, Long providerId, LocalDate date, boolean money) {
@@ -121,17 +140,11 @@ public class TimecardDayService {
         long paid = c.paidMinutes();
         DayPay pay = policy.dailyPay(date, paid);
         List<FindingDto> findings = new ArrayList<>();
-        int premium = 0;
+        int premium = premiumCents(c);
         if (a != null) {
             for (Finding f : a.findings()) {
                 findings.add(new FindingDto(f.code().name(), f.code().severity().name(), f.minutes(),
                         money ? f.message() : f.messageNoMoney()));
-            }
-            int rate = c.rateCents() == null ? 0 : c.rateCents();
-            if (a.mealPremium()) premium += CaWagePolicy.mealPremiumCents(rate);
-            if (a.restPremium()) premium += CaWagePolicy.mealPremiumCents(rate);
-            for (Finding f : a.findings()) {
-                if (f.code() == FindingCode.SPLIT_SHIFT_PREMIUM_OWED) premium += (int) f.minutes();
             }
         }
         ReviewRow rv = c.review();
@@ -140,12 +153,12 @@ public class TimecardDayService {
         List<String> reasons = attentionReasons(c, a, answers);
         boolean editableDay = !"APPROVED".equals(c.status()) && !"VOIDED".equals(c.status()) && !"NONE".equals(c.source());
         List<BreakQuestionDto> questions = editableDay && a != null
-                ? breakQuestions(c.timecards(), a, paid, c.generatedBreaks(), rv != null && rv.mealWaiver())
+                ? breakQuestions(c.timecards(), a, paid, c.generatedBreaks(), c.waiverOnFile() || (rv != null && rv.mealWaiver()))
                 : List.of();
         return new DayView(date.toString(), providerId, name, c.source(), c.status(), c.changedInSquare(),
                 cardDtos(c.timecards()), apptDtos(c.appointments()), paid, pay.regularMinutes(),
                 pay.overtimeMinutes(), pay.doubleTimeMinutes(),
-                rv != null && rv.mealWaiver(), rv != null && rv.restConfirmed(), rv != null && rv.restNotProvided(),
+                c.waiverOnFile() || (rv != null && rv.mealWaiver()), rv != null && rv.restConfirmed(), rv != null && rv.restNotProvided(),
                 c.waiverOnFile(), rv == null ? null : rv.note(), findings,
                 money ? c.rateCents() : null, money ? payCents : null, money ? premium : null,
                 rv == null ? null : rv.voidReason(), questions, c.generatedBreaks() && !questions.isEmpty(),
@@ -346,10 +359,19 @@ public class TimecardDayService {
         return r.isEmpty() || r.get(0) == null ? null : r.get(0).toLocalDate();
     }
 
-    public boolean activeWaiver(Long businessId, Long providerId) {
-        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM meal_waiver_agreement WHERE business_id = ? "
-                + "AND provider_id = ? AND revoked_at IS NULL", Integer.class, businessId, providerId);
+    static final String WAIVER_DAY_SQL = "SELECT COUNT(*) FROM meal_waiver_agreement WHERE business_id = ? AND provider_id = ? "
+            + "AND COALESCE(effective_from, (signed_at AT TIME ZONE 'America/Los_Angeles')::date) <= ? "
+            + "AND (revoked_at IS NULL OR ? < COALESCE(revoked_effective, (revoked_at AT TIME ZONE 'America/Los_Angeles')::date))";
+
+    /** A signed, unrevoked waiver whose effective dates cover the day. */
+    public boolean waiverAppliesOn(Long businessId, Long providerId, LocalDate date) {
+        java.sql.Date d = java.sql.Date.valueOf(date);
+        Integer n = jdbc.queryForObject(WAIVER_DAY_SQL, Integer.class, businessId, providerId, d, d);
         return n != null && n > 0;
+    }
+
+    public boolean activeWaiver(Long businessId, Long providerId) {
+        return waiverAppliesOn(businessId, providerId, LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")));
     }
 
     List<String> memberIds(Long providerId) {
