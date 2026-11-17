@@ -99,6 +99,7 @@ export default async function MessagesPage({
       </div>
       <div className="min-h-0 flex-1">
         <MessagesView
+          language={me.preferredLanguage}
           initialConversations={conversationsPage.items}
           initialNextCursor={conversationsPage.nextCursor}
           initialHasMore={conversationsPage.hasMore}
