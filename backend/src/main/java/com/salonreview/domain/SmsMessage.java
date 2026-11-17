@@ -88,6 +88,10 @@ public class SmsMessage {
     @Column(name = "delivery_updated_at")
     private Instant deliveryUpdatedAt;
 
+    /** Set once {@code SmsDeliveryReconciler} has handled this row after no status callback arrived. */
+    @Column(name = "stuck_alerted_at")
+    private Instant stuckAlertedAt;
+
     /** Set on this INBOUND row when the customer's reply to the checkout-review-request
      * automation contains a low (1-4) digit rating — see {@code TwilioInboundSmsController}.
      * Once set for any message from a phone number, that number is permanently excluded from the

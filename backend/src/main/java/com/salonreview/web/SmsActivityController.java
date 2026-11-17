@@ -123,7 +123,11 @@ public class SmsActivityController {
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
-    public record ReplyResult(boolean sent, String reason) {}
+    public record ReplyResult(boolean sent, String reason, String detail) {
+        public ReplyResult(boolean sent, String reason) {
+            this(sent, reason, null);
+        }
+    }
 
     public record ConversationSearchHitDto(String phoneNumber, String snippet, String direction, Instant matchedAt) {}
 
@@ -155,6 +159,12 @@ public class SmsActivityController {
         Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(ids);
         Map<Long, List<SmsReactionService.ReactionDto>> reactions = reactionService.reactionsForMessages(ids);
         return messages.stream().map(m -> toDto(m, media, reactions, Map.of())).toList();
+    }
+
+    /** Outbound messages that did not reach the client (Twilio rejected, or later undelivered). */
+    @GetMapping("/failed")
+    public List<SmsMessageLogService.FailedMessage> failed(@RequestParam(defaultValue = "14") int days) {
+        return service.failedOutbound(currentBusinessContext.id(), Math.max(1, Math.min(days, 90)));
     }
 
     @GetMapping("/unread-count")
@@ -370,7 +380,7 @@ public class SmsActivityController {
     @PostMapping("/reply")
     public ReplyResult reply(@RequestBody ReplyRequest request, @AuthenticationPrincipal AppUserPrincipal me) {
         var result = smsService.sendManual(currentBusinessContext.id(), request.phoneNumber(), request.body(), me == null ? null : me.getUserId());
-        return new ReplyResult(result.sent(), result.reason());
+        return new ReplyResult(result.sent(), result.reason(), result.detail());
     }
 
     /** Same as {@link #reply}, with one or more photo attachments — multipart, not JSON, since a
@@ -383,7 +393,7 @@ public class SmsActivityController {
                                        @RequestParam("files") List<MultipartFile> files,
                                        @AuthenticationPrincipal AppUserPrincipal me) throws IOException {
         var result = smsService.sendManualWithMedia(currentBusinessContext.id(), phoneNumber, body, files, me == null ? null : me.getUserId());
-        return new ReplyResult(result.sent(), result.reason());
+        return new ReplyResult(result.sent(), result.reason(), result.detail());
     }
 
     private static SmsMessageDto toDto(SmsMessage m, Map<Long, List<SmsMediaService.MediaInfo>> mediaByMessage,

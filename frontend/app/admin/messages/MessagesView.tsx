@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../../lib/api';
-import type { EmailFollowUpDto, Language, MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
+import type { EmailFollowUpDto, Language, MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsFailedMessage, SmsMessageDto } from '../../lib/types';
 import { Spinner } from '../../components/Spinner';
 import ContactInfoPanel from './ContactInfoPanel';
 import SmsConsentIcon from './SmsConsentIcon';
@@ -20,7 +20,7 @@ import EmailFollowUpCard from './EmailFollowUpCard';
 import { dispatchSmsUnreadCountChanged } from '../../lib/smsUnreadEvent';
 import ConfirmSendDialog from './ConfirmSendDialog';
 import { channelFor } from './confirmSend';
-import { hasBoldMarkers, parseBold, sendFailureMessage, smsLengthState, stripBoldMarkers, SMS_MAX_CHARS } from './smsText';
+import { hasBoldMarkers, isOverSmsLimit, parseBold, SEND_UNKNOWN_MESSAGE, sendFailureMessage, smsLengthWarning, stripBoldMarkers } from './smsText';
 
 // A compact, generally-useful set for the composer's "insert emoji" button — not exhaustive (no
 // full category picker), just enough to cover common reply copy without switching keyboards.
@@ -161,6 +161,11 @@ export default function MessagesView({
   useEffect(() => { filterRef.current = filter; }, [filter]);
   const [filterLoading, setFilterLoading] = useState(false);
   const [unreadTotal, setUnreadTotal] = useState<number | null>(null);
+  const [failedItems, setFailedItems] = useState<SmsFailedMessage[]>([]);
+  const [failedOpen, setFailedOpen] = useState(false);
+  // True after a send whose outcome we could not confirm (network error or no answer): the text
+  // stays in the box and the warning stays until dismissed, never an auto-clearing toast.
+  const [sendUnknown, setSendUnknown] = useState(false);
   // Lets the search-hit-fetching effect below check what's already loaded without needing
   // `conversations` itself in its dependency array (which would re-run it, and its fetches, on
   // every single upsert — including the ones it just did).
@@ -495,6 +500,16 @@ export default function MessagesView({
   // smsUnreadEvent) — a direct backend count, not summed from `conversations`, since that array
   // only ever holds the currently-loaded page(s) once pagination is in play and would otherwise
   // silently under-count once the salon has more conversations than fit on one page.
+  function refreshFailed() {
+    api.getFailedSms(14).then((items) => setFailedItems(items.filter((i) => !i.resolved))).catch(() => {});
+  }
+
+  useEffect(() => {
+    refreshFailed();
+    const id = window.setInterval(refreshFailed, 120_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   function refreshUnreadBadge() {
     api.getSmsUnreadCount().then(({ unreadCount }) => {
       dispatchSmsUnreadCountChanged(unreadCount);
@@ -764,6 +779,7 @@ export default function MessagesView({
 
   function requestSend() {
     if ((!draft.trim() && attachedFiles.length === 0) || !selectedPhone || sending) return;
+    if (isOverSmsLimit(draft.trim())) return;
     setConfirmOpen(true);
   }
 
@@ -772,8 +788,10 @@ export default function MessagesView({
     // A pure-photo message (no text) is valid — only a genuinely empty send (no text, no photos)
     // is blocked.
     if ((!body && attachedFiles.length === 0) || !selectedPhone || sending) return;
+    if (isOverSmsLimit(body)) return;
     setSending(true);
     setDraftError(null);
+    setSendUnknown(false);
     try {
       const result = attachedFiles.length > 0
         ? await api.sendSmsReplyWithMedia(selectedPhone, body, attachedFiles)
@@ -793,10 +811,19 @@ export default function MessagesView({
         if (freshSummary) upsertConversation(freshSummary);
         refreshUnreadBadge();
       } else {
-        setDraftError(sendFailureMessage(result.reason));
+        setDraftError(sendFailureMessage(result.reason, result.detail));
+        refreshFailed();
       }
     } catch {
-      setDraftError('Could not send. Please check your connection and try again. Your text is still in the box.');
+      setSendUnknown(true);
+      setDraftError(SEND_UNKNOWN_MESSAGE);
+      // Reload the thread so the manager can see whether the message actually landed.
+      Promise.all([api.getSmsThread(selectedPhone), api.getSmsConversationSummary(selectedPhone)])
+        .then(([freshThread, freshSummary]) => {
+          setThread(freshThread);
+          if (freshSummary) upsertConversation(freshSummary);
+        })
+        .catch(() => {});
     } finally {
       setSending(false);
       setConfirmOpen(false);
@@ -975,6 +1002,27 @@ export default function MessagesView({
                 );
               })}
             </div>
+            {failedItems.length > 0 && (
+              <div data-testid="failed-sms-banner" className="mt-2 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">
+                <button type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left font-medium" onClick={() => setFailedOpen((v) => !v)} aria-expanded={failedOpen}>
+                  <span>{failedItems.length} text{failedItems.length === 1 ? '' : 's'} did not reach the client (last 14 days)</span>
+                  <span aria-hidden>{failedOpen ? '▲' : '▼'}</span>
+                </button>
+                {failedOpen && (
+                  <ul className="max-h-60 overflow-y-auto border-t border-red-200">
+                    {failedItems.map((f) => (
+                      <li key={f.id}>
+                        <button type="button" className="block w-full px-3 py-2 text-left hover:bg-red-100" onClick={() => openThread(f.phoneNumber)}>
+                          <span className="font-medium tabular-nums">…{f.phoneNumber.slice(-4)}</span>
+                          <span className="ml-2 text-xs">{new Date(f.createdAt).toLocaleDateString()} · {f.source}</span>
+                          <span className="block text-xs">{f.errorMessage ?? 'Not delivered'}{f.errorCode ? ` (${f.errorCode})` : ''}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         )}
         <div ref={conversationListScrollRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
@@ -1410,9 +1458,27 @@ export default function MessagesView({
                   </div>
                 )}
                 {draftError && (
-                  <p data-testid="thread-composer-draft-error" className="px-3 pt-2 text-xs text-red-600">
-                    {draftError}
-                  </p>
+                  <div data-testid="thread-composer-draft-error" role="alert" className="mx-3 mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                    <span className="min-w-0 flex-1">{draftError}</span>
+                    {sendUnknown && selectedPhone && (
+                      <button
+                        type="button"
+                        data-testid="thread-composer-check-thread"
+                        className="shrink-0 underline"
+                        onClick={() => {
+                          Promise.all([api.getSmsThread(selectedPhone), api.getSmsConversationSummary(selectedPhone)])
+                            .then(([freshThread, freshSummary]) => {
+                              setThread(freshThread);
+                              if (freshSummary) upsertConversation(freshSummary);
+                            })
+                            .catch(() => {});
+                        }}
+                      >
+                        Check thread
+                      </button>
+                    )}
+                    <button type="button" aria-label="Dismiss" className="shrink-0 px-1" onClick={() => { setDraftError(null); setSendUnknown(false); }}>×</button>
+                  </div>
                 )}
                 {hasBoldMarkers(draft) && (
                   <p data-testid="thread-composer-asterisk-notice" className="px-3 pt-2 text-xs text-amber-700">
@@ -1422,15 +1488,19 @@ export default function MessagesView({
                     </button>
                   </p>
                 )}
-                {smsLengthState(draft) !== 'ok' && (
-                  <p
-                    data-testid="thread-composer-length"
-                    className={`px-3 pt-2 text-xs ${smsLengthState(draft) === 'too_long' ? 'font-medium text-red-600' : 'text-zinc-500'}`}
-                  >
-                    {draft.length} / {SMS_MAX_CHARS}
-                    {smsLengthState(draft) === 'too_long' ? ' characters. Too long to send, please shorten or split it.' : ' characters. Long messages are sent as several SMS parts.'}
-                  </p>
-                )}
+                {(() => {
+                  const w = smsLengthWarning(draft);
+                  if (!w) return null;
+                  return (
+                    <p
+                      data-testid="thread-composer-length"
+                      role={w.level === 'error' ? 'alert' : undefined}
+                      className={`px-3 pt-2 text-xs ${w.level === 'error' ? 'font-medium text-red-600' : 'text-zinc-500'}`}
+                    >
+                      {w.text}
+                    </p>
+                  );
+                })()}
                 <form
                   data-testid="thread-composer"
                   onSubmit={(e) => {
@@ -1545,7 +1615,7 @@ export default function MessagesView({
                   <button
                     type="submit"
                     data-testid="thread-composer-send-button"
-                    disabled={(!draft.trim() && attachedFiles.length === 0) || sending || draft.length > SMS_MAX_CHARS}
+                    disabled={(!draft.trim() && attachedFiles.length === 0) || sending || isOverSmsLimit(draft.trim())}
                     title="Send (Ctrl+Enter)"
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white disabled:opacity-40 sm:order-3 sm:ml-auto sm:h-auto sm:w-auto sm:px-4 sm:py-2"
                     aria-label="Send"

@@ -251,7 +251,7 @@ public class SameDayRebookingScheduler {
             updateReserved(reserved, body, true, null, twilioMessageSid);
         } catch (Exception e) {
             log.warn("{} send failed (caller unaffected): {}", templateKey, e.getMessage());
-            updateReserved(reserved, body, false, "send_failed", null);
+            messageLogService.recordSendFailure(reserved, e);
         }
     }
 

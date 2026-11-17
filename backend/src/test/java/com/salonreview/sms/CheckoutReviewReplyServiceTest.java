@@ -212,10 +212,7 @@ class CheckoutReviewReplyServiceTest {
 
         sendBranchReplyAndFireDelayedTask(flow(), true);
 
-        var savedCaptor = ArgumentCaptor.forClass(SmsMessage.class);
-        verify(messageLogService).save(savedCaptor.capture());
-        assertThat(savedCaptor.getValue().getStatus()).isEqualTo("NOT_SENT");
-        assertThat(savedCaptor.getValue().getReason()).isEqualTo("send_failed");
+        verify(messageLogService).recordSendFailure(any(SmsMessage.class), any(java.io.IOException.class));
     }
 
     @Test

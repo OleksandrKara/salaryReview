@@ -305,6 +305,51 @@ class TwilioSmsServiceTest {
 
         assertThat(result.sent()).isFalse();
         assertThat(result.reason()).isEqualTo("send_failed");
-        assertThat(reserved.getStatus()).isEqualTo("NOT_SENT");
+        verify(messageLogService).recordSendFailure(eq(reserved), any(java.io.IOException.class));
+    }
+
+    @Test
+    @DisplayName("sendTemplated: rendered body over 1600 chars → too_long, logged, never sent")
+    void templatedTooLongIsRejected() throws Exception {
+        when(templateService.render(eq(BUSINESS_ID), eq(TRANSACTIONAL_KEY), any(), any())).thenReturn("x".repeat(1601));
+
+        var result = service.sendTemplated(BUSINESS_ID, TRANSACTIONAL_KEY, PHONE, Map.of());
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("too_long");
+        verifyNoInteractions(client);
+        verify(messageLogService).logOutbound(eq(BUSINESS_ID), eq(TRANSACTIONAL_KEY), any(), eq(PHONE), any(), eq(false), eq("too_long"), eq(null));
+    }
+
+    @Test
+    @DisplayName("sendManual: empty text and invalid phone are rejected before Twilio")
+    void manualEmptyAndInvalidPhoneRejected() throws Exception {
+        assertThat(service.sendManual(BUSINESS_ID, PHONE, "   ").reason()).isEqualTo("empty");
+        assertThat(service.sendManual(BUSINESS_ID, "12345", "hi").reason()).isEqualTo("invalid_phone");
+        assertThat(service.sendManual(BUSINESS_ID, null, "hi").reason()).isEqualTo("invalid_phone");
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("sendManualWithMedia: attachment over 5 MB → media_too_large, nothing sent")
+    void mediaTooLargeRejected() throws Exception {
+        MockMultipartFile big = new MockMultipartFile("file", "big.jpg", "image/jpeg", new byte[(int) TwilioSmsService.MAX_MEDIA_BYTES + 1]);
+
+        var result = service.sendManualWithMedia(BUSINESS_ID, PHONE, "photo", List.of(big));
+
+        assertThat(result.reason()).isEqualTo("media_too_large");
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("sendManual: Twilio error code reaches the caller as plain-language detail")
+    void manualFailureCarriesTwilioCodeDetail() throws Exception {
+        doThrow(new TwilioSendException("Twilio API returned 400", 400, "21610", null)).when(client).send(any(), any(), any());
+
+        var result = service.sendManual(BUSINESS_ID, PHONE, "hi");
+
+        assertThat(result.reason()).isEqualTo("send_failed");
+        assertThat(result.detail()).contains("opted out");
+        verify(messageLogService).logOutboundFailure(eq(BUSINESS_ID), eq(null), eq(null), eq(PHONE), eq("hi"), eq(null), any(TwilioSendException.class));
     }
 }

@@ -204,6 +204,33 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
      * unique identifier, and the row it resolves to already carries its own business_id. */
     Optional<SmsMessage> findByTwilioMessageSid(String twilioMessageSid);
 
+    /** Outbound rows Twilio accepted whose delivery status never moved past queued, for the
+     * stuck-delivery reconciler. */
+    @org.springframework.data.jpa.repository.Query("""
+            select m from SmsMessage m
+            where m.direction = 'OUTBOUND' and m.status = 'SENT' and m.twilioMessageSid is not null
+              and m.createdAt < :olderThan and m.createdAt > :newerThan and m.stuckAlertedAt is null
+              and (m.deliveryStatus is null or m.deliveryStatus in ('queued', 'sending', 'accepted'))
+            order by m.createdAt
+            """)
+    List<SmsMessage> findStuckDeliveries(@org.springframework.data.repository.query.Param("olderThan") Instant olderThan,
+                                         @org.springframework.data.repository.query.Param("newerThan") Instant newerThan,
+                                         org.springframework.data.domain.Pageable page);
+
+    boolean existsByBusinessIdAndPhoneNumberAndStatusInAndCreatedAtAfter(Long businessId, String phoneNumber,
+                                                                         Collection<String> statuses, Instant after);
+
+    /** Failed-messages list: sends Twilio rejected plus sends later reported undelivered/failed. */
+    @org.springframework.data.jpa.repository.Query("""
+            select m from SmsMessage m
+            where m.businessId = :businessId and m.direction = 'OUTBOUND' and m.createdAt > :since
+              and (m.deliveryStatus in ('failed', 'undelivered') or (m.status = 'NOT_SENT' and m.reason = 'send_failed'))
+            order by m.createdAt desc
+            """)
+    List<SmsMessage> findFailedOutbound(@org.springframework.data.repository.query.Param("businessId") Long businessId,
+                                        @org.springframework.data.repository.query.Param("since") Instant since,
+                                        org.springframework.data.domain.Pageable page);
+
     /** Used to re-roll a freshly generated {@link com.salonreview.sms.ClickTokens} candidate on
      * the (extremely rare) chance it collides with one already in use — see design.md D6. Not
      * business-scoped: {@code click_token} must be globally unique across every business sharing

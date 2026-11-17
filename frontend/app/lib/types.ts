@@ -726,6 +726,18 @@ export interface SmsConversationPageDto {
 export interface SmsReplyResult {
   sent: boolean;
   reason: string | null;
+  detail?: string | null;
+}
+
+export interface SmsFailedMessage {
+  id: number;
+  phoneNumber: string;
+  body: string | null;
+  createdAt: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  source: string;
+  resolved: boolean;
 }
 
 // AI-drafted reply suggestion for the manager conversation view's "Generate" button — see
