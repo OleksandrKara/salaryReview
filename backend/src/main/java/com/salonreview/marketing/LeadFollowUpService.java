@@ -155,7 +155,10 @@ public class LeadFollowUpService {
                              List<Appointment> appointments, Spend spend, List<EmailSent> emails,
                              List<Sms> sms, String squareNote, List<Payment> payments, List<Form> forms,
                              Place place, Badges badges, List<Reminder> reminders, Journey journey,
-                             java.util.Map<String, String> firstTouch) {}
+                             java.util.Map<String, String> firstTouch, NameInfo nameInfo) {}
+
+    /** The one name every screen shows, other names seen for this phone, and whether staff can change it (needs a Square profile). */
+    public record NameInfo(String name, List<String> alternates, boolean canRename) {}
 
     /** One site visit of this person: where it began and the traffic source of that visit itself. */
     public record Visit(String at, String landing, String trafficSource, String referrer, String utm, String adClick,
@@ -192,7 +195,7 @@ public class LeadFollowUpService {
     private final RowMapper<LeadView> leadMapper = (rs, i) -> {
         String customer = rs.getString("square_customer_id");
         return new LeadView(rs.getLong("id"), rs.getString("channel"), rs.getString("source"),
-                rs.getString("phone_number"), rs.getString("email"), rs.getString("name"), rs.getString("detail"),
+                rs.getString("phone_number"), rs.getString("email"), ContactNames.clean(rs.getString("name")), rs.getString("detail"),
                 rs.getString("status"), iso(rs.getTimestamp("callback_at")), iso(rs.getTimestamp("created_at")),
                 iso(rs.getTimestamp("last_touch_at")), rs.getInt("touches"), customer,
                 customer == null ? null : SQUARE_CUSTOMER_URL + customer,
@@ -352,7 +355,29 @@ public class LeadFollowUpService {
         return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead),
                 sms(lead), squareNote(lead), payments(lead), forms(lead, touches), place(lead), badges(lead),
                 "NEW".equals(lead.status()) || "CONTACTED".equals(lead.status()) ? reminders(lead.id()) : List.of(),
-                journey(lead), firstTouch);
+                journey(lead), firstTouch, nameInfo(lead));
+    }
+
+    private NameInfo nameInfo(LeadView lead) {
+        String phone = lead.phoneNumber();
+        if (phone == null) return null;
+        try {
+            MarketingContactsService.ContactNameInfo info = contactsService.resolveDisplayNames(List.of(phone)).get(phone);
+            if (info == null) return null;
+            String name = ContactNames.join(info.givenName(), info.familyName());
+            return new NameInfo(name.isEmpty() ? null : name, info.alternateNames(), info.squareProfileUrl() != null);
+        } catch (RuntimeException e) {
+            log.warn("Lead name lookup failed: {}", e.toString());
+            return null;
+        }
+    }
+
+    /** Staff chose the right name for this lead's person; returns the refreshed name block. */
+    public NameInfo renameLead(long id, String name) {
+        LeadView lead = detail(id).lead();
+        if (lead.phoneNumber() == null) throw new MarketingContactsService.NameChangeException("no_phone");
+        contactsService.renameCustomer(lead.phoneNumber(), name);
+        return nameInfo(lead);
     }
 
     /** Geo of the most recent website visit that has an IP; scope tells a manager whether the person is local. */

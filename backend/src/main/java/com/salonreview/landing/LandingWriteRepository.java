@@ -1,5 +1,6 @@
 package com.salonreview.landing;
 
+import com.salonreview.marketing.ContactNames;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -144,7 +145,7 @@ public class LandingWriteRepository {
                     square_customer_id, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
                 ON CONFLICT (business_id, phone_number) DO UPDATE SET
-                    given_name = EXCLUDED.given_name,
+                    given_name = CASE WHEN ? THEN marketing.contacts.given_name ELSE EXCLUDED.given_name END,
                     email_address = COALESCE(EXCLUDED.email_address, marketing.contacts.email_address),
                     marketing_traffic_source = EXCLUDED.marketing_traffic_source,
                     utm_source = EXCLUDED.utm_source,
@@ -160,7 +161,7 @@ public class LandingWriteRepository {
                     updated_at = now()
                 """, businessId, phone, givenName, email, trafficSource, trafficSource, utmSource, utmMedium,
                 utmCampaign, referrer, landingPageSlug, variantName, c.deviceType(), c.osName(), c.osVersion(),
-                c.browserName(), c.browserVersion(), squareCustomerId);
+                c.browserName(), c.browserVersion(), squareCustomerId, ContactNames.isJunk(givenName));
     }
 
     public void updateContactAfterBooking(long businessId, String phone, String givenName, String email,
@@ -184,7 +185,7 @@ public class LandingWriteRepository {
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now()
                 )
                 ON CONFLICT (business_id, phone_number) DO UPDATE SET
-                    given_name = EXCLUDED.given_name,
+                    given_name = CASE WHEN ? THEN marketing.contacts.given_name ELSE EXCLUDED.given_name END,
                     email_address = COALESCE(EXCLUDED.email_address, marketing.contacts.email_address),
                     marketing_traffic_source = EXCLUDED.marketing_traffic_source,
                     utm_source = EXCLUDED.utm_source,
@@ -212,7 +213,7 @@ public class LandingWriteRepository {
                 utmCampaign, referrer, landingPageSlug, variantName, c.deviceType(), c.osName(), c.osVersion(),
                 c.browserName(), c.browserVersion(), smsConsent, emailConsent, squareCustomerId, squareBookingId,
                 bookingStatus, bookingStartAt == null ? null : OffsetDateTime.ofInstant(bookingStartAt, java.time.ZoneOffset.UTC),
-                serviceName, price, artistName);
+                serviceName, price, artistName, ContactNames.isJunk(givenName));
     }
 
     public void insertAbuseBlock(long businessId, String endpoint, String reason, String phone, String ip) {

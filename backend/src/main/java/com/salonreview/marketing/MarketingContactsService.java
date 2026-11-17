@@ -160,7 +160,11 @@ public class MarketingContactsService {
         try {
             Optional<Contact> tracked = repository.findByPhoneNumber(phoneNumber, currentBusinessContext.id())
                     .map(r -> toContact(r, visitCountsByCustomerId()));
-            return tracked.isPresent() ? tracked : contactFromLivePhoneLookup(phoneNumber);
+            Optional<Contact> found = tracked.isPresent() ? tracked : contactFromLivePhoneLookup(phoneNumber);
+            return found.map(c -> {
+                ContactNameInfo info = resolveDisplayNames(List.of(phoneNumber)).get(phoneNumber);
+                return info == null || info.givenName() == null ? c : c.withName(info.givenName(), info.familyName());
+            });
         } catch (DataAccessException | RestClientException ex) {
             log.warn("Marketing schema or Square unavailable while resolving contact for phone {}", phoneNumber, ex);
             return Optional.empty();
@@ -319,14 +323,37 @@ public class MarketingContactsService {
         String consentSegmentId = rebookingProperties.getConsentSegmentId();
         Map<String, Long> visitCounts = visitCountsByCustomerId();
 
+        Map<String, List<MarketingContactsRepository.SquareName>> squareByPhone = repository
+                .findSquareNamesByPhones(businessId, phoneNumbers).stream()
+                .collect(Collectors.groupingBy(MarketingContactsRepository.SquareName::last10));
+        Map<String, List<String>> leadNamesByPhone = repository.findLeadNamesByPhones(businessId, phoneNumbers).stream()
+                .collect(Collectors.groupingBy(MarketingContactsRepository.LeadName::last10,
+                        Collectors.mapping(MarketingContactsRepository.LeadName::name, Collectors.toList())));
+
         Map<String, ContactNameInfo> result = new HashMap<>();
         for (String phone : phoneNumbers) {
-            MarketingContactsRepository.PhoneName row = byPhone.get(PhoneNumbers.last10Digits(phone));
+            String last10 = PhoneNumbers.last10Digits(phone);
+            MarketingContactsRepository.PhoneName row = byPhone.get(last10);
             String customerId = customerIdByPhone.get(phone);
-            String givenName = row != null && row.givenName() != null && !row.givenName().isBlank()
-                    ? row.givenName()
-                    : (customerId != null ? givenFromSquare.get(customerId) : null);
-            String familyName = customerId != null ? familyFromSquare.get(customerId) : null;
+
+            String squareGiven = customerId == null ? null : ContactNames.clean(givenFromSquare.get(customerId));
+            String squareFamily = customerId == null || squareGiven == null ? null : ContactNames.clean(familyFromSquare.get(customerId));
+            String formName = row == null ? null : ContactNames.clean(row.givenName());
+            List<String> leadNames = leadNamesByPhone.getOrDefault(last10, List.of());
+
+            // Square (staff-verified, booking history) > name on the contact row > latest lead name; placeholders such as "Test" never win.
+            String givenName;
+            String familyName = null;
+            if (squareGiven != null) {
+                givenName = squareGiven;
+                familyName = squareFamily;
+            } else if (formName != null) {
+                givenName = formName;
+            } else {
+                givenName = leadNames.stream().map(ContactNames::clean).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+            }
+            List<String> alternates = alternateNames(ContactNames.join(givenName, familyName), customerId, formName, leadNames,
+                    squareByPhone.getOrDefault(last10, List.of()));
 
             boolean ownConsent = row != null && Boolean.TRUE.equals(row.smsMarketingConsent());
             boolean squareConsent = customerId != null
@@ -341,9 +368,30 @@ public class MarketingContactsService {
             boolean vip = visitCount != null && visitCount >= vipVisitThreshold;
 
             result.put(phone, new ContactNameInfo(givenName, familyName, ownConsent || squareConsent, squareProfileUrl,
-                    vip, visitCount == null ? null : visitCount.intValue()));
+                    vip, visitCount == null ? null : visitCount.intValue(), alternates));
         }
         return result;
+    }
+
+    private static final int MAX_ALTERNATE_NAMES = 4;
+
+    /** Other meaningful names seen for this phone that are not just another spelling of the chosen one. Never merged, only offered. */
+    private static List<String> alternateNames(String chosen, String chosenCustomerId, String formName, List<String> leadNames,
+                                               List<MarketingContactsRepository.SquareName> squareProfiles) {
+        List<String> candidates = new java.util.ArrayList<>();
+        candidates.add(formName);
+        candidates.addAll(leadNames);
+        for (MarketingContactsRepository.SquareName sq : squareProfiles) {
+            if (!sq.customerId().equals(chosenCustomerId)) candidates.add(ContactNames.join(sq.givenName(), sq.familyName()));
+        }
+        Map<String, String> unique = new java.util.LinkedHashMap<>();
+        for (String c : candidates) {
+            String name = ContactNames.clean(c);
+            if (name == null) continue;
+            if (!chosen.isEmpty() && ContactNames.compatible(chosen, name)) continue;
+            unique.putIfAbsent(ContactNames.key(name), name);
+        }
+        return unique.values().stream().limit(MAX_ALTERNATE_NAMES).toList();
     }
 
     /** Nullable given/family name plus merged SMS-marketing-consent and Square profile link for
@@ -351,7 +399,12 @@ public class MarketingContactsService {
      * MarketingContactDto.Contact's own fields (see #visitCountsByCustomerId) — always
      * false/null when no Square customer could be resolved for this phone number at all. */
     public record ContactNameInfo(String givenName, String familyName, boolean smsConsent, String squareProfileUrl,
-                                   boolean vip, Integer visitCount) {}
+                                   boolean vip, Integer visitCount, List<String> alternateNames) {
+        public ContactNameInfo(String givenName, String familyName, boolean smsConsent, String squareProfileUrl,
+                               boolean vip, Integer visitCount) {
+            this(givenName, familyName, smsConsent, squareProfileUrl, vip, visitCount, List.of());
+        }
+    }
 
     /** Never throws: same "this app's health must never depend on the other service's
      * schema" guarantee as MarketingDashboardService.dashboard. Submissions are fetched eagerly for
@@ -510,6 +563,33 @@ public class MarketingContactsService {
         MarketingContactDto fresh = computeContacts();
         cache.get(CONTACTS_CACHE_KEY_PREFIX + currentBusinessContext.id(), CACHE_TTL, () -> fresh);
         return fresh;
+    }
+
+    public static final class NameChangeException extends RuntimeException {
+        public NameChangeException(String message) { super(message); }
+    }
+
+    /** Staff picks the correct name: written to the Square profile (the source of truth), the local mirror and the contact row,
+     * so Messages, CRM and automations all read the same value. Never touches other profiles that share the phone. */
+    public ContactNameInfo renameCustomer(String phoneNumber, String fullName) {
+        String name = ContactNames.clean(fullName);
+        if (name == null) throw new NameChangeException("name_invalid");
+        if (name.length() > 100) throw new NameChangeException("name_too_long");
+        long businessId = currentBusinessContext.id();
+        SquareClient square = squareClientProvider.forBusiness(businessId);
+        ContactNameInfo info = resolveDisplayNames(List.of(phoneNumber)).get(phoneNumber);
+        String url = info == null ? null : info.squareProfileUrl();
+        if (url == null) throw new NameChangeException("no_square_profile");
+        String customerId = url.substring(url.lastIndexOf('/') + 1);
+        int space = name.indexOf(' ');
+        String given = space < 0 ? name : name.substring(0, space);
+        String family = space < 0 ? "" : name.substring(space + 1).trim();
+        square.updateCustomerName(customerId, given, family);
+        repository.setMirrorName(businessId, customerId, given, family.isEmpty() ? null : family);
+        repository.setContactGivenName(businessId, phoneNumber, given);
+        square.invalidate();
+        invalidateCache();
+        return resolveDisplayNames(List.of(phoneNumber)).get(phoneNumber);
     }
 
     /** Backs the "Sync now" button (see SquareSyncController) — busts only this business's own

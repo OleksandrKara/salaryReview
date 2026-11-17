@@ -489,6 +489,11 @@ export const api = {
   markSmsThreadUnread: (phoneNumber: string) =>
     proxyVoid(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/unread`, 'POST'),
 
+  // Staff picks the right name for this phone: written to the Square profile, so Messages, CRM and texts agree.
+  renameSmsContact: (phoneNumber: string, name: string) =>
+    proxyJson<{ givenName: string | null; familyName: string | null; nameAlternates: string[] }>(
+      `/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/name`, 'PUT', { name }),
+
   // "Block number" — silently stops all future outbound SMS (automated or manual) to this number,
   // see TwilioSmsService. Idempotent.
   blockSmsNumber: (phoneNumber: string) =>

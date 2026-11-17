@@ -10,6 +10,8 @@ import GoogleReviewClickedIcon from './GoogleReviewClickedIcon';
 import YelpReviewClickedIcon from './YelpReviewClickedIcon';
 import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
 import SpamFlagIcon from './SpamFlagIcon';
+import type { Language } from '../../lib/types';
+import NameMismatch from '../NameMismatch';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -130,6 +132,9 @@ export default function ContactInfoPanel({
   clickedFeedbackForm,
   flaggedAsSpam,
   canOpenLead = false,
+  nameAlternates = [],
+  onRename,
+  language: panelLanguage = null,
   onClose,
 }: {
   phoneNumber: string;
@@ -178,6 +183,10 @@ export default function ContactInfoPanel({
    * carrier or opted-out (replied STOP) — see SpamFlagIcon's own doc comment. */
   flaggedAsSpam?: boolean;
   canOpenLead?: boolean;
+  /** Other real names on file for this phone (forms, leads, duplicate Square profiles). */
+  nameAlternates?: string[];
+  onRename?: (name: string) => Promise<void>;
+  language?: Language | null;
   onClose: () => void;
 }) {
   const resolvedSquareProfileUrl = squareProfileUrl ?? contact?.squareProfileUrl ?? null;
@@ -296,6 +305,9 @@ export default function ContactInfoPanel({
                   </span>
                 ) : null}
               </div>
+              {onRename && nameAlternates.length > 0 ? (
+                <NameMismatch language={panelLanguage} currentName={name ?? null} alternates={nameAlternates} canRename={!!resolvedSquareProfileUrl} onRename={onRename} />
+              ) : null}
               <div className="mt-1 text-sm tabular-nums text-zinc-500">{formatPhone(phoneNumber)}</div>
               {contact?.emailAddress ? (
                 <div className="mt-0.5 truncate text-sm text-zinc-500">{contact.emailAddress}</div>

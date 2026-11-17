@@ -1242,6 +1242,18 @@ public class SquareClient {
                 .orElse(null);
     }
 
+    public void updateCustomerName(String customerId, String givenName, String familyName) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("given_name", givenName);
+        body.put("family_name", familyName == null ? "" : familyName);
+        throttled(() -> http.put()
+                .uri("/v2/customers/{customerId}", customerId)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity());
+        customerCache.remove(customerId);
+    }
+
     /** Overwrites a Square customer's email address on file — used to fix an obviously-typo'd
      * domain found by an automated typo scan (owner request 2026-09-06, e.g. "gmail.con" ->
      * "gmail.com"). Uncached, mutating; throws on failure so the caller can report exactly which
