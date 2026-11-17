@@ -192,6 +192,18 @@ public final class SmsAutomationRegistry {
                             + "by evening also get a follow-up email — see WinbackEmailFallbackScheduler.",
                     List.of(), true, true, true
             )),
+            // Business 1 only (INTAKE_FORM_BUSINESSES). One text with the intake-form link soon after a
+            // first-time client books, one reminder about a day before if still unsigned.
+            Map.entry("first_visit_intake_form", AutomationMeta.sms(
+                    "first_visit_intake_form",
+                    "First-visit intake form",
+                    "Every first-time nail client who books: one text with a short health/preferences form "
+                            + "to sign on their phone, and one reminder about a day before if it is still unsigned. "
+                            + "Status and answers are shown to staff in the CRM; signed status is also written to "
+                            + "the Square customer note.",
+                    List.of("intake_form_request_with_technician", "intake_form_request_no_technician"),
+                    false, false, false
+            )),
             // Email-only (owner request 2026-09-05) — no SMS leg at all, so sentLast30Days always
             // reads 0 here (a real, accurate count — zero texts sent under this key — just not
             // where the meaningful "email sent" number lives; see PreVisitNurtureScheduler, which
