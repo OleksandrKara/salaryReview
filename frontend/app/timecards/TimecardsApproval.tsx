@@ -6,7 +6,6 @@ import { t, tf } from '../lib/i18n';
 import VoidPanel from './VoidPanel';
 import AdjustPanel from './AdjustPanel';
 import { reasonLabel } from './BreakQuestions';
-import PayrollBreakdown from './PayrollBreakdown';
 import { type DayView, type Pattern, findingText, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
 
 const SEV = {
@@ -190,7 +189,6 @@ function PatternBanner({ lang, patterns }: { lang: Language; patterns: Pattern[]
 
 export default function TimecardsApproval({ role, language, businessName }: { role: string; language: Language; businessName: string }) {
   const owner = role === 'OWNER';
-  const [tab, setTab] = useState<'queue' | 'payroll'>('queue');
   const [rows, setRows] = useState<DayView[] | null>(null);
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState<Filter>('pending');
@@ -232,18 +230,6 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
   const sel = 'min-h-[44px] w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm';
   return (
     <div>
-      {(owner || role === 'MANAGER') && (
-        <div className="mb-4 flex gap-2 text-sm">
-          {(['queue', 'payroll'] as const).map((k) => (
-            <button key={k} onClick={() => setTab(k)} className={chip(tab === k)}>
-              {t(language, k === 'queue' ? 'tcQueue' : 'tcPayroll')}
-            </button>
-          ))}
-        </div>
-      )}
-      {tab === 'payroll' && (owner || role === 'MANAGER') ? (
-        <PayrollBreakdown lang={language} owner={owner} />
-      ) : (
         <>
           <PatternBanner lang={language} patterns={patterns} />
           <div className="mb-3 flex flex-wrap gap-2">
@@ -285,7 +271,6 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
             </details>
           )}
         </>
-      )}
     </div>
   );
 }

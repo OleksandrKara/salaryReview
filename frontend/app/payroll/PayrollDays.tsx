@@ -184,50 +184,68 @@ function ProviderCard({ p, lang, owner }: { p: ProviderSummary; lang: Language; 
   );
 }
 
-export default function PayrollBreakdown({ lang, owner }: { lang: Language; owner: boolean }) {
-  const now = new Date();
-  const [per, setPer] = useState({ y: now.getFullYear(), m: now.getMonth() + 1, h: now.getDate() <= 15 ? 1 : 2 });
-  const [res, setRes] = useState<{ q: string; data?: Summary; err?: string } | null>(null);
-  const q = `year=${per.y}&month=${per.m}&half=${per.h}`;
+function periodLabel(y: number, m: number, h: number, lang: Language) {
+  const mon = new Date(y, m - 1, 1).toLocaleDateString(lang === 'RU' ? 'ru-RU' : 'en-US', { month: 'long', year: 'numeric' });
+  return `${mon}, ${h === 1 ? '1-15' : lang === 'RU' ? '16-конец' : '16-end'}`;
+}
+
+function PeriodSection({ y, m, h, lang, owner, defaultOpen }: { y: number; m: number; h: number; lang: Language; owner: boolean; defaultOpen: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [res, setRes] = useState<{ data?: Summary; err?: string } | null>(null);
+  const q = `year=${y}&month=${m}&half=${h}`;
   useEffect(() => {
     tcFetch<Summary>(`payroll/summary?${q}`)
-      .then((data) => setRes({ q, data }))
-      .catch((e) => setRes({ q, err: e.message }));
+      .then((data) => setRes({ data }))
+      .catch((e) => setRes({ err: e.message }));
   }, [q]);
-  const cur = res?.q === q ? res : null;
-  const data = cur?.data ?? null;
-  const err = cur?.err ?? '';
+  const data = res?.data ?? null;
   const total = useMemo(() => data?.providers.reduce((s, p) => s + p.totalToPayCents, 0) ?? 0, [data]);
+  const unapproved = useMemo(() => data?.providers.reduce((s, p) => s + p.unapprovedDays, 0) ?? 0, [data]);
   const consistent = useMemo(
     () => data?.providers.every((p) => p.days.reduce((s, d) => s + d.dayTotalCents, 0) === p.regularPayCents + p.overtimePayCents + p.doubleTimePayCents + p.mealPremiumCents + p.restPremiumCents + p.splitShiftPremiumCents) ?? true,
     [data],
   );
-  const btn = 'min-h-[44px] min-w-[44px] rounded border border-zinc-300 bg-white px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900';
   return (
-    <div>
-      <div className="sticky top-0 z-10 -mx-3 mb-3 border-b border-zinc-200 bg-white/95 px-3 py-2 backdrop-blur sm:mx-0 sm:rounded-lg sm:border">
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" aria-label={t(lang, 'pbPrev')} className={btn} onClick={() => setPer((p) => shiftHalf(p.y, p.m, p.h, -1))}>‹</button>
-          <div className="min-w-0 flex-1 text-center text-sm font-medium" aria-live="polite">
+    <section className="rounded-xl border border-zinc-300 bg-white">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+        className="flex min-h-[56px] w-full items-center justify-between gap-3 px-3 py-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 sm:px-4">
+        <span className="min-w-0">
+          <span className="block font-semibold">{periodLabel(y, m, h, lang)}</span>
+          <span className="block text-xs text-zinc-500">
             {data ? `${data.from} - ${data.to}` : t(lang, 'pbLoading')}
-          </div>
-          <button type="button" aria-label={t(lang, 'pbNext')} className={btn} onClick={() => setPer((p) => shiftHalf(p.y, p.m, p.h, 1))}>›</button>
-          <a href={`/api/timecards/payroll/summary.csv?${q}`} className={`${btn} inline-flex items-center`}>{t(lang, 'tcCsv')}</a>
+            {unapproved > 0 && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">{t(lang, 'pbNotApproved')}: {unapproved}</span>}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {data && <span className="text-lg font-semibold tabular-nums">{usd(total)}</span>}
+          <span aria-hidden className={`text-zinc-400 transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-zinc-200 p-3 sm:p-4">
+          {res?.err && <div className="text-sm text-red-700">{res.err}</div>}
+          {data && !data.complete && <div className="rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">{t(lang, 'pbIncomplete')}</div>}
+          {data && !consistent && <div className="rounded border border-red-300 bg-red-50 p-2 text-sm text-red-800">{t(lang, 'pbSumMismatch')}</div>}
+          {data && data.providers.length === 0 && <p className="text-sm text-zinc-500">{t(lang, 'tcNoW2')}</p>}
+          {data?.providers.map((p) => <ProviderCard key={p.providerId} p={p} lang={lang} owner={owner} />)}
+          {data && (
+            <a href={`/api/timecards/payroll/summary.csv?${q}`} className="inline-flex min-h-[44px] items-center rounded border border-zinc-300 bg-white px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900">{t(lang, 'tcCsv')}</a>
+          )}
         </div>
-        {data && (
-          <div className="mt-1 flex items-baseline justify-between text-sm">
-            <span className="text-zinc-600">{t(lang, 'pbGrandTotal')}</span>
-            <span className="text-lg font-semibold tabular-nums">{usd(total)}</span>
-          </div>
-        )}
-      </div>
-      {err && <div className="text-sm text-red-700">{err}</div>}
-      {data && !data.complete && <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">{t(lang, 'pbIncomplete')}</div>}
-      {data && !consistent && <div className="mb-3 rounded border border-red-300 bg-red-50 p-2 text-sm text-red-800">{t(lang, 'pbSumMismatch')}</div>}
-      {data && data.providers.length === 0 && <p className="text-sm text-zinc-500">{t(lang, 'tcNoW2')}</p>}
-      <div className="space-y-4">
-        {data?.providers.map((p) => <ProviderCard key={p.providerId} p={p} lang={lang} owner={owner} />)}
-      </div>
+      )}
+    </section>
+  );
+}
+
+export default function PayrollDays({ lang, owner }: { lang: Language; owner: boolean }) {
+  const periods = useMemo(() => {
+    const now = new Date();
+    const first = { y: now.getFullYear(), m: now.getMonth() + 1, h: now.getDate() <= 15 ? 1 : 2 };
+    return Array.from({ length: 8 }, (_, i) => shiftHalf(first.y, first.m, first.h, -i));
+  }, []);
+  return (
+    <div className="space-y-3">
+      {periods.map((p, i) => <PeriodSection key={`${p.y}-${p.m}-${p.h}`} {...p} lang={lang} owner={owner} defaultOpen={i === 0} />)}
     </div>
   );
 }
