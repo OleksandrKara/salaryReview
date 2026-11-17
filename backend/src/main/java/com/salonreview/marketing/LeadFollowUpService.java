@@ -296,6 +296,108 @@ public class LeadFollowUpService {
                 + "ORDER BY (status = 'NEW') DESC, activity_at DESC LIMIT 1000", leadMapper, businessId, businessId, filter, filter);
     }
 
+    /** Filters and sort of the CRM leads list. Dates are America/Los_Angeles calendar days (inclusive). */
+    public record LeadFilter(java.util.List<String> sources, java.util.List<String> statuses,
+                             java.time.LocalDate createdFrom, java.time.LocalDate createdTo,
+                             java.time.LocalDate activityFrom, java.time.LocalDate activityTo,
+                             String sort, boolean asc, boolean academyOnly) {
+        public LeadFilter {
+            sources = sources == null ? java.util.List.of() : sources.stream().filter(x -> x != null && !x.isBlank()).distinct().toList();
+            statuses = statuses == null ? java.util.List.of() : statuses.stream().filter(x -> x != null && !x.isBlank())
+                    .map(x -> x.trim().toUpperCase()).filter(LEAD_STATUSES::contains).distinct().toList();
+        }
+    }
+
+    public static final java.util.List<String> LEAD_STATUSES = java.util.List.of("NEW", "CONTACTED", "BOOKED", "LOST", "SPAM");
+    private static final String LEAD_TZ = "America/Los_Angeles";
+
+    public record SearchItem(LeadView lead, String lastActivityAt) {}
+    public record SearchPage(long total, java.util.List<SearchItem> items) {}
+    public record SourceCount(String source, int count) {}
+    public record FilterOptions(java.util.List<SourceCount> sources, java.util.Map<String, Integer> statuses) {}
+
+    /**
+     * Last activity of a lead = the latest of: any touch (form, call, text or booking intake row), any CRM event on the
+     * lead (note, call, agreement, status change, attempt, reached out, callback), any inbound text or text a staff
+     * member sent (automated texts do not count), and a Square booking created or changed for the same customer.
+     */
+    private String leadsWithLastActivitySql(long businessId) {
+        return "SELECT y.*, GREATEST(y.activity_at, ev.t, sm.t, bk.t) AS last_activity_at FROM (" + leadsSql(businessId, false) + ") y "
+                + "LEFT JOIN LATERAL (SELECT max(e.created_at) AS t FROM lead_events e WHERE e.lead_id = y.id) ev ON TRUE "
+                + "LEFT JOIN LATERAL (SELECT max(m.created_at) AS t FROM sms_message m WHERE m.business_id = " + businessId
+                + " AND m.phone_number IN ('+' || regexp_replace(COALESCE(y.phone_number, ''), '\\D', '', 'g'), "
+                + "'+1' || regexp_replace(COALESCE(y.phone_number, ''), '\\D', '', 'g')) "
+                + "AND (m.direction = 'INBOUND' OR m.sent_by_user_id IS NOT NULL)) sm ON TRUE "
+                + "LEFT JOIN LATERAL (SELECT max(GREATEST(b.created_at, b.updated_at)) AS t FROM square_booking b WHERE b.business_id = " + businessId
+                + " AND b.square_customer_id = y.square_customer_id) bk ON TRUE";
+    }
+
+    private static void addIn(StringBuilder where, java.util.List<Object> args, String column, java.util.List<String> values) {
+        if (values.isEmpty()) return;
+        where.append(" AND ").append(column).append(" IN (").append(String.join(",", java.util.Collections.nCopies(values.size(), "?"))).append(")");
+        args.addAll(values);
+    }
+
+    private static void addRange(StringBuilder where, java.util.List<Object> args, String column, java.time.LocalDate from, java.time.LocalDate to) {
+        if (from != null) { where.append(" AND ").append(column).append(" >= (?::date)::timestamp AT TIME ZONE '").append(LEAD_TZ).append("'"); args.add(from); }
+        if (to != null) { where.append(" AND ").append(column).append(" < ((?::date) + 1)::timestamp AT TIME ZONE '").append(LEAD_TZ).append("'"); args.add(to); }
+    }
+
+    private static StringBuilder where(LeadFilter f, java.util.List<Object> args, boolean withSourceAndStatus) {
+        StringBuilder w = new StringBuilder(" WHERE TRUE");
+        if (f.academyOnly()) w.append(" AND academy");
+        if (withSourceAndStatus) {
+            addIn(w, args, "source", f.sources());
+            addIn(w, args, "status", f.statuses());
+        }
+        addRange(w, args, "created_at", f.createdFrom(), f.createdTo());
+        addRange(w, args, "last_activity_at", f.activityFrom(), f.activityTo());
+        return w;
+    }
+
+    public SearchPage search(LeadFilter f, int offset, int limit) {
+        long b = business.id();
+        java.util.List<Object> args = new java.util.ArrayList<>(java.util.List.of(b, b));
+        StringBuilder w = where(f, args, true);
+        String col = "created".equals(f.sort()) ? "created_at" : "activity".equals(f.sort()) ? "last_activity_at" : null;
+        String order = col == null ? "(status = 'NEW') DESC, activity_at DESC"
+                : col + (f.asc() ? " ASC" : " DESC") + " NULLS LAST, id " + (f.asc() ? "ASC" : "DESC");
+        args.add(Math.min(Math.max(limit, 1), 1000));
+        args.add(Math.max(offset, 0));
+        long[] total = {0};
+        java.util.List<SearchItem> items = jdbc.query("SELECT z.*, count(*) OVER() AS total_count FROM (" + leadsWithLastActivitySql(b) + ") z"
+                        + w + " ORDER BY " + order + " LIMIT ? OFFSET ?",
+                (rs, i) -> {
+                    total[0] = rs.getLong("total_count");
+                    return new SearchItem(leadMapper.mapRow(rs, i), iso(rs.getTimestamp("last_activity_at")));
+                }, args.toArray());
+        if (items.isEmpty() && offset > 0) total[0] = jdbc.queryForObject("SELECT count(*) FROM (SELECT z.* FROM (" + leadsWithLastActivitySql(b) + ") z"
+                + where(f, new java.util.ArrayList<>(), true) + ") q", Long.class, countArgs(b, f));
+        return new SearchPage(total[0], items);
+    }
+
+    private static Object[] countArgs(long b, LeadFilter f) {
+        java.util.List<Object> args = new java.util.ArrayList<>(java.util.List.of(b, b));
+        where(f, args, true);
+        return args.toArray();
+    }
+
+    /** Sources (as shown in the CRM) and statuses present in the data, with counts under the other active filters. */
+    public FilterOptions filterOptions(LeadFilter f) {
+        long b = business.id();
+        java.util.List<Object> args = new java.util.ArrayList<>(java.util.List.of(b, b));
+        StringBuilder w = where(f, args, false);
+        String from = " FROM (" + leadsWithLastActivitySql(b) + ") z" + w;
+        java.util.List<SourceCount> sources = jdbc.query("SELECT source, count(*)::int AS n" + from + " AND source IS NOT NULL GROUP BY source ORDER BY n DESC, source",
+                (rs, i) -> new SourceCount(rs.getString("source"), rs.getInt("n")), args.toArray());
+        java.util.Map<String, Integer> statuses = new java.util.LinkedHashMap<>();
+        LEAD_STATUSES.forEach(s -> statuses.put(s, 0));
+        jdbc.query("SELECT status, count(*)::int AS n" + from + " GROUP BY status", rs -> {
+            if (statuses.containsKey(rs.getString("status"))) statuses.put(rs.getString("status"), rs.getInt("n"));
+        }, args.toArray());
+        return new FilterOptions(sources, statuses);
+    }
+
     public record OutdatedRow(long id, String name, String phoneNumber, String email, String source, String createdAt,
                               int visits, String lastVisitAt, String nextVisitAt, boolean consulted) {}
 

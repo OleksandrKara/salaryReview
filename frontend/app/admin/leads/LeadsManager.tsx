@@ -1,16 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FUNNEL_TONE } from './FunnelPanel';
 import LeadActions from './LeadActions';
 import { DAY, LAPSED_AFTER_DAYS, hasNextStep, isActive, isLapsed, isOverdue, lacksNextStep } from './leadActions';
+import LeadFilterBar from './LeadFilterBar';
+import { EMPTY_FILTERS, filtersToApiParams, filtersToUrlParams, isDefault, parseFilters, type LeadFilters } from './leadFilters';
 import LeadIcons from './LeadIcons';
 import ReminderSheet, { type ReachedOutBody } from './ReminderSheet';
 import NeedsReplyPanel from './NeedsReplyPanel';
 import OutdatedPanel, { LockIcon } from './OutdatedPanel';
 import { t, tf } from '../../lib/i18n';
-import type { Language, Lead, LeadFunnel, LeadListBadge, LeadOwnersView, NeedsReplyQueue } from '../../lib/types';
+import type { Language, Lead, LeadFilterOptions, LeadFunnel, LeadListBadge, LeadOwnersView, LeadSearchPage, NeedsReplyQueue } from '../../lib/types';
 
 type Tab = 'ACTION' | 'CONSULT' | 'LAPSED' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
 const OUTDATED = 'OUTDATED' as const;
@@ -106,14 +108,24 @@ function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | nu
   return sorted.length ? [{ key: 'all', title: '', tone: '', leads: sorted }] : [];
 }
 
-export default function LeadsManager({ initialLeads, language = null, restricted = false, initialTab = null }: { initialLeads: Lead[]; language?: Language | null; restricted?: boolean; initialTab?: string | null }) {
+const filterTime = (l: Lead, f: 'created' | 'activity') => new Date(f === 'created' ? l.createdAt : l.lastActivityAt ?? l.activityAt ?? l.lastTouchAt).getTime();
+
+export default function LeadsManager({ initialLeads, language = null, restricted = false, initialTab = null, initialFilters = EMPTY_FILTERS, initialTotal = null }: {
+  initialLeads: Lead[]; language?: Language | null; restricted?: boolean; initialTab?: string | null; initialFilters?: LeadFilters; initialTotal?: number | null;
+}) {
   const [leads, setLeads] = useState(initialLeads);
+  const [filters, setFilters] = useState<LeadFilters>(initialFilters);
+  const [total, setTotal] = useState<number | null>(initialTotal);
+  const [loading, setLoading] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [options, setOptions] = useState<LeadFilterOptions | null>(null);
+  const filtersRef = useRef(filters);
+  const loadedKey = useRef(filtersToApiParams(initialFilters).toString());
   const [tab, setTab] = useState<AnyTab | null>(initialTab === 'needs-reply' && !restricted ? REPLY : null);
   const [queue, setQueue] = useState<NeedsReplyQueue | null>(null);
   const [queueFailed, setQueueFailed] = useState(false);
   const [outdatedTotal, setOutdatedTotal] = useState<number | null>(null);
   const [q, setQ] = useState('');
-  const [source, setSource] = useState('');
   const [academyOnly, setAcademyOnly] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [reaching, setReaching] = useState<Lead | null>(null);
@@ -128,6 +140,74 @@ export default function LeadsManager({ initialLeads, language = null, restricted
     setMineChoice(on);
     try { sessionStorage.setItem('leadsMine', on ? '1' : '0'); } catch { /* ignore */ }
   };
+
+  const fetchLeads = useCallback(async (f: LeadFilters, offset: number, signal?: AbortSignal): Promise<{ items: Lead[]; total: number | null } | null> => {
+    try {
+      if (isDefault(f) && offset === 0) {
+        const r = await fetch('/api/leads', { cache: 'no-store', signal });
+        return r.ok ? { items: (await r.json()) as Lead[], total: null } : null;
+      }
+      const r = await fetch(`/api/leads/search?${filtersToApiParams(f, offset).toString()}`, { cache: 'no-store', signal });
+      if (!r.ok) return null;
+      const page = (await r.json()) as LeadSearchPage;
+      return { items: page.items.map((i) => ({ ...i.lead, lastActivityAt: i.lastActivityAt })), total: page.total };
+    } catch { return null; }
+  }, []);
+
+  const applyFilters = useCallback((f: LeadFilters, push = true) => {
+    filtersRef.current = f;
+    setFilters(f);
+    if (!push) return;
+    const url = new URL(window.location.href);
+    ['src', 'st', 'created', 'activity', 'sort', 'dir'].forEach((k) => url.searchParams.delete(k));
+    filtersToUrlParams(f).forEach((v, k) => url.searchParams.append(k, v));
+    window.history.pushState(null, '', url);
+  }, []);
+
+  useEffect(() => {
+    const onPop = () => applyFilters(parseFilters(new URL(window.location.href).searchParams), false);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [applyFilters]);
+
+  const apiKey = filtersToApiParams(filters).toString();
+  useEffect(() => {
+    if (apiKey === loadedKey.current) return undefined;
+    const ctl = new AbortController();
+    setLoading(true);
+    setLoadFailed(false);
+    fetchLeads(filtersRef.current, 0, ctl.signal).then((res) => {
+      if (ctl.signal.aborted) return;
+      setLoading(false);
+      if (!res) { setLoadFailed(true); return; }
+      loadedKey.current = apiKey;
+      setLeads(res.items);
+      setTotal(res.total);
+    });
+    return () => ctl.abort();
+  }, [apiKey, fetchLeads]);
+
+  const dateKey = `${filters.created?.from}|${filters.created?.to}|${filters.activity?.from}|${filters.activity?.to}`;
+  useEffect(() => {
+    const f = filtersRef.current;
+    const q = new URLSearchParams();
+    if (f.created?.from) q.set('createdFrom', f.created.from);
+    if (f.created?.to) q.set('createdTo', f.created.to);
+    if (f.activity?.from) q.set('activityFrom', f.activity.from);
+    if (f.activity?.to) q.set('activityTo', f.activity.to);
+    const ctl = new AbortController();
+    fetch(`/api/leads/filter-options?${q.toString()}`, { cache: 'no-store', signal: ctl.signal }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOptions(d); }).catch(() => undefined);
+    return () => ctl.abort();
+  }, [dateKey]);
+
+  async function showMore() {
+    setLoading(true);
+    const res = await fetchLeads(filtersRef.current, leads.length);
+    setLoading(false);
+    if (!res) { setLoadFailed(true); return; }
+    setLeads((prev) => [...prev, ...res.items.filter((x) => !prev.some((p) => p.id === x.id))]);
+    setTotal(res.total);
+  }
 
   useEffect(() => {
     fetch('/api/leads/owners', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOwnerView(d); }).catch(() => undefined);
@@ -166,15 +246,14 @@ export default function LeadsManager({ initialLeads, language = null, restricted
     fetch('/api/leads/outdated?page=0', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOutdatedTotal(d.total); }).catch(() => undefined);
   }, []);
 
-  const sources = useMemo(() => Array.from(new Set(leads.map((l) => l.source))).sort(), [leads]);
   const mineOnly = ownerView != null && (mineChoice ?? !ownerView.canSetDefault);
   const mineSet = useMemo(() => new Set(ownerView?.mine ?? []), [ownerView]);
   const base = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return leads.filter((l) =>
-      (!source || l.source === source) && (!academyOnly || l.academy) && (!mineOnly || mineSet.has(l.id)) &&
+      (!academyOnly || l.academy) && (!mineOnly || mineSet.has(l.id)) &&
       (!needle || [l.name, l.phoneNumber, l.email, l.source, l.lastNote].some((v) => v?.toLowerCase().includes(needle))));
-  }, [leads, q, source, academyOnly, mineOnly, mineSet]);
+  }, [leads, q, academyOnly, mineOnly, mineSet]);
   const othersWaiting = useMemo(
     () => (ownerView && mineOnly ? leads.filter((l) => !mineSet.has(l.id) && isActive(l) && needsAction(l, now)).length : 0),
     [leads, ownerView, mineOnly, mineSet, now]);
@@ -198,7 +277,18 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const activeTab: AnyTab = tab ?? (replyCount > 0 ? REPLY : counts.ACTION > 0 ? 'ACTION' : 'ALL');
   const reply = activeTab === REPLY;
   const archive = activeTab === OUTDATED;
-  const sections = archive || reply ? [] : buildSections(base.filter((l) => inTab(l, activeTab as Tab)), activeTab as Tab, now, language);
+  const sections = useMemo(() => {
+    if (archive || reply) return [];
+    const built = buildSections(base.filter((l) => inTab(l, activeTab as Tab)), activeTab as Tab, now, language);
+    const f = filters.sort;
+    if (!f) return built;
+    const dir = filters.asc ? 1 : -1;
+    return built.map((s) => ({ ...s, leads: [...s.leads].sort((a, b) => dir * (filterTime(a, f) - filterTime(b, f)) || dir * (a.id - b.id)) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base, activeTab, archive, reply, filters.sort, filters.asc, language]);
+  const shown = sections.reduce((n, s) => n + s.leads.length, 0);
+  const filtered = !isDefault(filters);
+  const partial = total != null && leads.length < total;
 
   async function noAnswer(l: Lead) {
     setBusyId(l.id);
@@ -256,15 +346,10 @@ export default function LeadsManager({ initialLeads, language = null, restricted
           placeholder={t(language, 'leadsSearch')}
           className="w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
         />
-        <select
-          aria-label={t(language, 'crmAllSources')}
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-          className="rounded border border-zinc-300 px-2 py-2 text-sm sm:w-48"
-        >
-          <option value="">{t(language, 'crmAllSources')}</option>
-          {sources.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+      </div>
+
+      <div className={archive || reply ? 'hidden' : ''}>
+        <LeadFilterBar language={language} filters={filters} options={options} now={now} onChange={(f) => applyFilters(f)} />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -342,7 +427,21 @@ export default function LeadsManager({ initialLeads, language = null, restricted
       {activeTab === 'ACTION' && counts.ACTION === 0 && (
         <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{t(language, 'crmAllDone')}</p>
       )}
-      {sections.length === 0 && !archive && !reply && activeTab !== 'ACTION' && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
+      {!archive && !reply && (filtered || partial) && (
+        <p className="text-xs text-zinc-600" role="status" aria-live="polite" data-testid="lead-result-count">
+          {loading ? '…' : tf(language, 'lfResults', { n: shown })}
+          {partial && !loading ? ` · ${tf(language, 'lfPartial', { shown: leads.length, total: total ?? 0 })}` : ''}
+        </p>
+      )}
+      {loadFailed && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-200">{t(language, 'lfError')}</p>}
+      {sections.length === 0 && !archive && !reply && activeTab !== 'ACTION' && !loading && (
+        filtered ? (
+          <div className="flex flex-col items-start gap-2 rounded-lg bg-zinc-50 px-4 py-6 text-sm text-zinc-700 ring-1 ring-zinc-200" data-testid="lead-filter-empty">
+            <p>{t(language, 'lfEmpty')}</p>
+            <button type="button" onClick={() => applyFilters(EMPTY_FILTERS)} className="min-h-11 rounded-full px-4 text-sm ring-1 ring-zinc-300 hover:bg-white sm:min-h-0 sm:py-1">{t(language, 'lfReset')}</button>
+          </div>
+        ) : <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>
+      )}
 
       {(() => {
         const todo = sections.filter((x) => x.group === 'todo');
@@ -462,6 +561,11 @@ export default function LeadsManager({ initialLeads, language = null, restricted
           </>
         );
       })()}
+      {!archive && !reply && partial && (
+        <button type="button" onClick={showMore} disabled={loading} className="min-h-11 self-center rounded-full px-5 text-sm ring-1 ring-zinc-300 hover:bg-zinc-50 disabled:opacity-50">
+          {t(language, 'lfShowMore')}
+        </button>
+      )}
       <ReminderSheet
         open={reaching != null} title={t(language, 'remSheetTitle')} subtitle={reaching ? (reaching.name ?? reaching.phoneNumber ?? reaching.email ?? '') : ''}
         language={language} onClose={() => setReaching(null)} onSubmit={(body) => (reaching ? reachedOut(reaching, body) : Promise.resolve(false))}
