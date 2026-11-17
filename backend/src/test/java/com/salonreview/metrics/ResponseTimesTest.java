@@ -164,7 +164,7 @@ class ResponseTimesTest {
     }
 
     @Test
-    @DisplayName("a text answers an automation only within a day and when it is not a question")
+    @DisplayName("a text answers an automation only within a day and when it is not a question or a statement of need")
     void answersAutomationWindow() {
         Instant sent = Instant.parse("2026-10-22T10:00:00Z");
         assertThat(ResponseTimes.answersAutomation(true, sent, sent.plusSeconds(3600), "yes")).isTrue();
@@ -174,7 +174,7 @@ class ResponseTimesTest {
         assertThat(ResponseTimes.answersAutomation(false, sent, sent.plusSeconds(60), "yes")).isFalse();
         assertThat(ResponseTimes.answersAutomation(true, null, sent.plusSeconds(60), "yes")).isFalse();
         assertThat(ResponseTimes.isAsk("I'm running 5 minutes late")).isFalse();
-        assertThat(ResponseTimes.isAsk("Hi! I have a question for AK.LUX.NAILS.")).isFalse();
+        assertThat(ResponseTimes.isAsk("Hi! I have a question for AK.LUX.NAILS.")).isTrue();
     }
 
     @Test

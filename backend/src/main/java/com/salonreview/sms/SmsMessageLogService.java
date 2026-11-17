@@ -273,6 +273,16 @@ public class SmsMessageLogService {
                 .orElse(null);
     }
 
+    /** True if the last outbound text to this phone (within 72h) was an automated one that invites a free-text answer. */
+    public boolean lastTextAskedForDetails(Long businessId, String phoneNumber) {
+        return repository.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(
+                        businessId, PhoneNumbers.normalize(phoneNumber), "OUTBOUND")
+                .filter(m -> m.getCreatedAt() != null
+                        && m.getCreatedAt().isAfter(Instant.now().minus(com.salonreview.metrics.ResponseTimes.NUMBER_ANSWER_WINDOW)))
+                .map(m -> com.salonreview.metrics.ResponseTimes.asksForDetails(m.getTemplateKey()))
+                .orElse(false);
+    }
+
     /** {@code sentAt} is null if this link target was never sent to this phone at all — distinct
      * from "sent but not yet clicked" ({@code sentAt} set, {@code clickedAt} null) — so a caller
      * (the contact sidebar) can tell "never asked" apart from "asked, didn't click yet" apart from
