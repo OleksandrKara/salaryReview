@@ -272,6 +272,8 @@ const STRINGS = {
   pbExpandAll: { EN: 'Expand all days', RU: 'Раскрыть все дни' },
   pbCollapseAll: { EN: 'Collapse all days', RU: 'Свернуть все дни' },
   pbShift: { EN: 'Shift', RU: 'Смена' },
+  pbTabPeriods: { EN: 'Periods', RU: 'Периоды' },
+  pbTabDays: { EN: 'By day', RU: 'По дням' },
   pbBreak: { EN: 'Break', RU: 'Перерыв' },
   pbNoBreak: { EN: 'No break', RU: 'Без перерыва' },
   pbMin: { EN: 'min', RU: 'мин' },
