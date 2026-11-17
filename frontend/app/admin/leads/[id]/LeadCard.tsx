@@ -21,6 +21,7 @@ import CopyButton from '../CopyButton';
 import LeadOwnerPanel from '../LeadOwnerPanel';
 import { ownerChangeSentence, parseOwnerChange } from '../../../lib/ownerEvent';
 import NameMismatch from '../../NameMismatch';
+import ClientIntake from '../../intake/ClientIntake';
 import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
 import type { Language, Lead, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
 
@@ -395,6 +396,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           <div className="text-xs text-zinc-500">{lead.touches} {t(language, 'leadTouches')}</div>
         </div>
         <LeadOwnerPanel leadId={lead.id} language={language} version={data.events.length} />
+        {lead.phoneNumber && <div className="mt-3"><ClientIntake phone={lead.phoneNumber} language={language} canManage name={lead.name} /></div>}
         <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {([
             [t(language, 'crmCreated'), fmt(lead.createdAt, language), ''],

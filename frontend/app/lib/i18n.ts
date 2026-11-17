@@ -632,6 +632,7 @@ const STRINGS = {
 
   // Leads CRM (/admin/leads)
   navLeads: { EN: 'CRM', RU: 'CRM' },
+  navIntake: { EN: 'Intake forms', RU: 'Анкеты' },
   navResponseSpeed: { EN: 'Response speed', RU: 'Скорость ответа' },
   shiftTitle: { EN: 'Your shift', RU: 'Ваша смена' },
   shiftOnSince: { EN: 'On shift since {time}', RU: 'На смене с {time}' },

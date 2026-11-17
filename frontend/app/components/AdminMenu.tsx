@@ -50,6 +50,7 @@ function linksFor(role: Role, leadsAccess = false): NavSections {
         { href: '/owner/overview', key: 'navRevenue' },
         { href: '/owner/marketing', key: 'navMarketing' },
         { href: '/admin/leads', key: 'navLeads' },
+        { href: '/admin/intake', key: 'navIntake' },
         { href: '/admin/response-times', key: 'navResponseSpeed' },
         { href: '/owner/retention', key: 'navRetention' },
         ...COMMON,
@@ -115,6 +116,7 @@ function linksFor(role: Role, leadsAccess = false): NavSections {
     return {
       flat: [
         { href: '/admin/leads', key: 'navLeads' },
+        { href: '/admin/intake', key: 'navIntake' },
         { href: '/admin/response-times', key: 'navResponseSpeed' },
         { href: '/manager/time', key: 'navMyTime' },
         { href: '/timecards', key: 'tcNavApprove' },

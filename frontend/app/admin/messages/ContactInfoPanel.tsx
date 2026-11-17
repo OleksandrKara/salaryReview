@@ -12,6 +12,7 @@ import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
 import SpamFlagIcon from './SpamFlagIcon';
 import type { Language } from '../../lib/types';
 import NameMismatch from '../NameMismatch';
+import ClientIntake from '../intake/ClientIntake';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -217,6 +218,9 @@ export default function ContactInfoPanel({
           <p className="text-sm text-zinc-400">Loading…</p>
         ) : (
           <>
+            <div className="mb-5">
+              <ClientIntake phone={phoneNumber} language={panelLanguage} canManage name={name} />
+            </div>
             <div className="mb-5">
               <div className="flex flex-wrap items-center gap-1.5">
                 <div data-testid="contact-info-name" className="min-w-0 flex-1 truncate text-base font-semibold text-zinc-900">
