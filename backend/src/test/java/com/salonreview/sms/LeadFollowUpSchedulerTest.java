@@ -531,4 +531,16 @@ class LeadFollowUpSchedulerTest {
         verifyNoInteractions(smsService);
         assertThat(row.getSmsFollowupState()).isEqualTo(LeadFollowUpSend.SMS_FOLLOWUP_STATE_SKIPPED_DISABLED);
     }
+
+    @Test
+    @DisplayName("placeholder contact name (HubSpot) gets the no-name greeting")
+    void placeholderNameGetsNoNameGreeting() {
+        UUID id = UUID.randomUUID();
+        givenPending(contact(id, "Hubspot 04.11.2026", "cust1"));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+
+        scheduler.sendDueFollowUps();
+
+        verify(smsService).sendTemplated(BUSINESS_ID, "lead_follow_up_nudge", PHONE, Map.of("greeting", "Hi!"));
+    }
 }

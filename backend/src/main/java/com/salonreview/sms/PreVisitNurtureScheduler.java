@@ -468,7 +468,7 @@ public class PreVisitNurtureScheduler {
     private Map<String, String> vars(SquareBookingMirror booking, String kind, SquareClient square) {
         Long businessId = booking.getBusinessId();
         String customerId = booking.getSquareCustomerId();
-        String givenName = Names.capitalizeFirst(
+        String givenName = Names.customerGreetingName(
                 customerId == null ? null : square.customerGivenNames(List.of(customerId)).get(customerId));
         String technician = kind == null ? technicianFirstName(booking, businessId)
                 : content.artistName(businessId, technicianFirstName(booking, businessId));

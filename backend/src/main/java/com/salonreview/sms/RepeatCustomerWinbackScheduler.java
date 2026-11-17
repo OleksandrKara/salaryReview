@@ -250,7 +250,7 @@ public class RepeatCustomerWinbackScheduler {
                 businessId, templateKey, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, linkTarget, clickToken);
 
         String shortLink = shortLink(businessId, clickToken);
-        String name = Names.capitalizeFirst(rawGivenName);
+        String name = Names.customerGreetingName(rawGivenName);
         // provider_visit.provider_name is always "First Last" — never send a last name to a
         // customer, same rule TechnicianNameResolver/LapsedCustomerWinbackScheduler enforce.
         String previousProviderFirstName = Names.firstNameOnly(customer.previousProvider());

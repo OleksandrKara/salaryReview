@@ -193,7 +193,7 @@ public class ColorBoosterWinbackOneOffService {
         }
 
         String rawGivenName = square.customerGivenNames(List.of(customerId)).get(customerId);
-        String givenName = Names.capitalizeFirst(rawGivenName);
+        String givenName = Names.customerGreetingName(rawGivenName);
         String providerName = technicianFirstName(lastQualifying, businessId);
         String timeSince = com.salonreview.util.TimePeriods.formatTimeSince(lastQualifyingDate, today);
 

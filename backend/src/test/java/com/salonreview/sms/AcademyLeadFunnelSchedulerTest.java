@@ -152,4 +152,13 @@ class AcademyLeadFunnelSchedulerTest {
         assertThat(AcademyLeadFunnelScheduler.firstName("  ")).isEqualTo("there");
         assertThat(AcademyLeadFunnelScheduler.subject(AcademyLeadFunnelScheduler.STEPS.get(0), "there")).isEqualTo("We got your request");
     }
+
+    @Test
+    void placeholderNamesGetNoNameGreeting() {
+        assertThat(AcademyLeadFunnelScheduler.firstName("Hubspot 04.11.2026")).isEqualTo("there");
+        assertThat(AcademyLeadFunnelScheduler.firstName("Test")).isEqualTo("there");
+        assertThat(AcademyLeadFunnelScheduler.firstName("Unknown Smith")).isEqualTo("there");
+        assertThat(AcademyLeadFunnelScheduler.firstName("anna kara")).isEqualTo("Anna");
+        assertThat(AcademyLeadFunnelScheduler.firstName("Li Wei")).isEqualTo("Li");
+    }
 }

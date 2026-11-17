@@ -126,7 +126,7 @@ public class VipRebookEligibilityService {
             return Result.no("no_visit_today");
         }
 
-        String givenName = Names.capitalizeFirst(square.customerGivenNames(List.of(customerId)).getOrDefault(customerId, null));
+        String givenName = Names.customerGreetingName(square.customerGivenNames(List.of(customerId)).getOrDefault(customerId, null));
         String technicianName = teamMemberId == null ? null
                 : providers.findBySquareTeamMemberIdAndBusinessId(teamMemberId, businessId)
                 .map(p -> Names.firstNameOnly(p.getDisplayName())).orElse(null);

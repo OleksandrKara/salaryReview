@@ -51,4 +51,29 @@ class NamesTest {
     void trimsWhitespace() {
         assertThat(Names.capitalizeFirst("  oleksandr  ")).isEqualTo("Oleksandr");
     }
+
+    @Test
+    @DisplayName("obvious placeholders are not greeting names")
+    void placeholdersAreRejected() {
+        for (String junk : new String[] {null, "", "  ", "Hubspot", "hubspot 16 10", "HubSpot Unknown", "No name Hubspot",
+                "Hubspot 05/29", "Habspot 3.27", "Test", "TEST", "Unknown", "Guest", "Customer", "client", "N/A", "null",
+                "Anonymous", "no name", "A", "-", "12345", "(858) 828-7544", "Mike BBB (chthompson8787)",
+                "jane@example.com", "Beauty 6 ladies"}) {
+            assertThat(Names.isPlaceholder(junk)).as("junk: %s", junk).isTrue();
+            assertThat(Names.customerGreetingName(junk)).as("junk: %s", junk).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("real names, however unusual, short, foreign or upper-case, pass through")
+    void realNamesAreKept() {
+        for (String real : new String[] {"Jane", "JANE", "Li", "Al", "Ng", "Anna Kara", "Zoë", "José", "Анна", "Nguyễn",
+                "O'Brien", "Mary-Jane", "Testa", "Tester", "Guestrin", "Clientelle", "Hubert", "Unknowles", "McDonald",
+                "D'Angelo", "Bo", "Xi", "Customerio"}) {
+            assertThat(Names.isPlaceholder(real)).as("real: %s", real).isFalse();
+            assertThat(Names.customerGreetingName(real)).as("real: %s", real).isNotNull();
+        }
+        assertThat(Names.customerGreetingName("jane")).isEqualTo("Jane");
+        assertThat(Names.customerGreetingName("ЖАННА")).isEqualTo("Жанна");
+    }
 }

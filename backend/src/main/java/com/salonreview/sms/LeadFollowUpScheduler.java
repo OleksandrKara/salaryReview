@@ -173,7 +173,7 @@ public class LeadFollowUpScheduler {
             save(contact, businessId, LeadFollowUpSend.STATE_SKIPPED_DISABLED);
             return;
         }
-        String name = com.salonreview.util.Names.capitalizeFirst(contact.givenName());
+        String name = com.salonreview.util.Names.customerGreetingName(contact.givenName());
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
         Map<String, String> vars = Map.of("greeting", greeting);
         var result = smsService.sendTemplated(businessId, "lead_follow_up_nudge", contact.phoneNumber(), vars);
@@ -269,7 +269,7 @@ public class LeadFollowUpScheduler {
             return;
         }
 
-        String givenName = com.salonreview.util.Names.capitalizeFirst(contact.givenName());
+        String givenName = com.salonreview.util.Names.customerGreetingName(contact.givenName());
         Business business = businessRepository.findById(businessId).orElse(null);
         String siteUrl = business == null ? null : business.publicSiteUrl();
         String bookingLink = siteUrl == null ? "" : siteUrl + "/";
@@ -358,7 +358,7 @@ public class LeadFollowUpScheduler {
         }
         RawContact contact = contactsRepository.findByIds(List.of(touch.getContactId()), businessId)
                 .stream().findFirst().orElse(null);
-        String name = contact == null ? null : com.salonreview.util.Names.capitalizeFirst(contact.givenName());
+        String name = contact == null ? null : com.salonreview.util.Names.customerGreetingName(contact.givenName());
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
         var result = smsService.sendTemplated(businessId, "lead_follow_up_final_nudge", touch.getPhoneNumber(), Map.of("greeting", greeting));
         if (!result.sent()) {

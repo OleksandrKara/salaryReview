@@ -200,7 +200,7 @@ public class WinbackEmailFallbackScheduler {
         var promoTerms = promoConfigService.get(businessId, promoCode);
         String discountAmount = promoTerms.map(t -> PromoConfigService.formatDollars(t.discountCents())).orElse("$5");
 
-        String givenName = Names.capitalizeFirst(
+        String givenName = Names.customerGreetingName(
                 square.customerGivenNames(List.of(customerId)).getOrDefault(customerId, null));
         String technician = lastTechnicianFirstName(businessId, customerId);
 

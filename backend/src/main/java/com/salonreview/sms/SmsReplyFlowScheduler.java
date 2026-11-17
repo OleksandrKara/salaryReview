@@ -68,7 +68,7 @@ public class SmsReplyFlowScheduler {
     }
 
     private void sendOne(SmsReplyFlow flow, Instant now, Long businessId) {
-        String name = com.salonreview.util.Names.capitalizeFirst(flow.getCustomerName());
+        String name = com.salonreview.util.Names.customerGreetingName(flow.getCustomerName());
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
         // Resolved once and reused for both the greeting's technician name and the persisted
         // provider_id (V120, backs /owner/reviews) — same lookup, two uses.

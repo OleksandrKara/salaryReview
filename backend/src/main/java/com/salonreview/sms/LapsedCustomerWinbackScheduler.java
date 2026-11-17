@@ -230,7 +230,7 @@ public class LapsedCustomerWinbackScheduler {
                 businessId, templateKey, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, linkTarget, clickToken);
 
         String shortLink = shortLink(businessId, clickToken);
-        String name = Names.capitalizeFirst(rawGivenName);
+        String name = Names.customerGreetingName(rawGivenName);
         // provider_visit.provider_name is the free-text Square team-member display name (e.g.
         // "Susan Alieva") — never send a technician's last name to a customer, same rule
         // TechnicianNameResolver already enforces for same_day_rebooking_discount. Missed here
