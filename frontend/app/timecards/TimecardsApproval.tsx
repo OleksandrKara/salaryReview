@@ -231,6 +231,13 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
   return (
     <div>
         <>
+          <a href="/payroll" className="mb-4 flex min-h-[56px] items-center justify-between gap-3 rounded-xl border-2 border-zinc-900 bg-white px-4 py-2 text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2">
+            <span className="min-w-0">
+              <span className="block font-semibold">{t(language, 'tcOpenPayroll')}</span>
+              <span className="block text-xs text-zinc-600">{t(language, 'tcOpenPayrollHint')}</span>
+            </span>
+            <span aria-hidden className="text-xl">›</span>
+          </a>
           <PatternBanner lang={language} patterns={patterns} />
           <div className="mb-3 flex flex-wrap gap-2">
             {([['pending', 'tcTabPending', pendingN], ['attention', 'tcTabAttention', attentionN], ['approved', 'tcTabApproved', approvedN], ['all', 'tcTabAll', pendingN + approvedN]] as const).map(([k, label, n]) => (
