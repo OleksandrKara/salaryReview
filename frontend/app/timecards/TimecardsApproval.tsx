@@ -6,7 +6,8 @@ import { t, tf } from '../lib/i18n';
 import VoidPanel from './VoidPanel';
 import AdjustPanel from './AdjustPanel';
 import { reasonLabel } from './BreakQuestions';
-import { type DayView, type Pattern, type Summary, findingText, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
+import PayrollBreakdown from './PayrollBreakdown';
+import { type DayView, type Pattern, findingText, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
 
 const SEV = {
   INFO: 'bg-zinc-100 text-zinc-700',
@@ -169,59 +170,10 @@ function DayCard({ d, owner, lang, onChange, onFixed, fixed }: { d: DayView; own
 }
 
 function PayrollTab({ lang }: { lang: Language }) {
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [half, setHalf] = useState(now.getDate() <= 15 ? 1 : 2);
-  const [data, setData] = useState<Summary | null>(null);
-  const [err, setErr] = useState('');
-  const q = `year=${year}&month=${month}&half=${half}`;
-  useEffect(() => {
-    setErr('');
-    tcFetch<Summary>(`admin/summary?${q}`).then(setData).catch((e) => setErr(e.message));
-  }, [q]);
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-        <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className="w-24 rounded border border-zinc-300 px-2 py-1" />
-        <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="rounded border border-zinc-300 px-2 py-1">
-          {Array.from({ length: 12 }, (_, i) => (
-            <option key={i} value={i + 1}>{i + 1}</option>
-          ))}
-        </select>
-        <select value={half} onChange={(e) => setHalf(Number(e.target.value))} className="rounded border border-zinc-300 px-2 py-1">
-          <option value={1}>1-15</option>
-          <option value={2}>16-end</option>
-        </select>
-        <a href={`/api/timecards/admin/summary.csv?${q}`} className="rounded border border-zinc-400 px-3 py-1">{t(lang, 'tcCsv')}</a>
-      </div>
-      {err && <div className="text-sm text-red-700">{err}</div>}
-      {data && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[56rem] text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs text-zinc-500">
-                <th className="py-1">{t(lang, 'tcColName')}</th><th>{t(lang, 'tcColTotal')}</th><th>{t(lang, 'tcColReg')}</th><th>{t(lang, 'tcColOt')}</th><th>{t(lang, 'tcColDt')}</th>
-                <th>{t(lang, 'tcColWages')}</th><th>{t(lang, 'tcColPremiums')}</th><th>{t(lang, 'tcColTips')}</th><th>{t(lang, 'tcColSum')}</th><th>{t(lang, 'tcUnapproved')}</th><th>{t(lang, 'tcColCommission')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.providers.map((p) => (
-                <tr key={p.providerId} className="border-b">
-                  <td className="py-1">{p.name}</td>
-                  <td>{hrs(p.totalMinutes)}</td><td>{hrs(p.regularMinutes)}</td><td>{hrs(p.overtimeMinutes)}</td><td>{hrs(p.doubleTimeMinutes)}</td>
-                  <td>{usd(p.regularPayCents + p.overtimePayCents + p.doubleTimePayCents)}</td>
-                  <td>{usd(p.mealPremiumCents + p.restPremiumCents + p.splitShiftPremiumCents)}</td>
-                  <td>{usd(p.tipsCents)}</td><td className="font-medium">{usd(p.totalToPayCents)}</td>
-                  <td className={p.unapprovedDays ? 'text-red-700' : ''}>{p.unapprovedDays}</td>
-                  <td className="text-zinc-500">{usd(p.commissionComparisonCents)}</td>
-                </tr>
-              ))}
-              {data.providers.length === 0 && <tr><td colSpan={11} className="py-3 text-zinc-500">{t(lang, 'tcNoW2')}</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <a href="/payroll" className="mb-3 inline-block min-h-[44px] rounded border border-zinc-400 px-3 py-2 text-sm">{t(lang, 'pbOpenPayroll')}</a>
+      <PayrollBreakdown lang={lang} owner />
     </div>
   );
 }

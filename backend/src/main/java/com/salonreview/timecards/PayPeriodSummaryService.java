@@ -23,7 +23,9 @@ public class PayPeriodSummaryService {
 
     public record DayLine(String date, String source, String status, long paidMinutes, long regularMinutes,
                           long overtimeMinutes, long doubleTimeMinutes, int rateCents, int premiumCents,
-                          boolean approved, int openFindings) {}
+                          boolean approved, int openFindings, String inAt, String outAt, long unpaidGapMinutes,
+                          int regularPayCents, int overtimePayCents, int doubleTimePayCents, int mealPremiumCents,
+                          int restPremiumCents, int splitShiftPremiumCents, int dayTotalCents, List<String> notes) {}
 
     public record ProviderSummary(Long providerId, String name, long totalMinutes, long regularMinutes,
                                   long overtimeMinutes, long doubleTimeMinutes, int regularPayCents,
@@ -90,16 +92,23 @@ public class PayPeriodSummaryService {
                 int rp = (int) Math.round(dp.regularMinutes() / 60.0 * rate);
                 int op = (int) Math.round(dp.overtimeMinutes() / 60.0 * rate * 1.5);
                 int tp = (int) Math.round(dp.doubleTimeMinutes() / 60.0 * rate * 2.0);
-                int dayPremium = 0;
+                int dayPremium = 0, dayMeal = 0, dayRest = 0, daySplit = 0;
                 var a = c.analysis();
                 int open = 0;
+                List<String> notes = new ArrayList<>();
                 if (a != null) {
-                    if (a.mealPremium()) { meal += CaWagePolicy.mealPremiumCents(rate); dayPremium += CaWagePolicy.mealPremiumCents(rate); }
-                    if (a.restPremium()) { rest += CaWagePolicy.mealPremiumCents(rate); dayPremium += CaWagePolicy.mealPremiumCents(rate); }
+                    if (a.mealPremium()) { meal += CaWagePolicy.mealPremiumCents(rate); dayPremium += CaWagePolicy.mealPremiumCents(rate); dayMeal = CaWagePolicy.mealPremiumCents(rate); }
+                    if (a.restPremium()) { rest += CaWagePolicy.mealPremiumCents(rate); dayPremium += CaWagePolicy.mealPremiumCents(rate); dayRest = CaWagePolicy.mealPremiumCents(rate); }
                     for (Finding f : a.findings()) {
-                        if (f.code() == FindingCode.SPLIT_SHIFT_PREMIUM_OWED) { split += (int) f.minutes(); dayPremium += (int) f.minutes(); }
-                        if (f.code().severity() != Severity.INFO) open++;
+                        if (f.code() == FindingCode.SPLIT_SHIFT_PREMIUM_OWED) { split += (int) f.minutes(); dayPremium += (int) f.minutes(); daySplit += (int) f.minutes(); }
+                        if (f.code().severity() != Severity.INFO) { open++; notes.add(f.message()); }
                     }
+                }
+                String inAt = null, outAt = null;
+                for (DayTimecard t : c.timecards() == null ? List.<DayTimecard>of() : c.timecards()) {
+                    String s = t.span().start().toString(), e = t.span().end().toString();
+                    if (inAt == null || s.compareTo(inAt) < 0) inAt = s;
+                    if (outAt == null || e.compareTo(outAt) > 0) outAt = e;
                 }
                 boolean approved = "APPROVED".equals(c.status());
                 if (!approved) unapproved++;
@@ -107,7 +116,9 @@ public class PayPeriodSummaryService {
                 reg += dp.regularMinutes(); ot += dp.overtimeMinutes(); dt += dp.doubleTimeMinutes();
                 regPay += rp; otPay += op; dtPay += tp;
                 lines.add(new DayLine(d.toString(), c.source(), c.status(), c.paidMinutes(), dp.regularMinutes(),
-                        dp.overtimeMinutes(), dp.doubleTimeMinutes(), rate, dayPremium, approved, open));
+                        dp.overtimeMinutes(), dp.doubleTimeMinutes(), rate, dayPremium, approved, open, inAt, outAt,
+                        a == null ? 0 : a.unpaidGapMinutes(), rp, op, tp, dayMeal, dayRest, daySplit,
+                        rp + op + tp + dayPremium, notes));
             }
         }
         int gross = regPay + otPay + dtPay + meal + rest + split;

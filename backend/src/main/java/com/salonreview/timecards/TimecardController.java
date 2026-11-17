@@ -99,6 +99,18 @@ public class TimecardController {
 
     // ---- approver (owner + manager) ----
 
+    @GetMapping("/payroll/summary.csv")
+    public ResponseEntity<byte[]> payrollCsv(@RequestParam int year, @RequestParam int month, @RequestParam int half) {
+        return summaryCsv(year, month, half);
+    }
+
+    /** Read-only payroll with per-day lines for owners and managers; the commission comparison stays owner-only. */
+    @GetMapping("/payroll/summary")
+    public Summary payrollSummary(@AuthenticationPrincipal AppUserPrincipal me, @RequestParam int year,
+                                  @RequestParam int month, @RequestParam int half) {
+        return summaries.summary(business.id(), year, month, checkHalf(half), me.getRole().name().equals("OWNER"));
+    }
+
     @GetMapping("/queue")
     public List<DayView> queue(@AuthenticationPrincipal AppUserPrincipal me, @RequestParam(defaultValue = "14") int days,
                                @RequestParam(defaultValue = "pending") String scope) {
