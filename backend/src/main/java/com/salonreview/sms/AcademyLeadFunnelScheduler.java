@@ -318,8 +318,8 @@ public class AcademyLeadFunnelScheduler {
     }
 
     static String firstName(String name) {
-        if (name == null || name.isBlank()) return "there";
-        String first = Names.capitalizeFirst(name.trim().split("\\s+")[0]);
+        if (Names.isPlaceholder(name)) return "there";
+        String first = Names.customerGreetingName(name.trim().split("\\s+")[0]);
         return first == null || first.isBlank() ? "there" : first;
     }
 

@@ -251,7 +251,7 @@ public class ConsultationFollowUpScheduler {
     private void enrollOne(Long businessId, SquareBookingMirror booking, String kind, SquareClient square) {
         String customerId = booking.getSquareCustomerId();
         String teamMemberId = firstTeamMember(booking.getAppointmentSegments());
-        String givenName = Names.capitalizeFirst(square.customerGivenNames(List.of(customerId)).get(customerId));
+        String givenName = Names.customerGreetingName(square.customerGivenNames(List.of(customerId)).get(customerId));
         ConsultationFollowUp row = ConsultationFollowUp.builder()
                 .businessId(businessId)
                 .squareBookingId(booking.getSquareBookingId())
@@ -536,7 +536,8 @@ public class ConsultationFollowUpScheduler {
     }
 
     private static String firstName(ConsultationFollowUp row) {
-        return row.getCustomerName() == null || row.getCustomerName().isBlank() ? "there" : row.getCustomerName();
+        String name = Names.customerGreetingName(row.getCustomerName());
+        return name == null ? "there" : name;
     }
 
     private static String artist(ConsultationFollowUp row) {

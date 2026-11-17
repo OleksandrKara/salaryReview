@@ -11,6 +11,49 @@ public final class Names {
     private Names() {
     }
 
+    private static final java.util.Set<String> PLACEHOLDER_TOKENS = java.util.Set.of(
+            "hubspot", "habspot", "test", "tests", "testing", "unknown", "guest", "customer", "client",
+            "anonymous", "null", "none", "undefined", "noname", "n/a");
+    private static final java.util.Set<String> PLACEHOLDER_PHRASES = java.util.Set.of(
+            "no name", "not provided", "not available");
+
+    /** True only for obvious non-names: the HubSpot import marker, form placeholders ("Test", "Unknown",
+     * "Guest"), anything with a digit or '@', no letters, or a single character. Real names, however unusual,
+     * foreign, short or upper-case, are never placeholders: when in doubt the name is kept. */
+    public static boolean isPlaceholder(String name) {
+        if (name == null || name.isBlank()) {
+            return true;
+        }
+        String s = name.trim().toLowerCase(java.util.Locale.ROOT);
+        if (s.length() < 2 || s.chars().noneMatch(Character::isLetter)) {
+            return true;
+        }
+        if (s.chars().anyMatch(Character::isDigit) || s.indexOf('@') >= 0) {
+            return true;
+        }
+        String[] tokens = s.replaceAll("[^\\p{L}/\\s]", " ").trim().split("\\s+");
+        for (String t : tokens) {
+            if (t.equals("hubspot") || t.equals("habspot")) {
+                return true;
+            }
+        }
+        if (PLACEHOLDER_PHRASES.contains(String.join(" ", tokens))) {
+            return true;
+        }
+        for (String t : tokens) {
+            if (!PLACEHOLDER_TOKENS.contains(t)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The name to put in a greeting sent to a client: capitalized, or {@code null} when the stored name is
+     * blank or an obvious placeholder, so callers use their no-name greeting ("Hi there"). */
+    public static String customerGreetingName(String name) {
+        return isPlaceholder(name) ? null : capitalizeFirst(name);
+    }
+
     /** "oleksandr" → "Oleksandr", "MARY JANE" → "Mary Jane", "o'brien" → "O'Brien". Capitalizes
      * the first letter after the start of the string and after any space/hyphen/apostrophe,
      * lowercases everything else. {@code null}/blank passes through unchanged. */

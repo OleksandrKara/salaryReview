@@ -155,7 +155,7 @@ public class LifecycleReminderEmailFallbackScheduler {
             return;
         }
 
-        String givenName = Names.capitalizeFirst(
+        String givenName = Names.customerGreetingName(
                 square.customerGivenNames(List.of(customerId)).getOrDefault(customerId, null));
 
         Map<String, String> vars = Map.of(

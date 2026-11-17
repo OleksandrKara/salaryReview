@@ -172,7 +172,7 @@ public class LandingPmuBookingService {
     private void notifyClient(long businessId, Request r, String startAt, boolean online, String address, String artist) {
         try {
             sms.sendTemplated(businessId, "consultation_request_confirmation", r.phone(), Map.of(
-                    "name", r.givenName(), "businessName", CLIENT_FACING_NAME,
+                    "name", java.util.Optional.ofNullable(com.salonreview.util.Names.customerGreetingName(r.givenName())).orElse("there"), "businessName", CLIENT_FACING_NAME,
                     "detailsClause", detailsClause(startAt, online, address, artist)));
         } catch (RuntimeException e) {
             log.warn("Consultation confirmation SMS failed (booking unaffected): {}", e.getMessage());

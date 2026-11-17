@@ -158,7 +158,7 @@ public class LaborDayPromoOneOffService {
 
     private CandidateResult process(Long businessId, String customerId, String email, String rawGivenName,
                                      MailchimpConfig config, boolean dryRun) {
-        String givenName = Names.capitalizeFirst(rawGivenName);
+        String givenName = Names.customerGreetingName(rawGivenName);
 
         Map<String, String> vars = new HashMap<>();
         vars.put("FNAME", givenName == null ? "there" : givenName);

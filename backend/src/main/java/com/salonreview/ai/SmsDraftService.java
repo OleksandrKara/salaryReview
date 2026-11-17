@@ -144,7 +144,7 @@ public class SmsDraftService {
         StringBuilder sb = new StringBuilder();
 
         sb.append("Customer:\n");
-        String firstName = contact != null ? Names.capitalizeFirst(contact.givenName()) : null;
+        String firstName = contact != null ? Names.customerGreetingName(contact.givenName()) : null;
         sb.append("- First name: ").append(firstName != null ? firstName : "(unknown — greet without a name)").append('\n');
         if (contact != null) {
             sb.append("- VIP customer: ").append(contact.vip() ? "yes" : "no").append('\n');

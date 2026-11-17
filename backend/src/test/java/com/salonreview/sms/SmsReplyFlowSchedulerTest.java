@@ -216,4 +216,19 @@ class SmsReplyFlowSchedulerTest {
 
         verify(repository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("placeholder customer name (HubSpot import) gets the no-name greeting")
+    void placeholderNameGetsNoNameGreeting() {
+        SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
+        due.setCustomerName("Hubspot 16 10");
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(due));
+        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request_no_technician"), eq(PHONE), any()))
+                .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+
+        scheduler.sendDueRatingRequests();
+
+        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request_no_technician", PHONE, Map.of("greeting", "Hi!"));
+    }
 }

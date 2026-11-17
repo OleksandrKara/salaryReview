@@ -85,6 +85,8 @@ public class TwilioSmsService {
         Map<String, String> renderVars = new java.util.HashMap<>(variables == null ? Map.of() : variables);
         // Every catalog template may reference {{sender}}/{{businessName}} — resolved once here so
         // callers don't each need to fetch TwilioSmsConfig/Business just to pass them through.
+        // Last line of defence for every caller (including the internal API): a placeholder name never reaches a greeting.
+        renderVars.computeIfPresent("name", (k, v) -> com.salonreview.util.Names.isPlaceholder(v) ? "there" : v);
         renderVars.putIfAbsent("sender", config.getSenderName());
         Business business = businessRepository.findById(businessId).orElse(null);
         renderVars.putIfAbsent("businessName", business == null ? "" : business.getName());

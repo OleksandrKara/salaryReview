@@ -125,7 +125,7 @@ public class MailchimpClient {
             List<BatchMember> chunk = members.subList(start, Math.min(start + BATCH_UPSERT_CHUNK, members.size()));
             List<BatchUpsertEntry> entries = chunk.stream()
                     .map(m -> new BatchUpsertEntry(m.email(), "subscribed",
-                            m.givenName() == null || m.givenName().isBlank() ? null : Map.of("FNAME", m.givenName())))
+                            com.salonreview.util.Names.isPlaceholder(m.givenName()) ? null : Map.of("FNAME", m.givenName())))
                     .toList();
             String body = mapper.writeValueAsString(new BatchUpsertRequest(entries, true));
             HttpRequest req = baseRequest(config, "/lists/" + config.getAudienceId(), BULK_TIMEOUT)

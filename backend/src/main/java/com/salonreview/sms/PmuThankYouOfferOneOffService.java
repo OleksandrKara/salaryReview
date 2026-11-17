@@ -159,7 +159,7 @@ public class PmuThankYouOfferOneOffService {
                 continue; // already actually sent by this campaign before — never re-sent, even on a re-run
             }
             recipients.add(new MailchimpBatchCampaignService.Recipient(
-                    customer.id(), customer.emailAddress(), Names.capitalizeFirst(customer.givenName())));
+                    customer.id(), customer.emailAddress(), Names.customerGreetingName(customer.givenName())));
         }
 
         String campaignTitle = AUTOMATION_KEY + " - " + today;

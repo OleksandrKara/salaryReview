@@ -344,7 +344,7 @@ public class ConsultationReengageOneOffService {
             String original = teamMemberId == null ? null : artistByTeamMember.get(teamMemberId);
             String artist = content.artistName(BUSINESS_ID, original);
             boolean ownerWrites = !Objects.equals(original, artist);
-            String firstName = customer.map(SquareCustomerMirror::getGivenName).map(Names::capitalizeFirst)
+            String firstName = customer.map(SquareCustomerMirror::getGivenName).map(Names::customerGreetingName)
                     .filter(s -> s != null && !s.isBlank()).orElse(null);
             a.candidates.add(new Candidate(customerId, email, firstName, artist, ownerWrites,
                     consultation.getSquareBookingId(), teamMemberId, consultation.getStartAt(),

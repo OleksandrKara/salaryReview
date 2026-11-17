@@ -155,7 +155,7 @@ public class CheckoutReviewEmailFallbackScheduler {
                     + "&rating=" + rating + "&exp=" + expEpochSeconds + "&sig=" + signature);
         }
 
-        String givenName = Names.capitalizeFirst(flow.getCustomerName());
+        String givenName = Names.customerGreetingName(flow.getCustomerName());
         String technician = flow.getProviderId() == null ? null
                 : providerRepository.findByIdAndBusinessId(flow.getProviderId(), businessId)
                         .map(Provider::getDisplayName).map(Names::firstNameOnly).orElse(null);

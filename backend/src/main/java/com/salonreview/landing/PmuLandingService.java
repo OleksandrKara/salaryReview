@@ -445,7 +445,7 @@ public class PmuLandingService {
         m.put("discount_amount", valid ? offer.discountCents() / 100.0 : 0.0);
         m.put("min_spend", valid ? offer.minSpendCents() / 100.0 : 0.0);
         m.put("expires_text", valid ? offer.expiresText() : null);
-        m.put("first_name", valid ? offer.firstName() : null);
+        m.put("first_name", valid ? com.salonreview.util.Names.customerGreetingName(offer.firstName()) : null);
         return m;
     }
 }

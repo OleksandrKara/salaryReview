@@ -167,7 +167,7 @@ public class LandingFourHandService {
         }
         try {
             sms.sendTemplated(legacy, "four_hand_request_received", r.phone(),
-                    Map.of("name", r.givenName(), "preferredTime", formatPreferredTime(r.startAt())));
+                    Map.of("name", java.util.Optional.ofNullable(com.salonreview.util.Names.customerGreetingName(r.givenName())).orElse("there"), "preferredTime", formatPreferredTime(r.startAt())));
         } catch (RuntimeException e) {
             log.warn("4-hand SMS failed (lead capture unaffected): {}", e.getMessage());
         }

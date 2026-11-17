@@ -284,4 +284,16 @@ class TwilioSmsServiceTest {
         assertThat(result.reason()).isEqualTo("send_failed");
         assertThat(reserved.getStatus()).isEqualTo("NOT_SENT");
     }
+
+    @Test
+    @DisplayName("placeholder {{name}} variable is replaced with 'there' before rendering; a real name is untouched")
+    void placeholderNameVariableIsNeutralised() {
+        service.sendTemplated(BUSINESS_ID, TRANSACTIONAL_KEY, PHONE, Map.of("name", "Hubspot 16 10"));
+        service.sendTemplated(BUSINESS_ID, TRANSACTIONAL_KEY, PHONE, Map.of("name", "Zoë"));
+
+        org.mockito.ArgumentCaptor<Map<String, String>> vars = org.mockito.ArgumentCaptor.forClass(Map.class);
+        verify(templateService, org.mockito.Mockito.times(2)).render(eq(BUSINESS_ID), eq(TRANSACTIONAL_KEY), any(), vars.capture());
+        assertThat(vars.getAllValues().get(0)).containsEntry("name", "there");
+        assertThat(vars.getAllValues().get(1)).containsEntry("name", "Zoë");
+    }
 }
