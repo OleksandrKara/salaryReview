@@ -23,7 +23,7 @@ public final class IntakeSquareNote {
     static final String END = "[/INTAKE FORM]";
     private static final String LEGACY_PREFIX = "Intake form:";
     /** Bump when the block layout changes so already-signed forms are rewritten once. */
-    static final String SIGNED_SYNC_KEY = "SIGNED2";
+    static final String SIGNED_SYNC_KEY = "SIGNED3";
     static final int MAX_DETAIL = 160;
     static final int MAX_NOTES = 240;
 
@@ -52,6 +52,7 @@ public final class IntakeSquareNote {
                         + " | Cuts/irritated skin: " + yn(answers.get("skin"))
                         + " | Allergies: " + yn(answers.get("allergies"))
                         + " | Sensitivity/pain: " + yn(answers.get("sensitivity"))
+                        + " | Epilepsy/seizures: " + (answers.containsKey("epilepsy") ? yn(answers.get("epilepsy")) : "not asked")
                         + " | Enhancements to remove: " + yn(answers.get("enhancements")));
                 String notes = clean(answers.get("notes"), MAX_NOTES);
                 if (!notes.isEmpty()) {
@@ -79,6 +80,11 @@ public final class IntakeSquareNote {
         }
         if ("YES".equals(a.get("sensitivity"))) {
             flags.add("sensitivity/pain YES: " + clean(a.get("sensitivityDetails"), MAX_DETAIL));
+        }
+        if (IntakeAnswers.hasEpilepsyFlag(a)) {
+            String details = clean(a.get("epilepsyDetails"), MAX_DETAIL);
+            flags.add("epilepsy/seizures " + yn(a.get("epilepsy")).toUpperCase(Locale.ROOT)
+                    + (details.isEmpty() ? "" : ": " + details));
         }
         return String.join("; ", flags);
     }

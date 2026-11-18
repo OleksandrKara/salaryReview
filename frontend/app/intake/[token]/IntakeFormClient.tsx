@@ -89,7 +89,7 @@ export default function IntakeFormClient({ token }: { token: string }) {
   const set = (k: string) => (v: string) => { setA((p) => ({ ...p, [k]: v })); setBad(null); };
 
   function firstMissing(): string | null {
-    for (const k of ['service', 'fungal', 'skin', 'allergies', 'sensitivity', 'enhancements', 'heardFrom']) if (!a[k]) return k;
+    for (const k of ['service', 'fungal', 'skin', 'allergies', 'sensitivity', 'epilepsy', 'enhancements', 'heardFrom']) if (!a[k]) return k;
     if (a.allergies === 'YES' && !a.allergiesDetails?.trim()) return 'allergiesDetails';
     if (a.sensitivity === 'YES' && !a.sensitivityDetails?.trim()) return 'sensitivityDetails';
     if (a.heardFrom === 'OTHER' && !a.heardOther?.trim()) return 'heardOther';
@@ -148,6 +148,8 @@ export default function IntakeFormClient({ token }: { token: string }) {
         {a.allergies === 'YES' && <Text name="allergiesDetails" label="Please tell us what" value={a.allergiesDetails ?? ''} onChange={set('allergiesDetails')} invalid={bad === 'allergiesDetails'} max={500} required />}
         <Choice name="sensitivity" legend="Do you have sensitivity or pain during nail services?" options={YN} value={a.sensitivity} onChange={set('sensitivity')} invalid={bad === 'sensitivity'} />
         {a.sensitivity === 'YES' && <Text name="sensitivityDetails" label="Please tell us more" value={a.sensitivityDetails ?? ''} onChange={set('sensitivityDetails')} invalid={bad === 'sensitivityDetails'} max={500} required />}
+        <Choice name="epilepsy" legend="Do you have epilepsy or seizures, including from flashing or bright light? (Nail lamps flash and glow.)" options={YNU} value={a.epilepsy} onChange={set('epilepsy')} invalid={bad === 'epilepsy'} />
+        {(a.epilepsy === 'YES' || a.epilepsy === 'NOT_SURE') && <Text name="epilepsyDetails" label="Anything we should know?" value={a.epilepsyDetails ?? ''} onChange={set('epilepsyDetails')} invalid={false} max={500} rows={2} />}
         <Choice name="enhancements" legend="Do you currently wear gel, acrylic or other enhancements that may need removal?" options={YNU} value={a.enhancements} onChange={set('enhancements')} invalid={bad === 'enhancements'} />
         <Choice name="heardFrom" legend="How did you hear about us?" options={HEARD} value={a.heardFrom} onChange={set('heardFrom')} invalid={bad === 'heardFrom'} />
         {a.heardFrom === 'OTHER' && <Text name="heardOther" label="Please tell us how" value={a.heardOther ?? ''} onChange={set('heardOther')} invalid={bad === 'heardOther'} max={500} rows={2} required />}

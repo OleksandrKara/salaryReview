@@ -23,6 +23,7 @@ class IntakeSquareNoteTest {
         a.put("skin", "NO");
         a.put("allergies", "NO");
         a.put("sensitivity", "NO");
+        a.put("epilepsy", "NO");
         a.put("enhancements", "YES");
         a.put("heardFrom", "GOOGLE_MAPS");
         return a;
@@ -33,7 +34,7 @@ class IntakeSquareNoteTest {
         String b = IntakeSquareNote.block(signed(), clean());
         assertThat(b).isEqualTo("[INTAKE FORM] SIGNED Nov 18\n"
                 + "Service: manicure | Fungal/contagious: no | Cuts/irritated skin: no | Allergies: no"
-                + " | Sensitivity/pain: no | Enhancements to remove: yes\n[/INTAKE FORM]");
+                + " | Sensitivity/pain: no | Epilepsy/seizures: no | Enhancements to remove: yes\n[/INTAKE FORM]");
     }
 
     @Test
@@ -50,6 +51,20 @@ class IntakeSquareNoteTest {
         assertThat(b.split("\n")[1]).isEqualTo("ATTENTION: fungal/contagious condition YES; cuts/irritated skin NOT SURE;"
                 + " allergies YES: latex gloves; sensitivity/pain YES: painful cuticles");
         assertThat(b).contains("Notes: Epilepsy, avoid flashing lamp");
+    }
+
+    @Test
+    void epilepsyFlagInAttentionAndLegacyFormsSayNotAsked() {
+        Map<String, String> a = clean();
+        a.put("epilepsy", "YES");
+        a.put("epilepsyDetails", "flashing lights trigger it");
+        String b = IntakeSquareNote.block(signed(), a);
+        assertThat(b.split("\n")[1]).isEqualTo("ATTENTION: epilepsy/seizures YES: flashing lights trigger it");
+        a.put("epilepsy", "NOT_SURE");
+        a.remove("epilepsyDetails");
+        assertThat(IntakeSquareNote.block(signed(), a).split("\n")[1]).isEqualTo("ATTENTION: epilepsy/seizures NOT SURE");
+        a.remove("epilepsy");
+        assertThat(IntakeSquareNote.block(signed(), a)).contains("Epilepsy/seizures: not asked").doesNotContain("ATTENTION");
     }
 
     @Test
@@ -108,7 +123,7 @@ class IntakeSquareNoteTest {
 
     @Test
     void syncKeyChangesOnlyForSignedFormsSoOldRowsAreRewrittenOnce() {
-        assertThat(IntakeSquareNote.syncKey(signed())).isEqualTo("SIGNED2");
+        assertThat(IntakeSquareNote.syncKey(signed())).isEqualTo("SIGNED3");
         assertThat(IntakeSquareNote.syncKey(IntakeForm.builder().status(IntakeForm.SENT).build())).isEqualTo("SENT");
     }
 }
