@@ -1852,6 +1852,7 @@ public class LeadFollowUpService {
 
     record DigestItem(long leadId, String who, String source, String notes, long overdueMinutes) {}
 
+    /** Academy leads get their own message so they never mix with procedure leads; either group retries on its own. */
     private boolean sendDigest(long businessId, Instant now) {
         Timestamp cutoff = Timestamp.from(now);
         var rows = jdbc.queryForList("""
@@ -1862,24 +1863,49 @@ public class LeadFollowUpService {
                 GROUP BY li.id ORDER BY min(r.due_at)
                 """, businessId, cutoff);
         if (rows.isEmpty()) return true;
-        java.util.List<DigestItem> items = new java.util.ArrayList<>();
-        java.util.List<Long> ids = new java.util.ArrayList<>();
+        var all = listFor(businessId, null);
+        java.util.Map<Long, Boolean> academyById = new java.util.HashMap<>();
+        for (LeadView l : all) academyById.put(l.id(), l.academy());
+        java.util.List<DigestItem> procItems = new java.util.ArrayList<>();
+        java.util.List<DigestItem> academyItems = new java.util.ArrayList<>();
+        java.util.List<Long> procIds = new java.util.ArrayList<>();
+        java.util.List<Long> academyIds = new java.util.ArrayList<>();
         for (var row : rows) {
             long id = ((Number) row.get("id")).longValue();
-            ids.add(id);
             String phone = row.get("phone_number") == null ? null : row.get("phone_number").toString();
             String who = row.get("name") != null ? row.get("name").toString() : phone != null ? phone : String.valueOf(row.get("email"));
             if (row.get("name") != null && phone != null) who += " " + phone;
             long mins = Math.max(0, java.time.Duration.between(((Timestamp) row.get("due")).toInstant(), now).toMinutes());
-            items.add(new DigestItem(id, who, row.get("source") == null ? null : row.get("source").toString(),
-                    row.get("notes") == null ? null : row.get("notes").toString(), mins));
+            DigestItem item = new DigestItem(id, who, row.get("source") == null ? null : row.get("source").toString(),
+                    row.get("notes") == null ? null : row.get("notes").toString(), mins);
+            if (Boolean.TRUE.equals(academyById.get(id))) {
+                academyItems.add(item);
+                academyIds.add(id);
+            } else {
+                procItems.add(item);
+                procIds.add(id);
+            }
         }
-        var all = listFor(businessId, null);
-        int fresh = (int) all.stream().filter(l -> "NEW".equals(l.status())).count();
-        int noStep = (int) all.stream().filter(l -> ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())) && l.callbackAt() == null).count();
-        String text = digestText(items, fresh, noStep, publicBaseUrl + "/admin/leads?business=" + businessId);
+        String link = publicBaseUrl + "/admin/leads?business=" + businessId;
+        boolean ok = true;
+        if (!procItems.isEmpty()) {
+            var group = all.stream().filter(l -> !l.academy()).toList();
+            ok &= deliverDigest(businessId, false, procItems, procIds, group, link, cutoff);
+        }
+        if (!academyItems.isEmpty()) {
+            var group = all.stream().filter(LeadView::academy).toList();
+            ok &= deliverDigest(businessId, true, academyItems, academyIds, group, link, cutoff);
+        }
+        return ok;
+    }
+
+    private boolean deliverDigest(long businessId, boolean academy, java.util.List<DigestItem> items, java.util.List<Long> ids,
+                                  java.util.List<LeadView> group, String link, Timestamp cutoff) {
+        int fresh = (int) group.stream().filter(l -> "NEW".equals(l.status())).count();
+        int noStep = (int) group.stream().filter(l -> ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())) && l.callbackAt() == null).count();
+        String text = digestText(items, fresh, noStep, link, academy);
         if (!telegram.sendPlainText(businessId, text)) {
-            log.info("Reminder digest for business {} not delivered, will retry", businessId);
+            log.info("Reminder digest ({}) for business {} not delivered, will retry", academy ? "academy" : "procedures", businessId);
             return false;
         }
         Long[] idArray = ids.toArray(new Long[0]);
@@ -1891,8 +1917,8 @@ public class LeadFollowUpService {
         return true;
     }
 
-    static String digestText(java.util.List<DigestItem> items, int newLeads, int noNextStep, String link) {
-        StringBuilder t = new StringBuilder("Callback reminders: ").append(items.size()).append(" overdue");
+    static String digestText(java.util.List<DigestItem> items, int newLeads, int noNextStep, String link, boolean academy) {
+        StringBuilder t = new StringBuilder(academy ? "ACADEMY. Callback reminders: " : "Callback reminders: ").append(items.size()).append(" overdue");
         t.append("\nNew leads waiting: ").append(newLeads).append("\nActive leads with no next step: ").append(noNextStep).append("\n");
         int shown = Math.min(items.size(), DIGEST_MAX_LINES);
         for (int i = 0; i < shown; i++) {

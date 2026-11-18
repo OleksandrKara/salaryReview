@@ -112,4 +112,31 @@ class LeadReminderDigestTest {
         verify(telegram, never()).sendPlainText(anyLong(), anyString());
     }
 
+    @Test
+    void academyLeadsGoInTheirOwnMessage() {
+        dueLead("Procedure Pam", "CONTACTED", 90);
+        long ac = dueLead("Academy Ann", "NEW", 60);
+        jdbc.update("UPDATE lead_intake SET channel = 'Academy' WHERE id = ?", ac);
+        service.sendDueReminders(at(11, 0));
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(telegram, times(2)).sendPlainText(org.mockito.ArgumentMatchers.eq(b), text.capture());
+        String academy = text.getAllValues().stream().filter(t -> t.startsWith("ACADEMY")).findFirst().orElseThrow();
+        String proc = text.getAllValues().stream().filter(t -> !t.startsWith("ACADEMY")).findFirst().orElseThrow();
+        assertThat(academy).contains("Academy Ann").doesNotContain("Procedure Pam").contains("1 overdue");
+        assertThat(proc).contains("Procedure Pam").doesNotContain("Academy Ann").contains("1 overdue");
+        assertThat(unfired()).isZero();
+    }
+
+    @Test
+    void failedAcademyMessageRetriesWithoutResendingProcedures() {
+        dueLead("Procedure Pam", "CONTACTED", 90);
+        long ac = dueLead("Academy Ann", "NEW", 60);
+        jdbc.update("UPDATE lead_intake SET channel = 'Academy' WHERE id = ?", ac);
+        when(telegram.sendPlainText(anyLong(), anyString())).thenReturn(true, false, true);
+        service.sendDueReminders(at(8, 0));
+        assertThat(unfired()).isEqualTo(1);
+        service.sendDueReminders(at(8, 5));
+        verify(telegram, times(3)).sendPlainText(anyLong(), anyString());
+        assertThat(unfired()).isZero();
+    }
 }

@@ -28,10 +28,18 @@ class LeadReminderDigestTextTest {
     void textCapsListAndReportsCounts() {
         List<DigestItem> items = new ArrayList<>();
         for (int i = 0; i < 20; i++) items.add(new DigestItem(i, "Lead" + i, "Google", i == 0 ? "call back" : null, 5 + i * 60L));
-        String t = LeadFollowUpService.digestText(items, 4, 7, "https://x/admin/leads?business=1");
+        String t = LeadFollowUpService.digestText(items, 4, 7, "https://x/admin/leads?business=1", false);
         assertThat(t).contains("20 overdue").contains("New leads waiting: 4").contains("no next step: 7")
                 .contains("Lead14").doesNotContain("Lead15").contains("+5 more").contains("Note: call back").contains("5 min overdue").contains("1 h overdue")
                 .endsWith("https://x/admin/leads?business=1");
         assertThat(t.lines().filter(l -> l.startsWith("- ")).count()).isEqualTo(15);
+    }
+
+    @Test
+    void academyDigestIsMarked() {
+        String t = LeadFollowUpService.digestText(List.of(new DigestItem(1, "Kate", "Google", null, 10)), 1, 0, "https://x", true);
+        assertThat(t).startsWith("ACADEMY. Callback reminders: 1 overdue");
+        assertThat(LeadFollowUpService.digestText(List.of(new DigestItem(1, "Kate", "Google", null, 10)), 1, 0, "https://x", false))
+                .doesNotContain("ACADEMY");
     }
 }
