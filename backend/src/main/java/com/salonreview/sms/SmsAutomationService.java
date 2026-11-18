@@ -49,7 +49,9 @@ public class SmsAutomationService {
                                      List<AcademyLeadFunnelStats.StepStat> steps,
                                      com.salonreview.intake.IntakeFormStats.Stats intake,
                                      boolean alwaysOn,
-                                     com.salonreview.intake.IntakeFormStats.CriticalStats critical) {}
+                                     com.salonreview.intake.IntakeFormStats.CriticalStats critical,
+                                     List<com.salonreview.telegram.TelegramAutomationLog.Row> telegram,
+                                     com.salonreview.intake.IntakeFormStats.Funnel intakeFunnel) {}
 
     /** Automations with an email fallback leg (see {@code WinbackEmailFallbackScheduler}). Drives
      * whether {@link #list} bothers querying {@link WinbackEmailSendRepository} at all for a given
@@ -83,6 +85,13 @@ public class SmsAutomationService {
     }
 
     private com.salonreview.intake.IntakeFormStats intakeStats;
+
+    private com.salonreview.telegram.TelegramAutomationLog telegramLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTelegramLog(com.salonreview.telegram.TelegramAutomationLog telegramLog) {
+        this.telegramLog = telegramLog;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setIntakeStats(com.salonreview.intake.IntakeFormStats intakeStats) {
@@ -142,7 +151,12 @@ public class SmsAutomationService {
 
                     // Telegram-channel automations have no sms_message rows at all — their "sent"
                     // count uses confirmed delivery_status=SENT and delivered_at in the outbox.
+                    List<com.salonreview.telegram.TelegramAutomationLog.Row> telegramRows =
+                            SmsAutomationRegistry.LOGGED.contains(meta.key()) && telegramLog != null
+                                    ? telegramLog.rows(businessId, meta.key(), Instant.now()) : null;
                     long sent = critical != null ? critical.alertsSent()
+                            : telegramRows != null
+                            ? telegramRows.stream().mapToLong(com.salonreview.telegram.TelegramAutomationLog.Row::sent30).sum()
                             : "lead_daily_digest".equals(meta.key())
                             ? leadDigestLog.countSent(businessId, since)
                             : "pmu_booking_staff_alert".equals(meta.key())
@@ -247,12 +261,16 @@ public class SmsAutomationService {
                             "first_visit_intake_form".equals(meta.key()) && intakeStats != null
                                     ? intakeStats.since(businessId, since) : null;
 
+                    com.salonreview.intake.IntakeFormStats.Funnel intakeFunnel =
+                            "first_visit_intake_form".equals(meta.key()) && intakeStats != null
+                                    ? intakeStats.funnel(businessId, Instant.now()) : null;
+
                     AutomationReadinessService.Readiness readiness = readinessService.readiness(businessId, meta.key());
 
                     return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,
                             meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies,
                             meta.tracksConversion(), converted, tracksEmail, emailSent, emailOpened, emailClicked,
-                            emailConverted, readiness.ready(), readiness.reason(), meta.channel(), steps, intake, alwaysOn, critical);
+                            emailConverted, readiness.ready(), readiness.reason(), meta.channel(), steps, intake, alwaysOn, critical, telegramRows, intakeFunnel);
                 })
                 .toList();
     }

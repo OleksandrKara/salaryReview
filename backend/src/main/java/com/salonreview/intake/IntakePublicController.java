@@ -44,6 +44,17 @@ public class IntakePublicController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @PostMapping("/{token}/started")
+    public ResponseEntity<?> started(@PathVariable String token, HttpServletRequest req) {
+        if (limited(req)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
+        }
+        if (isAutomatedClient(req.getHeader("User-Agent"))) {
+            return ResponseEntity.noContent().build();
+        }
+        return service.markStarted(token) ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+    }
+
     @PostMapping("/{token}")
     public ResponseEntity<?> submit(@PathVariable String token, @RequestBody SubmitRequest body,
                                     HttpServletRequest req) {

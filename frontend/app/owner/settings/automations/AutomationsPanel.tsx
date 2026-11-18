@@ -50,6 +50,17 @@ const AUTOMATION_CATEGORY: Record<string, AutomationCategory> = {
   academy_lead_funnel: 'academy',
   first_visit_intake_form: 'general',
   intake_critical_alert: 'nails',
+  lead_daily_digest: 'general',
+  lead_reminder_digest: 'general',
+  needs_reply_alert: 'general',
+  inbound_sms_alert: 'general',
+  academy_lead_alert: 'academy',
+  booking_health_alert: 'general',
+  payment_failed_alert: 'general',
+  card_on_file_alert: 'general',
+  same_day_booking_alert: 'nails',
+  rebooking_promo_alert: 'nails',
+  consultation_followup_alert: 'pmu',
   pmu_booking_staff_alert: 'pmu',
 };
 const CATEGORY_META: Record<AutomationCategory, { label: string; className: string }> = {
@@ -103,6 +114,16 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   provider_schedule_closure_alert: ['telegram'],
   // 2026-11-18: always-on safety alert for critical intake answers (IntakeCriticalAlertService).
   intake_critical_alert: ['telegram'],
+  lead_reminder_digest: ['telegram'],
+  needs_reply_alert: ['telegram'],
+  inbound_sms_alert: ['telegram'],
+  academy_lead_alert: ['telegram'],
+  booking_health_alert: ['telegram'],
+  payment_failed_alert: ['telegram'],
+  card_on_file_alert: ['telegram'],
+  same_day_booking_alert: ['telegram'],
+  rebooking_promo_alert: ['telegram'],
+  consultation_followup_alert: ['telegram'],
   // 2026-10-14: PMU Academy course requests: emails now and on days 1/3/7, one text asking when
   // to call, and a staff Telegram alert with a "Stop follow-ups" button (AcademyLeadFunnelScheduler).
   academy_lead_funnel: ['email', 'sms', 'telegram'],
@@ -227,6 +248,17 @@ export default function AutomationsPanel({
 
 // undefined (not 0%) when there's nothing to divide yet — an automation that hasn't fired in the
 // last 30 days shouldn't read as "0% clicked", it should just not show a rate at all.
+function formatWhen(iso: string | null): string {
+  return iso
+    ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })
+    : 'never';
+}
+
+function telegramLabel(label: string): string {
+  const t = label.toLowerCase().replace(/_/g, ' ');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 function formatRate(numerator: number, denominator: number): string | undefined {
   if (denominator <= 0) return undefined;
   return `${Math.round((numerator / denominator) * 100)}%`;
@@ -489,17 +521,55 @@ function AutomationCard({
         </div>
       )}
 
+      {automation.telegram && (
+        <div data-testid="automation-telegram-rows" className="flex flex-col gap-1.5 border-t border-zinc-100 pt-2.5 text-xs">
+          {automation.telegram.length === 0 && <span className="text-zinc-500">Nothing sent in the last 30 days</span>}
+          {automation.telegram.map((r) => (
+            <div key={`${r.label}-${r.direction}`} className="flex flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {r.direction && (
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${CATEGORY_META[r.direction].className}`}>
+                    {CATEGORY_META[r.direction].label}
+                  </span>
+                )}
+                {r.label && <span className="min-w-0 break-words font-medium text-zinc-700">{telegramLabel(r.label)}</span>}
+                <span className="rounded-full bg-cyan-50 px-2 py-0.5 font-medium text-cyan-700 tabular-nums">{r.sent7} / 7d</span>
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 tabular-nums">{r.sent30} / 30d</span>
+                <span className={`rounded-full px-2 py-0.5 font-medium tabular-nums ${r.failed30 > 0 ? 'bg-red-600 text-white' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {r.failed30} failed
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-zinc-500">
+                <span>last sent: {formatWhen(r.lastSentAt)}</span>
+                {r.failed30 > 0 && <span className="font-medium text-red-700">last failure: {formatWhen(r.lastFailedAt)}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {automation.intakeFunnel && (
+        <div data-testid="automation-intake-windows" className="flex flex-col gap-2 border-t border-zinc-100 pt-2.5 text-xs">
+          {[automation.intakeFunnel.last7, automation.intakeFunnel.last30].map((w) => (
+            <div key={w.days} className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Last {w.days} days</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 tabular-nums">{w.sent} sent</span>
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700 tabular-nums">{w.openedPct ?? 0}% opened · {w.opened}</span>
+                <span className="rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-700 tabular-nums">{w.startedPct ?? 0}% started · {w.started}</span>
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 tabular-nums">{w.signedPct ?? 0}% signed · {w.signed}</span>
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 tabular-nums">{w.notSigned} not signed</span>
+              </div>
+            </div>
+          ))}
+          <span className={`w-fit rounded-full px-2 py-0.5 font-medium tabular-nums ${automation.intakeFunnel.unsignedUpcoming > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+            {automation.intakeFunnel.unsignedUpcoming} upcoming appointments (7 days) without a signed form
+          </span>
+        </div>
+      )}
+
       {automation.intake && (
         <div data-testid="automation-intake-funnel" className="flex flex-col gap-1.5 border-t border-zinc-100 pt-2.5 text-xs">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 tabular-nums">{automation.intake.sent} sent</span>
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700 tabular-nums">
-              {formatRate(automation.intake.opened, automation.intake.sent) ?? '0%'} opened · {automation.intake.opened}
-            </span>
-            <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 tabular-nums">
-              {formatRate(automation.intake.signed + automation.intake.signedOnPaper, automation.intake.sent) ?? '0%'} signed · {automation.intake.signed + automation.intake.signedOnPaper}
-            </span>
-          </div>
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] tabular-nums text-zinc-500">
             <span>{automation.intake.signed} online</span>
             <span>{automation.intake.signedOnPaper} on paper</span>

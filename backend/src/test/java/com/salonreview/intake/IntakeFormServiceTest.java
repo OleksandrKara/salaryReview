@@ -187,4 +187,22 @@ class IntakeFormServiceTest {
         service.markReceivedOnPaper(f);
         assertThat(f.getSignedAt()).isEqualTo(at);
     }
+
+    @Test
+    void markStartedStampsOnceAndNeverForSignedForms() {
+        IntakeForm f = form();
+        when(forms.findByToken("tok123")).thenReturn(Optional.of(f));
+        assertThat(service.markStarted("tok123")).isTrue();
+        Instant first = f.getStartedAt();
+        assertThat(first).isNotNull();
+        assertThat(f.getOpenedAt()).isEqualTo(first);
+        service.markStarted("tok123");
+        assertThat(f.getStartedAt()).isEqualTo(first);
+        assertThat(service.markStarted("nope")).isFalse();
+        IntakeForm signed = form();
+        signed.setStatus(IntakeForm.SIGNED);
+        when(forms.findByToken("signed")).thenReturn(Optional.of(signed));
+        service.markStarted("signed");
+        assertThat(signed.getStartedAt()).isNull();
+    }
 }

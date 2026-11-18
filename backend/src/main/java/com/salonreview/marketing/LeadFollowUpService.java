@@ -88,6 +88,13 @@ public class LeadFollowUpService {
         this.smsLog = smsLog;
     }
 
+    private com.salonreview.telegram.TelegramAutomationLog telegramLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTelegramLog(com.salonreview.telegram.TelegramAutomationLog telegramLog) {
+        this.telegramLog = telegramLog;
+    }
+
     private final MarketingContactsService contactsService;
     private final com.salonreview.repo.BlockedNumberRepository blockedNumbers;
     private final com.salonreview.sms.SmsMessageLogService smsLog;
@@ -1911,7 +1918,11 @@ public class LeadFollowUpService {
         int noStep = (int) group.stream().filter(l -> ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())) && l.callbackAt() == null).count();
         String text = academy ? academyDigestText(items, link)
                 : digestText(items, fresh, noStep, link, businessName(businessId));
-        if (!telegram.sendPlainText(businessId, text)) {
+        boolean delivered = telegram.sendPlainText(businessId, text);
+        if (telegramLog != null) {
+            telegramLog.record(businessId, "lead_reminder_digest", "", businessId == 2 && !academy ? "pmu" : academy ? "academy" : "nails", delivered);
+        }
+        if (!delivered) {
             log.info("Reminder digest ({}) for business {} not delivered, will retry", academy ? "academy" : "procedures", businessId);
             return false;
         }

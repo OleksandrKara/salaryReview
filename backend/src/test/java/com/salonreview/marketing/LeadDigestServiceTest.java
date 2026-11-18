@@ -76,4 +76,40 @@ class LeadDigestServiceTest {
         assertTrue(multi.contains("• Lena: связались 2"), multi);
         assertTrue(multi.contains("• Kate: записались 1, перезвонов назначено 1"), multi);
     }
+
+    @Test
+    void academyMorningListsWorkWithMaskedPhonesAndLinks() {
+        List<LeadView> all = List.of(
+                lead(11, "Form", "NEW", "2026-11-06T14:00:00Z", null, null),
+                lead(12, "Form", "CONTACTED", "2026-11-02T14:00:00Z", "2026-11-05T14:00:00Z", null));
+        String text = LeadDigestService.academyMorning(all, DAY, NOW, "https://crm.example", 2);
+        assertTrue(text.startsWith("Академия."), text);
+        assertTrue(text.contains("К обработке: 2"), text);
+        assertTrue(text.contains("https://crm.example/admin/leads"), text);
+        assertFalse(text.contains("+1555000"), text);
+        assertTrue(text.contains("0011") || text.contains("0012"), text);
+        assertFalse(text.contains("—"), text);
+        assertTrue(LeadDigestService.academyMorning(List.of(), DAY, NOW, "https://crm.example", 2).contains("к обработке ничего"));
+    }
+
+    @Test
+    void academyEveningSaysNothingWasDoneInsteadOfStayingSilent() {
+        String text = LeadDigestService.academyEvening(List.of(), new LeadDigestService.Handled(Map.of(), 0, 0, Map.of()), DAY, NOW,
+                "https://crm.example", 2);
+        assertTrue(text.contains("Академия: ничего не сделано"), text);
+    }
+
+    @Test
+    void academyEveningShowsHandledAndNotHandled() {
+        List<LeadView> all = List.of(
+                lead(21, "Form", "CONTACTED", "2026-11-06T15:00:00Z", null, null),
+                lead(22, "Form", "NEW", "2026-11-06T15:30:00Z", null, null));
+        var h = new LeadDigestService.Handled(Map.of("CONTACTED", 1), 0, 0, Map.of("Anastasia", Map.of("CONTACTED", 1)), Map.of(),
+                List.of(new LeadDigestService.HandledLead(21, "CONTACTED", "Anastasia")));
+        String text = LeadDigestService.academyEvening(all, h, DAY, NOW, "https://crm.example", 2);
+        assertTrue(text.contains("Обработано командой: 1"), text);
+        assertTrue(text.contains("связались, Anastasia"), text);
+        assertTrue(text.contains("Не обработано: 1"), text);
+        assertFalse(text.contains("+1555000"), text);
+    }
 }

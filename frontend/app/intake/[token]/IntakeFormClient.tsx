@@ -70,6 +70,7 @@ export default function IntakeFormClient({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const form = useRef<HTMLFormElement>(null);
+  const startedSent = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -86,7 +87,12 @@ export default function IntakeFormClient({ token }: { token: string }) {
     return () => { alive = false; };
   }, [token]);
 
-  const set = (k: string) => (v: string) => { setA((p) => ({ ...p, [k]: v })); setBad(null); };
+  const markStarted = () => {
+    if (startedSent.current) return;
+    startedSent.current = true;
+    fetch(`/api/public/intake/${encodeURIComponent(token)}/started`, { method: 'POST', keepalive: true }).catch(() => {});
+  };
+  const set = (k: string) => (v: string) => { markStarted(); setA((p) => ({ ...p, [k]: v })); setBad(null); };
 
   function firstMissing(): string | null {
     for (const k of ['service', 'fungal', 'skin', 'allergies', 'sensitivity', 'epilepsy', 'enhancements', 'heardFrom']) if (!a[k]) return k;
@@ -140,7 +146,7 @@ export default function IntakeFormClient({ token }: { token: string }) {
     <Shell name={view?.businessName}>
       <h1 className="text-2xl font-semibold leading-tight">{view?.firstName ? `Welcome, ${view.firstName}` : 'Welcome'}</h1>
       <p className="mt-2 text-[15px] text-stone-600">Client intake and health form for your visit on {view?.when}. It takes about two minutes and helps your technician prepare.</p>
-      <form ref={form} onSubmit={submit} noValidate className="mt-6 space-y-4">
+      <form ref={form} onSubmit={submit} onChange={markStarted} noValidate className="mt-6 space-y-4">
         <Choice name="service" legend="What are you booked for?" options={[['MANICURE', 'Manicure'], ['PEDICURE', 'Pedicure'], ['BOTH', 'Both']]} value={a.service} onChange={set('service')} invalid={bad === 'service'} />
         <Choice name="fungal" legend="Do you have a fungal or contagious condition of the nails or skin?" options={YNU} value={a.fungal} onChange={set('fungal')} invalid={bad === 'fungal'} />
         <Choice name="skin" legend="Any open cuts, sores or irritated skin on your hands or feet?" options={YNU} value={a.skin} onChange={set('skin')} invalid={bad === 'skin'} />

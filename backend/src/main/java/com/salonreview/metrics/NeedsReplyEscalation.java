@@ -52,6 +52,32 @@ public class NeedsReplyEscalation {
         this.clock = clock;
     }
 
+    private com.salonreview.telegram.TelegramAutomationLog telegramLog;
+    private com.salonreview.marketing.LeadFollowUpService leads;
+
+    @Autowired(required = false)
+    void setTelegramLog(com.salonreview.telegram.TelegramAutomationLog telegramLog) {
+        this.telegramLog = telegramLog;
+    }
+
+    @Autowired(required = false)
+    void setLeads(com.salonreview.marketing.LeadFollowUpService leads) {
+        this.leads = leads;
+    }
+
+    private void track(long businessId, String label, String direction, boolean ok) {
+        if (telegramLog != null) telegramLog.record(businessId, "needs_reply_alert", label, direction, ok);
+    }
+
+    private boolean academy(NeedsReplyService.Item it) {
+        if (leads == null || it.leadId() == null) return false;
+        try {
+            return leads.isAcademy(it.leadId());
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     @Scheduled(cron = "30 * * * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "NeedsReplyEscalation_run", lockAtLeastFor = "PT20S", lockAtMostFor = "PT2M")
     public void run() {
@@ -81,11 +107,15 @@ public class NeedsReplyEscalation {
         if (!forManager.isEmpty()) {
             String text = "Клиенты ждут ответа на смене дольше 15 минут: " + forManager.size() + "\n" + lines(forManager, businessId)
                     + "\nОтветьте или откройте чат.";
-            if (!telegram.sendHtmlAlert(businessId, text, "Нужен ответ", url)) forManager.forEach(it -> release(businessId, "MANAGER", key(it)));
+            boolean sent = telegram.sendHtmlAlert(businessId, text, "Нужен ответ", url);
+            track(businessId, "WAIT_15_MIN", "", sent);
+            if (!sent) forManager.forEach(it -> release(businessId, "MANAGER", key(it)));
         }
         if (!forOwner.isEmpty()) {
             String text = "Без ответа уже больше 30 минут на смене: " + forOwner.size() + "\n" + lines(forOwner, businessId) + "\n" + TelegramNotificationService.escapeHtml(url);
-            if (!telegram.sendOwnerHtmlAlert(businessId, text)) forOwner.forEach(it -> release(businessId, "OWNER", key(it)));
+            boolean sent = telegram.sendOwnerHtmlAlert(businessId, text);
+            track(businessId, "WAIT_30_MIN_OWNER", "", sent);
+            if (!sent) forOwner.forEach(it -> release(businessId, "OWNER", key(it)));
         }
         shiftStartDigest(businessId, now, q, url);
     }
@@ -99,9 +129,20 @@ public class NeedsReplyEscalation {
                 """, Long.class, businessId, businessId, Timestamp.from(now.minus(SHIFT_START_WINDOW)), Timestamp.from(now));
         if (started.isEmpty()) return;
         String ref = "shift:" + started.get(0);
-        if (!claim(businessId, "DIGEST", ref)) return;
-        String text = "Начало смены: ждут ответа чатов " + q.count() + ".\n" + lines(q.items(), businessId);
-        if (!telegram.sendHtmlAlert(businessId, text, "Нужен ответ", url)) release(businessId, "DIGEST", ref);
+        List<NeedsReplyService.Item> academyItems = q.items().stream().filter(this::academy).toList();
+        List<NeedsReplyService.Item> otherItems = q.items().stream().filter(it -> !academyItems.contains(it)).toList();
+        if (!otherItems.isEmpty() && claim(businessId, "DIGEST", ref)) {
+            String text = "Начало смены: ждут ответа чатов " + otherItems.size() + ".\n" + lines(otherItems, businessId);
+            boolean sent = telegram.sendHtmlAlert(businessId, text, "Нужен ответ", url);
+            track(businessId, "SHIFT_START", businessId == 2 ? "pmu" : "nails", sent);
+            if (!sent) release(businessId, "DIGEST", ref);
+        }
+        if (!academyItems.isEmpty() && claim(businessId, "DIGEST", ref + ":academy")) {
+            String text = "Академия. Начало смены: ждут ответа чатов " + academyItems.size() + ".\n" + lines(academyItems, businessId);
+            boolean sent = telegram.sendHtmlAlert(businessId, text, "Нужен ответ", url);
+            track(businessId, "SHIFT_START", "academy", sent);
+            if (!sent) release(businessId, "DIGEST", ref + ":academy");
+        }
     }
 
     private static String key(NeedsReplyService.Item it) {
