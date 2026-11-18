@@ -266,6 +266,11 @@ public class MarketingContactsRepository {
                 // itself (academy_lead) is the reliable marker.
                 + " AND NOT EXISTS (SELECT 1 FROM academy_lead al WHERE al.phone = c.phone_number"
                 + "     AND al.created_at >= c.updated_at - interval '1 day')"
+                // Someone who phoned (answered or missed) did not start booking online; the call
+                // bumps this contact's updated_at, so exclude it here, not only at send time.
+                + " AND NOT EXISTS (SELECT 1 FROM lead_intake li WHERE li.business_id = c.business_id"
+                + "     AND li.phone_number = c.phone_number AND li.channel = 'Call'"
+                + "     AND li.created_at >= c.updated_at - interval '1 hour')"
                 + " AND NOT EXISTS (SELECT 1 FROM lead_followup_send lfs"
                 + "     WHERE lfs.contact_id = c.id AND lfs.contact_updated_at >= c.updated_at)"
                 + " ORDER BY c.updated_at ASC";
