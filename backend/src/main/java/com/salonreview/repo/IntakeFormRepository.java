@@ -36,7 +36,15 @@ public interface IntakeFormRepository extends JpaRepository<IntakeForm, Long> {
 
     @Query("select f from IntakeForm f where f.squareSyncAttempts < :maxAttempts "
             + "and f.status <> 'PENDING' and (f.squareSyncedStatus is null "
-            + "or (f.status = 'SIGNED' and f.squareSyncedStatus <> 'SIGNED4') "
+            + "or (f.status = 'SIGNED' and f.squareSyncedStatus <> 'SIGNED5') "
             + "or (f.status <> 'SIGNED' and f.squareSyncedStatus <> f.status))")
     List<IntakeForm> findNeedingSquareSync(@Param("maxAttempts") int maxAttempts);
+
+    /** Signed forms from before attention levels existed that were flagged: filled in once at startup. */
+    List<IntakeForm> findByStatusAndNeedsAttentionTrueAndAttentionLevelIsNull(String status);
+
+    List<IntakeForm> findByStatusAndCriticalAlertStateAndCriticalAlertAttemptsLessThan(
+            String status, String state, int maxAttempts);
+
+    List<IntakeForm> findByStatusAndAttentionLevelIn(String status, Collection<String> levels);
 }

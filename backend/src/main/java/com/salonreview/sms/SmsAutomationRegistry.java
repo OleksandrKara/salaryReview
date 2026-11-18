@@ -240,6 +240,18 @@ public final class SmsAutomationRegistry {
                             + "booking page are ignored. Consultations have their own team alert.",
                     List.of(), false, false, false, Channel.TELEGRAM
             )),
+            // Safety net, always on (no switch): see IntakeCriticalAlertService.
+            Map.entry("intake_critical_alert", new AutomationMeta(
+                    "intake_critical_alert",
+                    "Critical intake answers alert",
+                    "When a client signs the intake form with a flagged answer (fungal or contagious "
+                            + "condition, cuts or irritated skin, epilepsy: critical; allergies, sensitivity: "
+                            + "attention), the team Telegram chat gets an alert with the client, the "
+                            + "appointment and the answer. The same warning is written at the top of the Square "
+                            + "client note and into the seller note of her upcoming appointments, so the "
+                            + "technician sees it on the calendar. Nothing is sent to the client. Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
             Map.entry("lead_daily_digest", new AutomationMeta(
                     "lead_daily_digest",
                     "Daily leads digest",
@@ -251,6 +263,9 @@ public final class SmsAutomationRegistry {
                     List.of(), false, false, false, Channel.TELEGRAM
             ))
     );
+
+    /** Safety automations with no switch: reported as on, and turning them off is not offered. */
+    public static final java.util.Set<String> ALWAYS_ON = java.util.Set.of("intake_critical_alert");
 
     private SmsAutomationRegistry() {
     }

@@ -53,7 +53,7 @@ public class AutomationReadinessService {
                     rolesConfiguredReadiness(businessId, "INITIAL_PROCEDURE", "Initial procedure", "TOUCH_UP", "Touch-up");
             case "color_booster_reminder" ->
                     rolesConfiguredReadiness(businessId, "INITIAL_PROCEDURE", "Initial procedure", "COLOR_BOOSTER", "Color booster");
-            case "first_visit_intake_form" -> intakeFormReadiness(businessId);
+            case "first_visit_intake_form", "intake_critical_alert" -> intakeFormReadiness(businessId);
             default -> Readiness.READY;
         };
     }

@@ -30,7 +30,8 @@ public class IntakeStaffService {
 
     public record Summary(Long id, String firstName, String phoneLast4, Instant appointmentStartAt, String status,
                           Instant sentAt, Instant signedAt, String signedVia, boolean needsAttention,
-                          String providerName, String initialSmsState, String reminderSmsState, Instant openedAt) {}
+                          String providerName, String initialSmsState, String reminderSmsState, Instant openedAt,
+                          String attentionLevel) {}
 
     public record Detail(Summary summary, String signatureName, List<Map<String, String>> answers) {}
 
@@ -116,7 +117,14 @@ public class IntakeStaffService {
         String last4 = phone.length() >= 4 ? phone.substring(phone.length() - 4) : phone;
         return new Summary(f.getId(), f.getFirstName(), last4, f.getAppointmentStartAt(), f.getStatus(), f.getSentAt(),
                 f.getSignedAt(), f.getSignedVia(), f.isNeedsAttention(), providerName, f.getInitialSmsState(),
-                f.getReminderSmsState(), f.getOpenedAt());
+                f.getReminderSmsState(), f.getOpenedAt(),
+                f.isNeedsAttention() ? staffLevel(f) : null);
+    }
+
+    /** CRITICAL or ATTENTION; a flagged form from before levels existed counts as ATTENTION until filled in. */
+    private static String staffLevel(IntakeForm f) {
+        String l = f.getAttentionLevel();
+        return "CRITICAL".equals(l) ? "CRITICAL" : "ATTENTION";
     }
 
     public Optional<Detail> detail(AppUserPrincipal who, Long businessId, Long id) {

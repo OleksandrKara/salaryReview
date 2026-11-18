@@ -21,9 +21,11 @@ public final class IntakeSquareNote {
 
     static final String START = "[INTAKE FORM]";
     static final String END = "[/INTAKE FORM]";
+    static final String ALERT_START = "[INTAKE ALERT]";
+    static final String ALERT_END = "[/INTAKE ALERT]";
     private static final String LEGACY_PREFIX = "Intake form:";
     /** Bump when the block layout changes so already-signed forms are rewritten once. */
-    static final String SIGNED_SYNC_KEY = "SIGNED4";
+    static final String SIGNED_SYNC_KEY = "SIGNED5";
     static final int MAX_DETAIL = 160;
     static final int MAX_NOTES = 240;
 
@@ -72,22 +74,40 @@ public final class IntakeSquareNote {
 
     private static List<String> attention(Map<String, String> a) {
         List<String> flags = new ArrayList<>();
-        if (!"NO".equals(a.get("fungal"))) {
-            flags.add("Fungal/contagious condition: " + yn(a.get("fungal")).toUpperCase(Locale.ROOT));
-        }
-        if (!"NO".equals(a.get("skin"))) {
-            flags.add("Cuts/irritated skin: " + yn(a.get("skin")).toUpperCase(Locale.ROOT));
-        }
-        if ("YES".equals(a.get("allergies"))) {
-            flags.add(withDetails("Allergies: YES", a.get("allergiesDetails")));
-        }
-        if ("YES".equals(a.get("sensitivity"))) {
-            flags.add(withDetails("Sensitivity/pain: YES", a.get("sensitivityDetails")));
-        }
-        if (IntakeAnswers.hasEpilepsyFlag(a)) {
-            flags.add(withDetails("Epilepsy/seizures: " + yn(a.get("epilepsy")).toUpperCase(Locale.ROOT), a.get("epilepsyDetails")));
+        for (IntakeFlagRules.Flag f : IntakeFlagRules.evaluate(a)) {
+            flags.add(withDetails(f.rule().noteLabel() + ": " + f.valueText(), f.details()));
         }
         return flags;
+    }
+
+    /**
+     * The loud banner placed above the intake block, or null when the form is not signed with a flagged
+     * answer. Labels only: no client free text, so it is safe on a booking that many people see.
+     */
+    public static String alertBlock(IntakeForm f, Map<String, String> answers) {
+        if (!f.isSigned() || IntakeForm.VIA_STAFF_PAPER.equals(f.getSignedVia()) || answers == null) {
+            return null;
+        }
+        return alertBlock(IntakeFlagRules.evaluate(answers));
+    }
+
+    public static String alertBlock(List<IntakeFlagRules.Flag> flags) {
+        IntakeFlagRules.Severity level = IntakeFlagRules.level(flags);
+        if (level == null) {
+            return null;
+        }
+        boolean critical = level == IntakeFlagRules.Severity.CRITICAL;
+        List<String> lines = new ArrayList<>();
+        lines.add(ALERT_START);
+        for (IntakeFlagRules.Flag fl : flags) {
+            if (fl.critical() == critical) {
+                lines.add((critical ? "!!! CRITICAL: " : "!! ATTENTION: ") + fl.rule().banner() + " = " + fl.valueText());
+            }
+        }
+        lines.add(critical ? "DO NOT START THE SERVICE. ASK A MANAGER FIRST."
+                : "READ THE INTAKE FORM BELOW BEFORE STARTING.");
+        lines.add(ALERT_END);
+        return String.join("\n", lines);
     }
 
     private static String withDetails(String head, String details) {
@@ -124,27 +144,38 @@ public final class IntakeSquareNote {
 
     /** Puts our block at the top and drops any earlier block (or the old one-line status); the rest is kept. */
     public static String merge(String note, String block) {
+        return merge(note, null, block);
+    }
+
+    /** Alert banner (may be null), then the intake block, then everything staff wrote. */
+    public static String merge(String note, String alert, String block) {
+        String rest = stripBlocks(stripBlocks(note, ALERT_START, ALERT_END, false), START, END, true);
+        String top = alert == null ? block : alert + "\n" + block;
+        return rest.isEmpty() ? top : top + "\n" + rest;
+    }
+
+    /** Removes our markers' blocks from a note, keeping every other line. */
+    public static String stripBlocks(String note, String start, String end, boolean legacy) {
         List<String> kept = new ArrayList<>();
         boolean inBlock = false;
         List<String> lines = List.of((note == null ? "" : note).split("\\R", -1));
         for (int i = 0; i < lines.size(); i++) {
             String l = lines.get(i);
             if (inBlock) {
-                if (l.startsWith(END)) {
+                if (l.startsWith(end)) {
                     inBlock = false;
                 }
                 continue;
             }
-            if (l.startsWith(START) && lines.subList(i + 1, lines.size()).stream().anyMatch(x -> x.startsWith(END))) {
+            if (l.startsWith(start) && lines.subList(i + 1, lines.size()).stream().anyMatch(x -> x.startsWith(end))) {
                 inBlock = true;
                 continue;
             }
-            if (l.startsWith(START) || l.startsWith(LEGACY_PREFIX)) {
+            if (l.startsWith(start) || (legacy && l.startsWith(LEGACY_PREFIX))) {
                 continue;
             }
             kept.add(l);
         }
-        String rest = String.join("\n", kept).strip();
-        return rest.isEmpty() ? block : block + "\n" + rest;
+        return String.join("\n", kept).strip();
     }
 }

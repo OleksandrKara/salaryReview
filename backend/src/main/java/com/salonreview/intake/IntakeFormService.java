@@ -287,6 +287,9 @@ public class IntakeFormService {
         f.setConsentText(consentText(legalName(f.getBusinessId())));
         f.setConsentVersion(CONSENT_VERSION);
         f.setNeedsAttention(IntakeAnswers.needsAttention(answers));
+        IntakeFlagRules.Severity level = IntakeFlagRules.level(answers);
+        f.setAttentionLevel(level == null ? null : level.name());
+        f.setCriticalAlertState(level == null ? null : "PENDING");
         f.setStatus(IntakeForm.SIGNED);
         f.setSignedAt(Instant.now());
         f.setSignedVia(IntakeForm.VIA_CLIENT_FORM);

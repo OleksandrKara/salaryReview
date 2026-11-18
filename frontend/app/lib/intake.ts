@@ -16,6 +16,7 @@ export interface IntakeSummary {
   initialSmsState: string | null;
   reminderSmsState: string | null;
   openedAt: string | null;
+  attentionLevel: 'CRITICAL' | 'ATTENTION' | null;
 }
 
 export interface IntakeDetail {
@@ -46,6 +47,7 @@ const DICT: Record<string, { EN: string; RU: string }> = {
   badgeSent: { EN: 'Form not signed', RU: 'Анкета не подписана' },
   badgePending: { EN: 'Form queued', RU: 'Анкета в очереди' },
   attention: { EN: 'Check before service', RU: 'Проверить до услуги' },
+  critical: { EN: 'CRITICAL: ask a manager first', RU: 'КРИТИЧНО: сначала менеджер' },
   showAnswers: { EN: 'Show answers', RU: 'Показать ответы' },
   hideAnswers: { EN: 'Hide answers', RU: 'Скрыть ответы' },
   resend: { EN: 'Resend form', RU: 'Отправить анкету снова' },
