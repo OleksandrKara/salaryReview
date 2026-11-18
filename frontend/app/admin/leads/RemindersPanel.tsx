@@ -8,7 +8,7 @@ import {
   DEFAULT_DAYS, DEFAULT_TIME, addDays, choiceBody, choiceInPast, dueParts, dueRelative, formatDue, ptYmd, type ReminderChoice,
 } from './reminders';
 
-const ORIGINS = ['REACHED_OUT', 'ATTEMPT', 'MANUAL', 'AUTO', 'LAPSED', 'LEGACY'];
+const ORIGINS = ['REACHED_OUT', 'ATTEMPT', 'MANUAL', 'AUTO', 'LAPSED', 'MISSED_CALL', 'LEGACY'];
 
 function Editor({ language, now, initial, initialNote, saveLabel, onSave, onCancel, idPrefix }: {
   language: Language | null; now: number; initial: ReminderChoice; initialNote: string; saveLabel: string;
