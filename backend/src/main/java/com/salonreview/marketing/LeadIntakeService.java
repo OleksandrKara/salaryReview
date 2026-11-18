@@ -400,6 +400,42 @@ public class LeadIntakeService {
         }
     }
 
+    /**
+     * A missed inbound call: the person's lead needs a callback. capture() has already put the lead back to NEW; this adds the
+     * MISSED_CALL event and a reminder due at the next working hour (one open per person), and keeps callback_at as the soonest reminder.
+     */
+    public void noteMissedCall(long businessId, String phone) {
+        String digits = phone == null ? "" : phone.replaceAll("\\D", "");
+        if (digits.isEmpty()) return;
+        try {
+            var rows = jdbc.queryForList("""
+                    SELECT id, status FROM lead_intake WHERE business_id = ? AND outcome <> 'DUPLICATE'
+                      AND regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g') = ?
+                    ORDER BY created_at, id LIMIT 1
+                    """, businessId, digits);
+            if (rows.isEmpty()) return;
+            long id = ((Number) rows.get(0).get("id")).longValue();
+            String status = (String) rows.get(0).get("status");
+            if ("SPAM".equals(status)) return;
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'MISSED_CALL', NULL, 'Ringostat')", id, businessId);
+            if ("BOOKED".equals(status)) return;
+            if ("CONTACTED".equals(status)) {
+                jdbc.update("UPDATE lead_intake SET status = 'NEW', updated_by = 'System', updated_at = now() WHERE id = ? AND business_id = ?", id, businessId);
+            }
+            Integer open = jdbc.queryForObject("SELECT count(*) FROM lead_reminders WHERE lead_id = ? AND business_id = ? AND done_at IS NULL AND origin = 'MISSED_CALL'",
+                    Integer.class, id, businessId);
+            if (open != null && open > 0) return;
+            jdbc.update("INSERT INTO lead_reminders (business_id, lead_id, due_at, origin, created_by) VALUES (?, ?, ?, 'MISSED_CALL', 'Ringostat')",
+                    businessId, id, java.sql.Timestamp.from(LeadFollowUpService.workingTime(Instant.now())));
+            jdbc.update("""
+                    UPDATE lead_intake SET callback_at = (SELECT due_at FROM lead_reminders r WHERE r.lead_id = lead_intake.id AND r.done_at IS NULL ORDER BY due_at, id LIMIT 1),
+                      callback_reminded = FALSE WHERE id = ? AND business_id = ?
+                    """, id, businessId);
+        } catch (RuntimeException e) {
+            log.warn("Missed call follow-up failed for business {}: {}", businessId, e.toString());
+        }
+    }
+
     /** A newly created consultation booking brings the person's lead back to NEW; old or non-consultation bookings do nothing. */
     public void reopenOnConsultationBooking(long businessId, String squareBookingId) {
         if (squareBookingId == null || !enabled(businessId)) return;

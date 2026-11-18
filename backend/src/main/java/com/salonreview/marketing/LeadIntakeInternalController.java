@@ -54,7 +54,31 @@ public class LeadIntakeInternalController {
         String ts = attr.hasMarkers() ? attr.trafficSource() : null;
         LeadIntakeService.Result r = service.capture(new LeadIntakeService.Lead(businessId, "Call", ts, phone, null,
                 str(body, "caller_name", "name"), campaign, callId, payloadJson(body), attr.toJson()));
-        return Map.of("outcome", r.outcome(), "marked", r.marked());
+        boolean missed = isMissed(body);
+        if (missed && ("CREATED".equals(r.outcome()) || "MATCHED".equals(r.outcome()))) {
+            service.noteMissedCall(businessId, phone);
+        }
+        return Map.of("outcome", r.outcome(), "marked", r.marked(), "missed", missed);
+    }
+
+    /** True only when the payload says so: an explicit no-answer disposition, or a zero talk time. Unknown stays a normal lead touch. */
+    static boolean isMissed(Map<String, Object> body) {
+        String disp = str(body, "disposition", "call_status", "dialstatus", "dial_status", "status", "call_result");
+        if (disp != null) {
+            String d = disp.toLowerCase().replace('_', ' ').trim();
+            if (d.contains("no answer") || d.contains("noanswer") || d.contains("miss") || d.contains("unanswer") || d.contains("not answer")
+                    || d.equals("busy") || d.equals("failed") || d.equals("cancel") || d.equals("canceled") || d.equals("cancelled")) return true;
+            if (d.contains("answer")) return false;
+        }
+        String talk = str(body, "billsec", "talk_time", "talk_duration", "duration_talk", "duration");
+        if (talk != null) {
+            try {
+                return Double.parseDouble(talk.trim()) <= 0;
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        }
+        return false;
     }
 
     @GetMapping("/diag")

@@ -799,6 +799,7 @@ const STRINGS = {
   remOrigin_MANUAL: { EN: 'Added by the team', RU: 'Добавлено вручную' },
   remOrigin_AUTO: { EN: 'Automatic: unanswered client', RU: 'Автоматически: клиент ждет ответа' },
   remOrigin_LAPSED: { EN: 'Lapsed client', RU: 'Давно не был' },
+  remOrigin_MISSED_CALL: { EN: 'Missed call', RU: 'Пропущенный звонок' },
   remOrigin_LEGACY: { EN: 'Earlier reminder', RU: 'Прежнее напоминание' },
   remSheetTitle: { EN: 'Reached out', RU: 'Связались' },
   remSheetNext: { EN: 'Next follow-up', RU: 'Следующий follow-up' },
@@ -1200,6 +1201,7 @@ const STRINGS = {
   crmNextCheckIn: { EN: 'next check-in in', RU: 'следующее напоминание через' },
   crmDaysShort: { EN: 'd', RU: 'дн' },
   leadEventATTEMPT: { EN: 'Tried to reach, no answer', RU: 'Попытка связаться, без ответа' },
+  leadEventMISSED_CALL: { EN: 'Missed call, call back', RU: 'Пропущенный звонок, нужно перезвонить' },
   leadEventCALLBACK_CLEARED: { EN: 'Callback reminder cleared', RU: 'Напоминание о перезвоне убрано' },
   leadErr: { EN: 'Something went wrong. Try again.', RU: 'Что-то пошло не так. Попробуйте ещё раз.' },
 
