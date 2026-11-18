@@ -28,10 +28,22 @@ class LeadReminderDigestTextTest {
     void textCapsListAndReportsCounts() {
         List<DigestItem> items = new ArrayList<>();
         for (int i = 0; i < 20; i++) items.add(new DigestItem(i, "Lead" + i, "Google", i == 0 ? "call back" : null, 5 + i * 60L));
-        String t = LeadFollowUpService.digestText(items, 4, 7, "https://x/admin/leads?business=1");
+        String t = LeadFollowUpService.digestText(items, 4, 7, "https://x/admin/leads?business=1", "AK.LUX.NAILS");
         assertThat(t).contains("20 overdue").contains("New leads waiting: 4").contains("no next step: 7")
                 .contains("Lead14").doesNotContain("Lead15").contains("+5 more").contains("Note: call back").contains("5 min overdue").contains("1 h overdue")
                 .endsWith("https://x/admin/leads?business=1");
         assertThat(t.lines().filter(l -> l.startsWith("- ")).count()).isEqualTo(15);
+    }
+
+    @Test
+    void academyTextIsSelfContainedRussianWithLeadLinks() {
+        String t = LeadFollowUpService.academyDigestText(List.of(
+                new DigestItem(77, "Kate, тел. ***1234", "Google", "ask about May course", 90),
+                new DigestItem(78, "Без имени, тел. ***9876", null, null, 5)), "https://x/admin/leads?business=2");
+        assertThat(t).startsWith("Академия. Напоминания по лидам: 2")
+                .contains("Kate, тел. ***1234, просрочено на 1 ч").contains("Причина: ask about May course")
+                .contains("https://x/admin/leads/77?business=2").contains("https://x/admin/leads/78?business=2")
+                .contains("просрочено на 5 мин").endsWith("Все лиды: https://x/admin/leads?business=2")
+                .doesNotContain("New leads waiting").doesNotContain("no next step").doesNotContain("Google");
     }
 }
