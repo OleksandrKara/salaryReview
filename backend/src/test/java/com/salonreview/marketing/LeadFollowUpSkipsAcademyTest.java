@@ -31,4 +31,17 @@ class LeadFollowUpSkipsAcademyTest {
 
         assertThat(pending).extracting(MarketingContactsRepository.RawContact::phoneNumber).containsExactly("+14085550122");
     }
+
+    @Test
+    void contactWhoCalledIsNotPendingForStudioNudge() {
+        long b = businesses.save(Business.builder().name("Call").shortCode("cl-" + System.nanoTime()).timezone("UTC").active(true).build()).getId();
+        jdbc.update("INSERT INTO marketing.contacts (phone_number, business_id, updated_at, created_at) VALUES ('+14085550133', ?, now() - interval '5 minutes', now() - interval '5 minutes')", b);
+        jdbc.update("INSERT INTO marketing.contacts (phone_number, business_id, updated_at, created_at) VALUES ('+14085550144', ?, now() - interval '5 minutes', now() - interval '5 minutes')", b);
+        jdbc.update("INSERT INTO lead_intake (business_id, channel, source, phone_number, outcome, created_at) VALUES (?, 'Call', 'Phone call', '+14085550133', 'MATCHED', now() - interval '5 minutes')", b);
+
+        var pending = new MarketingContactsRepository(jdbc)
+                .findPendingFollowUp(Instant.now().minusSeconds(120), Instant.now().minusSeconds(600), b);
+
+        assertThat(pending).extracting(MarketingContactsRepository.RawContact::phoneNumber).containsExactly("+14085550144");
+    }
 }
