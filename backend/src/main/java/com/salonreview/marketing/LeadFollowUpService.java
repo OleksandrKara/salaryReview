@@ -1873,12 +1873,18 @@ public class LeadFollowUpService {
         for (var row : rows) {
             long id = ((Number) row.get("id")).longValue();
             String phone = row.get("phone_number") == null ? null : row.get("phone_number").toString();
+            boolean isAcademy = Boolean.TRUE.equals(academyById.get(id));
             String who = row.get("name") != null ? row.get("name").toString() : phone != null ? phone : String.valueOf(row.get("email"));
-            if (row.get("name") != null && phone != null) who += " " + phone;
+            if (isAcademy) {
+                String last4 = phone == null ? null : phone.replaceAll("\\D", "");
+                last4 = last4 == null || last4.isEmpty() ? null : last4.substring(Math.max(0, last4.length() - 4));
+                who = row.get("name") != null ? row.get("name").toString() : "Без имени";
+                if (last4 != null) who += ", тел. ***" + last4;
+            } else if (row.get("name") != null && phone != null) who += " " + phone;
             long mins = Math.max(0, java.time.Duration.between(((Timestamp) row.get("due")).toInstant(), now).toMinutes());
             DigestItem item = new DigestItem(id, who, row.get("source") == null ? null : row.get("source").toString(),
                     row.get("notes") == null ? null : row.get("notes").toString(), mins);
-            if (Boolean.TRUE.equals(academyById.get(id))) {
+            if (isAcademy) {
                 academyItems.add(item);
                 academyIds.add(id);
             } else {
@@ -1903,7 +1909,8 @@ public class LeadFollowUpService {
                                   java.util.List<LeadView> group, String link, Timestamp cutoff) {
         int fresh = (int) group.stream().filter(l -> "NEW".equals(l.status())).count();
         int noStep = (int) group.stream().filter(l -> ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())) && l.callbackAt() == null).count();
-        String text = digestText(items, fresh, noStep, link, academy);
+        String text = academy ? academyDigestText(items, link)
+                : digestText(items, fresh, noStep, link, businessName(businessId));
         if (!telegram.sendPlainText(businessId, text)) {
             log.info("Reminder digest ({}) for business {} not delivered, will retry", academy ? "academy" : "procedures", businessId);
             return false;
@@ -1917,8 +1924,13 @@ public class LeadFollowUpService {
         return true;
     }
 
-    static String digestText(java.util.List<DigestItem> items, int newLeads, int noNextStep, String link, boolean academy) {
-        StringBuilder t = new StringBuilder(academy ? "ACADEMY. Callback reminders: " : "Callback reminders: ").append(items.size()).append(" overdue");
+    private String businessName(long businessId) {
+        var names = jdbc.queryForList("SELECT name FROM business WHERE id = ?", String.class, businessId);
+        return names.isEmpty() || names.get(0) == null ? "Business " + businessId : names.get(0);
+    }
+
+    static String digestText(java.util.List<DigestItem> items, int newLeads, int noNextStep, String link, String title) {
+        StringBuilder t = new StringBuilder(title).append(". Callback reminders: ").append(items.size()).append(" overdue");
         t.append("\nNew leads waiting: ").append(newLeads).append("\nActive leads with no next step: ").append(noNextStep).append("\n");
         int shown = Math.min(items.size(), DIGEST_MAX_LINES);
         for (int i = 0; i < shown; i++) {
@@ -1929,6 +1941,29 @@ public class LeadFollowUpService {
         }
         if (items.size() > shown) t.append("\n+").append(items.size() - shown).append(" more");
         return t.append("\n\nOpen CRM: ").append(link).toString();
+    }
+
+    /** Self-contained Russian message that Alex forwards to the Academy lead owner: no counts or details from other directions. */
+    static String academyDigestText(java.util.List<DigestItem> items, String listLink) {
+        int q = listLink.indexOf('?');
+        String base = q < 0 ? listLink : listLink.substring(0, q);
+        String query = q < 0 ? "" : listLink.substring(q);
+        StringBuilder t = new StringBuilder("Академия. Напоминания по лидам: ").append(items.size()).append(", срок наступил");
+        int shown = Math.min(items.size(), DIGEST_MAX_LINES);
+        for (int i = 0; i < shown; i++) {
+            DigestItem it = items.get(i);
+            t.append("\n\n- ").append(it.who()).append(", ").append(overdueRu(it.overdueMinutes()));
+            if (it.notes() != null) t.append("\n  Причина: ").append(it.notes().length() > 120 ? it.notes().substring(0, 120) + "..." : it.notes());
+            t.append("\n  ").append(base).append("/").append(it.leadId()).append(query);
+        }
+        if (items.size() > shown) t.append("\n\n+ еще ").append(items.size() - shown);
+        return t.append("\n\nВсе лиды: ").append(listLink).toString();
+    }
+
+    private static String overdueRu(long mins) {
+        if (mins < 60) return "просрочено на " + mins + " мин";
+        if (mins < 48 * 60) return "просрочено на " + (mins / 60) + " ч";
+        return "просрочено на " + (mins / 1440) + " дн";
     }
 
     private static String overdue(long mins) {
