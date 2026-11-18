@@ -576,6 +576,19 @@ export interface SmsAutomationSummary {
   steps?: AutomationStepStat[] | null;
   // Intake-form funnel (first_visit_intake_form only, last 30 days). null for every other automation.
   intake?: IntakeFunnelStats | null;
+  // Safety automations with no switch (intake_critical_alert): shown as always on, no toggle.
+  alwaysOn?: boolean;
+  // Critical intake alert numbers (intake_critical_alert only, last 30 days).
+  critical?: IntakeCriticalStats | null;
+}
+
+export interface IntakeCriticalStats {
+  alertsSent: number;
+  criticalSent: number;
+  lastAlertAt: string | null;
+  alertsFailed: number;
+  markersWritten: number;
+  markersFailing: number;
 }
 
 export interface IntakeFunnelStats {

@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -229,9 +230,11 @@ public class IntakeFormScheduler {
                 continue;
             }
             try {
-                String block = IntakeSquareNote.block(f, service.decryptAnswers(f));
+                Map<String, String> answers = service.decryptAnswers(f);
+                String block = IntakeSquareNote.block(f, answers);
+                String alert = IntakeSquareNote.alertBlock(f, answers);
                 squareProvider.forBusiness(f.getBusinessId()).updateCustomerNote(
-                        f.getSquareCustomerId(), note -> IntakeSquareNote.merge(note, block));
+                        f.getSquareCustomerId(), note -> IntakeSquareNote.merge(note, alert, block));
                 f.setSquareSyncedStatus(IntakeSquareNote.syncKey(f));
                 f.setSquareSyncAttempts(0);
             } catch (RuntimeException e) {

@@ -15,9 +15,15 @@ export default function IntakeBadge({ form, language, showAttention = true }: {
         {b.label}
       </span>
       {showAttention && form.status === 'SIGNED' && form.needsAttention && (
-        <span data-testid="intake-attention" className="inline-flex items-center whitespace-nowrap rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-800 ring-1 ring-red-200">
-          {it(language, 'attention')}
-        </span>
+        form.attentionLevel === 'CRITICAL' ? (
+          <span data-testid="intake-critical" className="inline-flex items-center whitespace-nowrap rounded-full bg-red-700 px-2 py-0.5 text-[11px] font-bold text-white ring-1 ring-red-900">
+            {it(language, 'critical')}
+          </span>
+        ) : (
+          <span data-testid="intake-attention" className="inline-flex items-center whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-300">
+            {it(language, 'attention')}
+          </span>
+        )
       )}
     </span>
   );

@@ -47,7 +47,9 @@ public class SmsAutomationService {
                                      boolean ready, String readinessReason,
                                      SmsAutomationRegistry.Channel channel,
                                      List<AcademyLeadFunnelStats.StepStat> steps,
-                                     com.salonreview.intake.IntakeFormStats.Stats intake) {}
+                                     com.salonreview.intake.IntakeFormStats.Stats intake,
+                                     boolean alwaysOn,
+                                     com.salonreview.intake.IntakeFormStats.CriticalStats critical) {}
 
     /** Automations with an email fallback leg (see {@code WinbackEmailFallbackScheduler}). Drives
      * whether {@link #list} bothers querying {@link WinbackEmailSendRepository} at all for a given
@@ -119,7 +121,7 @@ public class SmsAutomationService {
      * was saved from this in practice only by Twilio not being configured for it yet — a second,
      * unrelated safety net, not a reason this default was ever actually safe. */
     public boolean isEnabled(Long businessId, String automationKey) {
-        if (automationKey == null) {
+        if (automationKey == null || SmsAutomationRegistry.ALWAYS_ON.contains(automationKey)) {
             return true;
         }
         return repository.findByBusinessIdAndAutomationKey(businessId, automationKey)
@@ -130,12 +132,18 @@ public class SmsAutomationService {
         Instant since = Instant.now().minus(30, ChronoUnit.DAYS);
         return SmsAutomationRegistry.all().values().stream()
                 .map(meta -> {
-                    boolean enabled = repository.findByBusinessIdAndAutomationKey(businessId, meta.key())
+                    boolean alwaysOn = SmsAutomationRegistry.ALWAYS_ON.contains(meta.key())
+                            && readinessService.readiness(businessId, meta.key()).ready();
+                    boolean enabled = alwaysOn || repository.findByBusinessIdAndAutomationKey(businessId, meta.key())
                             .map(SmsAutomation::isEnabled).orElse(false);
+                    com.salonreview.intake.IntakeFormStats.CriticalStats critical =
+                            "intake_critical_alert".equals(meta.key()) && intakeStats != null
+                                    ? intakeStats.critical(businessId, since) : null;
 
                     // Telegram-channel automations have no sms_message rows at all — their "sent"
                     // count uses confirmed delivery_status=SENT and delivered_at in the outbox.
-                    long sent = "lead_daily_digest".equals(meta.key())
+                    long sent = critical != null ? critical.alertsSent()
+                            : "lead_daily_digest".equals(meta.key())
                             ? leadDigestLog.countSent(businessId, since)
                             : "pmu_booking_staff_alert".equals(meta.key())
                             ? pmuBookingStaffAlertRepository.countByBusinessIdAndDeliveryStatusAndDeliveredAtAfter(businessId, "SENT", since)
@@ -244,7 +252,7 @@ public class SmsAutomationService {
                     return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,
                             meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies,
                             meta.tracksConversion(), converted, tracksEmail, emailSent, emailOpened, emailClicked,
-                            emailConverted, readiness.ready(), readiness.reason(), meta.channel(), steps, intake);
+                            emailConverted, readiness.ready(), readiness.reason(), meta.channel(), steps, intake, alwaysOn, critical);
                 })
                 .toList();
     }

@@ -81,8 +81,7 @@ public final class IntakeAnswers {
 
     /** True when the technician should look at this form before the service. */
     public static boolean needsAttention(Map<String, String> a) {
-        return !"NO".equals(a.get("fungal")) || !"NO".equals(a.get("skin")) || "YES".equals(a.get("allergies"))
-                || "YES".equals(a.get("sensitivity")) || hasEpilepsyFlag(a);
+        return IntakeFlagRules.level(a) != null;
     }
 
     /** YES or NOT_SURE; forms signed before the question existed have no answer and are not flagged. */

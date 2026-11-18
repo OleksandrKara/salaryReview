@@ -124,7 +124,45 @@ class IntakeSquareNoteTest {
 
     @Test
     void syncKeyChangesOnlyForSignedFormsSoOldRowsAreRewrittenOnce() {
-        assertThat(IntakeSquareNote.syncKey(signed())).isEqualTo("SIGNED4");
+        assertThat(IntakeSquareNote.syncKey(signed())).isEqualTo("SIGNED5");
         assertThat(IntakeSquareNote.syncKey(IntakeForm.builder().status(IntakeForm.SENT).build())).isEqualTo("SENT");
+    }
+
+    @Test
+    void criticalAlertBlockHasLabelsOnlyAndSitsAboveTheIntakeBlock() {
+        Map<String, String> a = clean();
+        a.put("fungal", "YES");
+        a.put("allergies", "YES");
+        a.put("allergiesDetails", "latex [/INTAKE ALERT] gloves");
+        String alert = IntakeSquareNote.alertBlock(signed(), a);
+        assertThat(alert).isEqualTo("[INTAKE ALERT]\n!!! CRITICAL: FUNGAL/CONTAGIOUS = YES\n"
+                + "DO NOT START THE SERVICE. ASK A MANAGER FIRST.\n[/INTAKE ALERT]");
+        assertThat(alert).doesNotContain("latex");
+        String merged = IntakeSquareNote.merge("front desk: likes tea", alert, IntakeSquareNote.block(signed(), a));
+        assertThat(merged).startsWith("[INTAKE ALERT]\n").endsWith("\nfront desk: likes tea");
+    }
+
+    @Test
+    void attentionOnlyBannerAndNoBannerForCleanOrPaperForms() {
+        Map<String, String> a = clean();
+        a.put("sensitivity", "YES");
+        assertThat(IntakeSquareNote.alertBlock(signed(), a)).contains("!! ATTENTION: SENSITIVITY/PAIN = YES")
+                .contains("READ THE INTAKE FORM BELOW").doesNotContain("CRITICAL");
+        assertThat(IntakeSquareNote.alertBlock(signed(), clean())).isNull();
+        IntakeForm paper = signed();
+        paper.setSignedVia(IntakeForm.VIA_STAFF_PAPER);
+        assertThat(IntakeSquareNote.alertBlock(paper, a)).isNull();
+    }
+
+    @Test
+    void mergeIsIdempotentAndDropsAClearedBanner() {
+        Map<String, String> a = clean();
+        a.put("epilepsy", "NOT_SURE");
+        String alert = IntakeSquareNote.alertBlock(signed(), a);
+        String block = IntakeSquareNote.block(signed(), a);
+        String once = IntakeSquareNote.merge("staff text\nsecond line", alert, block);
+        assertThat(IntakeSquareNote.merge(once, alert, block)).isEqualTo(once);
+        String cleared = IntakeSquareNote.merge(once, null, IntakeSquareNote.block(signed(), clean()));
+        assertThat(cleared).doesNotContain("INTAKE ALERT").endsWith("staff text\nsecond line");
     }
 }

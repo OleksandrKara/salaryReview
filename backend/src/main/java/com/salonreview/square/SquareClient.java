@@ -1162,6 +1162,41 @@ public class SquareClient {
         customerCache.remove(customerId);
     }
 
+    /** Read-modify-write of a booking's seller note (staff-only), guarded by the booking's version so a
+     * concurrent edit makes Square reject the write (409). Needs the APPOINTMENTS_ALL_WRITE scope: a
+     * missing scope surfaces as HttpClientErrorException (401/403) for the caller to report. Returns
+     * false when the booking is gone or no longer upcoming/active. */
+    public boolean updateBookingSellerNote(String bookingId, java.util.function.UnaryOperator<String> change) {
+        com.fasterxml.jackson.databind.JsonNode n;
+        try {
+            n = throttled(() -> http.get().uri("/v2/bookings/{id}", bookingId).retrieve()
+                    .body(com.fasterxml.jackson.databind.JsonNode.class));
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound e) {
+            return false;
+        }
+        com.fasterxml.jackson.databind.JsonNode b = n == null ? null : n.path("booking");
+        if (b == null || b.path("id").isMissingNode()) {
+            return false;
+        }
+        String status = b.path("status").asText("");
+        if (status.startsWith("CANCELLED") || "DECLINED".equals(status) || "NO_SHOW".equals(status)) {
+            return false;
+        }
+        String current = b.path("seller_note").asText("");
+        String updated = change.apply(current);
+        if (updated.equals(current)) {
+            return true;
+        }
+        Map<String, Object> booking = new java.util.HashMap<>();
+        booking.put("seller_note", updated);
+        if (b.hasNonNull("version")) {
+            booking.put("version", b.path("version").asLong());
+        }
+        Map<String, Object> body = Map.of("booking", booking);
+        throttled(() -> http.put().uri("/v2/bookings/{id}", bookingId).body(body).retrieve().toBodilessEntity());
+        return true;
+    }
+
     private java.util.Optional<Customer> fetchCustomer(String id) {
         try {
             CustomerResponse resp = throttled(() ->

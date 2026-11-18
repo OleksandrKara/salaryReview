@@ -77,6 +77,20 @@ public class IntakeForm {
     @Column(name = "needs_attention", nullable = false)
     private boolean needsAttention;
 
+    /** CRITICAL or ATTENTION when a flagged answer was given (see IntakeFlagRules); null otherwise. */
+    @Column(name = "attention_level")
+    private String attentionLevel;
+
+    /** Managers' Telegram alert: PENDING, SENT, FAILED or SKIPPED (an old form, no alert). */
+    @Column(name = "critical_alert_state")
+    private String criticalAlertState;
+
+    @Column(name = "critical_alert_attempts", nullable = false)
+    private int criticalAlertAttempts;
+
+    @Column(name = "critical_alerted_at")
+    private Instant criticalAlertedAt;
+
     @Column(name = "consent_text")
     private String consentText;
 

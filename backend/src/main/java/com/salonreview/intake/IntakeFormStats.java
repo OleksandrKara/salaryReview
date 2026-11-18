@@ -16,6 +16,11 @@ public class IntakeFormStats {
     public record Stats(long sent, long opened, long signed, long signedOnPaper, long unsigned,
                         long remindersSent, long signedAfterReminder, Long medianMinutesToSign) {}
 
+    /** Critical-answer alerts, last 30 days: texts to managers, last time one went out, failures, and the
+     * Square appointment banners written or still failing. Counts only, never answers. */
+    public record CriticalStats(long alertsSent, long criticalSent, Instant lastAlertAt, long alertsFailed,
+                                long markersWritten, long markersFailing) {}
+
     private final JdbcTemplate jdbc;
 
     public IntakeFormStats(JdbcTemplate jdbc) {
@@ -40,6 +45,24 @@ public class IntakeFormStats {
         return new Stats(num(r.get("sent")), num(r.get("opened")), num(r.get("signed")), num(r.get("paper")),
                 num(r.get("unsigned")), num(r.get("reminders")), num(r.get("after_reminder")),
                 median == null ? null : Math.round(median.doubleValue()));
+    }
+
+    public CriticalStats critical(long businessId, Instant since) {
+        Map<String, Object> r = jdbc.queryForMap("""
+                SELECT count(*) FILTER (WHERE critical_alert_state = 'SENT') AS sent,
+                       count(*) FILTER (WHERE critical_alert_state = 'SENT' AND attention_level = 'CRITICAL') AS crit,
+                       max(critical_alerted_at) AS last_at,
+                       count(*) FILTER (WHERE critical_alert_state = 'FAILED') AS failed
+                FROM intake_form WHERE business_id = ? AND signed_at > ?
+                """, businessId, Timestamp.from(since));
+        Map<String, Object> m = jdbc.queryForMap("""
+                SELECT count(*) FILTER (WHERE synced_at IS NOT NULL) AS written,
+                       count(*) FILTER (WHERE synced_at IS NULL AND attempts > 0) AS failing
+                FROM intake_booking_flag_sync WHERE business_id = ? AND updated_at > ?
+                """, businessId, Timestamp.from(since));
+        Timestamp last = (Timestamp) r.get("last_at");
+        return new CriticalStats(num(r.get("sent")), num(r.get("crit")), last == null ? null : last.toInstant(),
+                num(r.get("failed")), num(m.get("written")), num(m.get("failing")));
     }
 
     private static long num(Object o) {

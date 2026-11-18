@@ -456,6 +456,11 @@ public class TelegramNotificationService {
                 + (businessId == null ? "" : "&business=" + businessId);
     }
 
+    /** The intake-form board in the CRM, opened for this business. */
+    public String intakeBoardLink(Long businessId) {
+        return publicBaseUrl + "/admin/intake" + (businessId == null ? "" : "?business=" + businessId);
+    }
+
     /** Direct link to one lead's card (ids of merged duplicate rows redirect to the primary lead). */
     String leadLinkById(Long leadId, Long businessId) {
         return publicBaseUrl + "/admin/leads/" + leadId + (businessId == null ? "" : "?business=" + businessId);

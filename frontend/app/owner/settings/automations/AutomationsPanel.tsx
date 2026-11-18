@@ -49,6 +49,7 @@ const AUTOMATION_CATEGORY: Record<string, AutomationCategory> = {
   color_booster_reminder: 'pmu',
   academy_lead_funnel: 'academy',
   first_visit_intake_form: 'general',
+  intake_critical_alert: 'nails',
   pmu_booking_staff_alert: 'pmu',
 };
 const CATEGORY_META: Record<AutomationCategory, { label: string; className: string }> = {
@@ -100,6 +101,8 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   // 2026-09-02: Telegram-only, no SMS leg at all — an internal ops alert to the staff Telegram
   // chat, never a customer-facing message (see ProviderScheduleClosureAlertScheduler).
   provider_schedule_closure_alert: ['telegram'],
+  // 2026-11-18: always-on safety alert for critical intake answers (IntakeCriticalAlertService).
+  intake_critical_alert: ['telegram'],
   // 2026-10-14: PMU Academy course requests: emails now and on days 1/3/7, one text asking when
   // to call, and a staff Telegram alert with a "Stop follow-ups" button (AcademyLeadFunnelScheduler).
   academy_lead_funnel: ['email', 'sms', 'telegram'],
@@ -320,6 +323,12 @@ function AutomationCard({
           </div>
           <div className="mt-0.5 text-xs text-zinc-500">{automation.audienceDescription}</div>
         </div>
+        {automation.alwaysOn ? (
+          <span data-testid="automation-always-on" className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+            Always on
+          </span>
+        ) : (
+          <>
         {/* Full-size touch target, not shrunk to fit next to the label — see design.md D10. */}
         <button
           type="button"
@@ -339,6 +348,8 @@ function AutomationCard({
             }`}
           />
         </button>
+          </>
+        )}
       </div>
       {blockedFromEnabling && (
         <p className="-mt-1.5 text-xs text-amber-600">⚠ {automation.readinessReason}</p>
@@ -453,6 +464,28 @@ function AutomationCard({
               </span>
             </span>
           )}
+        </div>
+      )}
+
+      {automation.critical && (
+        <div data-testid="automation-critical-alert" className="flex flex-col gap-1.5 border-t border-zinc-100 pt-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-700 tabular-nums">
+              {automation.critical.alertsSent} alerts · {automation.critical.criticalSent} critical
+            </span>
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 tabular-nums">
+              last: {automation.critical.lastAlertAt ? new Date(automation.critical.lastAlertAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) : 'never'}
+            </span>
+            <span className={`rounded-full px-2 py-0.5 font-medium tabular-nums ${automation.critical.alertsFailed + automation.critical.markersFailing > 0 ? 'bg-red-600 text-white' : 'bg-emerald-50 text-emerald-700'}`}>
+              {automation.critical.alertsFailed + automation.critical.markersFailing} failed
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] tabular-nums text-zinc-500">
+            <span>{automation.critical.markersWritten} Square appointment warnings written</span>
+            {automation.critical.markersFailing > 0 && (
+              <span className="font-medium text-red-700">{automation.critical.markersFailing} appointments could not be marked: check the Square app has Appointments write permission</span>
+            )}
+          </div>
         </div>
       )}
 

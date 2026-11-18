@@ -264,9 +264,9 @@ class IntakeFormSchedulerTest {
                 org.mockito.ArgumentCaptor.forClass(java.util.function.UnaryOperator.class);
         verify(square).updateCustomerNote(org.mockito.ArgumentMatchers.eq("C1"), change.capture());
         String note = change.getValue().apply("Prefers Lucy");
-        assertThat(note).startsWith("[INTAKE FORM] signed").contains("!! Fungal/contagious condition: YES")
+        assertThat(note).startsWith("[INTAKE ALERT]\n!!! CRITICAL: FUNGAL/CONTAGIOUS = YES").contains("[INTAKE FORM] signed").contains("!! Fungal/contagious condition: YES")
                 .endsWith("[/INTAKE FORM]\nPrefers Lucy");
-        assertThat(f.getSquareSyncedStatus()).isEqualTo("SIGNED4");
+        assertThat(f.getSquareSyncedStatus()).isEqualTo("SIGNED5");
     }
 
     @Test
