@@ -30,11 +30,11 @@ class IntakeSquareNoteTest {
     }
 
     @Test
-    void cleanFormHasNoAttentionLine() {
+    void cleanFormHasNoAttentionBlock() {
         String b = IntakeSquareNote.block(signed(), clean());
-        assertThat(b).isEqualTo("[INTAKE FORM] SIGNED Nov 18\n"
-                + "Service: manicure | Fungal/contagious: no | Cuts/irritated skin: no | Allergies: no"
-                + " | Sensitivity/pain: no | Epilepsy/seizures: no | Enhancements to remove: yes\n[/INTAKE FORM]");
+        assertThat(b).isEqualTo("[INTAKE FORM] signed Nov 18\nService: manicure\nFungal/contagious: no\n"
+                + "Cuts/irritated skin: no\nAllergies: no\nSensitivity/pain: no\nEpilepsy/seizures: no\n"
+                + "Enhancements to remove: yes\n[/INTAKE FORM]");
     }
 
     @Test
@@ -48,8 +48,9 @@ class IntakeSquareNoteTest {
         a.put("sensitivityDetails", "painful cuticles");
         a.put("notes", "Epilepsy, avoid flashing lamp");
         String b = IntakeSquareNote.block(signed(), a);
-        assertThat(b.split("\n")[1]).isEqualTo("ATTENTION: fungal/contagious condition YES; cuts/irritated skin NOT SURE;"
-                + " allergies YES: latex gloves; sensitivity/pain YES: painful cuticles");
+        assertThat(b).startsWith("[INTAKE FORM] signed Nov 18\n!! Fungal/contagious condition: YES\n"
+                + "!! Cuts/irritated skin: NOT SURE\n!! Allergies: YES, latex gloves\n"
+                + "!! Sensitivity/pain: YES, painful cuticles\n\nService: manicure\n");
         assertThat(b).contains("Notes: Epilepsy, avoid flashing lamp");
     }
 
@@ -59,12 +60,12 @@ class IntakeSquareNoteTest {
         a.put("epilepsy", "YES");
         a.put("epilepsyDetails", "flashing lights trigger it");
         String b = IntakeSquareNote.block(signed(), a);
-        assertThat(b.split("\n")[1]).isEqualTo("ATTENTION: epilepsy/seizures YES: flashing lights trigger it");
+        assertThat(b.split("\n")[1]).isEqualTo("!! Epilepsy/seizures: YES, flashing lights trigger it");
         a.put("epilepsy", "NOT_SURE");
         a.remove("epilepsyDetails");
-        assertThat(IntakeSquareNote.block(signed(), a).split("\n")[1]).isEqualTo("ATTENTION: epilepsy/seizures NOT SURE");
+        assertThat(IntakeSquareNote.block(signed(), a).split("\n")[1]).isEqualTo("!! Epilepsy/seizures: NOT SURE");
         a.remove("epilepsy");
-        assertThat(IntakeSquareNote.block(signed(), a)).contains("Epilepsy/seizures: not asked").doesNotContain("ATTENTION");
+        assertThat(IntakeSquareNote.block(signed(), a)).contains("Epilepsy/seizures: not asked").doesNotContain("!!");
     }
 
     @Test
@@ -83,7 +84,7 @@ class IntakeSquareNoteTest {
         IntakeForm f = signed();
         f.setSignedVia(IntakeForm.VIA_STAFF_PAPER);
         assertThat(IntakeSquareNote.block(f, Map.of()))
-                .isEqualTo("[INTAKE FORM] SIGNED Nov 18 on paper. Answers are on the paper form.\n[/INTAKE FORM]");
+                .isEqualTo("[INTAKE FORM] signed Nov 18 on paper. Answers are on the paper form.\n[/INTAKE FORM]");
     }
 
     @Test
@@ -123,7 +124,7 @@ class IntakeSquareNoteTest {
 
     @Test
     void syncKeyChangesOnlyForSignedFormsSoOldRowsAreRewrittenOnce() {
-        assertThat(IntakeSquareNote.syncKey(signed())).isEqualTo("SIGNED3");
+        assertThat(IntakeSquareNote.syncKey(signed())).isEqualTo("SIGNED4");
         assertThat(IntakeSquareNote.syncKey(IntakeForm.builder().status(IntakeForm.SENT).build())).isEqualTo("SENT");
     }
 }
