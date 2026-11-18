@@ -126,11 +126,12 @@ public class IntakeStaffService {
             Map<String, String> a = service.decryptAnswers(f);
             List<Map<String, String>> rows = new ArrayList<>();
             for (String[] q : IntakeAnswers.QUESTIONS) {
-                if (a.containsKey(q[0])) {
+                boolean notAsked = "epilepsy".equals(q[0]) && !a.containsKey("epilepsy") && !a.isEmpty();
+                if (a.containsKey(q[0]) || notAsked) {
                     Map<String, String> row = new LinkedHashMap<>();
                     row.put("key", q[0]);
                     row.put("label", q[1]);
-                    row.put("value", a.get(q[0]));
+                    row.put("value", notAsked ? "NOT_ASKED" : a.get(q[0]));
                     rows.add(row);
                 }
             }

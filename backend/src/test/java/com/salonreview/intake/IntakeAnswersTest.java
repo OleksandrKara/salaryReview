@@ -17,6 +17,7 @@ class IntakeAnswersTest {
         m.put("skin", "NO");
         m.put("allergies", "NO");
         m.put("sensitivity", "NO");
+        m.put("epilepsy", "NO");
         m.put("enhancements", "NO");
         m.put("heardFrom", "GOOGLE_MAPS");
         return m;
@@ -53,6 +54,24 @@ class IntakeAnswersTest {
         in.put("allergiesDetails", "latex");
         assertThat(IntakeAnswers.validate(in)).containsEntry("allergiesDetails", "latex");
         assertThat(IntakeAnswers.needsAttention(IntakeAnswers.validate(in))).isTrue();
+    }
+
+    @Test
+    void epilepsyIsRequiredAndYesOrNotSureFlagsAttentionWithOptionalDetails() {
+        Map<String, String> in = valid();
+        in.remove("epilepsy");
+        assertThatThrownBy(() -> IntakeAnswers.validate(in)).hasMessage("epilepsy");
+        in.put("epilepsy", "YES");
+        Map<String, String> out = IntakeAnswers.validate(in);
+        assertThat(out).doesNotContainKey("epilepsyDetails");
+        assertThat(IntakeAnswers.needsAttention(out)).isTrue();
+        in.put("epilepsyDetails", "flashing lights");
+        assertThat(IntakeAnswers.validate(in)).containsEntry("epilepsyDetails", "flashing lights");
+        in.put("epilepsy", "NOT_SURE");
+        assertThat(IntakeAnswers.needsAttention(IntakeAnswers.validate(in))).isTrue();
+        in.put("epilepsy", "NO");
+        assertThat(IntakeAnswers.validate(in)).doesNotContainKey("epilepsyDetails");
+        assertThat(IntakeAnswers.needsAttention(IntakeAnswers.validate(in))).isFalse();
     }
 
     @Test

@@ -36,7 +36,7 @@ public interface IntakeFormRepository extends JpaRepository<IntakeForm, Long> {
 
     @Query("select f from IntakeForm f where f.squareSyncAttempts < :maxAttempts "
             + "and f.status <> 'PENDING' and (f.squareSyncedStatus is null "
-            + "or (f.status = 'SIGNED' and f.squareSyncedStatus <> 'SIGNED2') "
+            + "or (f.status = 'SIGNED' and f.squareSyncedStatus <> 'SIGNED3') "
             + "or (f.status <> 'SIGNED' and f.squareSyncedStatus <> f.status))")
     List<IntakeForm> findNeedingSquareSync(@Param("maxAttempts") int maxAttempts);
 }

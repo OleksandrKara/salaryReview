@@ -255,6 +255,7 @@ class IntakeFormSchedulerTest {
         answers.put("skin", "NO");
         answers.put("allergies", "NO");
         answers.put("sensitivity", "NO");
+        answers.put("epilepsy", "NO");
         answers.put("enhancements", "NO");
         when(service.decryptAnswers(f)).thenReturn(answers);
         when(forms.findNeedingSquareSync(IntakeFormScheduler.MAX_SQUARE_SYNC_ATTEMPTS)).thenReturn(List.of(f));
@@ -265,7 +266,7 @@ class IntakeFormSchedulerTest {
         String note = change.getValue().apply("Prefers Lucy");
         assertThat(note).startsWith("[INTAKE FORM] SIGNED").contains("ATTENTION: fungal/contagious condition YES")
                 .endsWith("[/INTAKE FORM]\nPrefers Lucy");
-        assertThat(f.getSquareSyncedStatus()).isEqualTo("SIGNED2");
+        assertThat(f.getSquareSyncedStatus()).isEqualTo("SIGNED3");
     }
 
     @Test

@@ -32,6 +32,8 @@ public final class IntakeAnswers {
             new String[] {"allergiesDetails", "Allergy details"},
             new String[] {"sensitivity", "Sensitivity or pain during nail services"},
             new String[] {"sensitivityDetails", "Sensitivity details"},
+            new String[] {"epilepsy", "Epilepsy or seizures (including light-sensitive)"},
+            new String[] {"epilepsyDetails", "Epilepsy details"},
             new String[] {"enhancements", "Existing enhancements that may need removal"},
             new String[] {"heardFrom", "How they heard about us"},
             new String[] {"heardOther", "Heard about us (other)"},
@@ -52,6 +54,7 @@ public final class IntakeAnswers {
         out.put("skin", choice(in, "skin", YES_NO_UNSURE));
         out.put("allergies", choice(in, "allergies", YES_NO));
         out.put("sensitivity", choice(in, "sensitivity", YES_NO));
+        out.put("epilepsy", choice(in, "epilepsy", YES_NO_UNSURE));
         out.put("enhancements", choice(in, "enhancements", YES_NO_UNSURE));
         out.put("heardFrom", choice(in, "heardFrom", HEARD));
         if ("YES".equals(out.get("allergies"))) {
@@ -59,6 +62,12 @@ public final class IntakeAnswers {
         }
         if ("YES".equals(out.get("sensitivity"))) {
             out.put("sensitivityDetails", required(in, "sensitivityDetails", MAX_TEXT));
+        }
+        if (!"NO".equals(out.get("epilepsy"))) {
+            String details = optional(in, "epilepsyDetails", MAX_TEXT);
+            if (details != null) {
+                out.put("epilepsyDetails", details);
+            }
         }
         if ("OTHER".equals(out.get("heardFrom"))) {
             out.put("heardOther", required(in, "heardOther", MAX_TEXT));
@@ -73,7 +82,13 @@ public final class IntakeAnswers {
     /** True when the technician should look at this form before the service. */
     public static boolean needsAttention(Map<String, String> a) {
         return !"NO".equals(a.get("fungal")) || !"NO".equals(a.get("skin")) || "YES".equals(a.get("allergies"))
-                || "YES".equals(a.get("sensitivity"));
+                || "YES".equals(a.get("sensitivity")) || hasEpilepsyFlag(a);
+    }
+
+    /** YES or NOT_SURE; forms signed before the question existed have no answer and are not flagged. */
+    public static boolean hasEpilepsyFlag(Map<String, String> a) {
+        String v = a.get("epilepsy");
+        return "YES".equals(v) || "NOT_SURE".equals(v);
     }
 
     private static String choice(Map<String, String> in, String field, Set<String> allowed) {
