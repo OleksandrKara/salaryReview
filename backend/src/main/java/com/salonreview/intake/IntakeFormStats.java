@@ -21,6 +21,14 @@ public class IntakeFormStats {
     public record CriticalStats(long alertsSent, long criticalSent, Instant lastAlertAt, long alertsFailed,
                                 long markersWritten, long markersFailing) {}
 
+    /** One funnel window. Rates are whole percent of {@code sent} (null when nothing was sent): they answer
+     * "of the links we sent, how many were opened / started / signed". */
+    public record Window(int days, long sent, long opened, long started, long signed, long notSigned,
+                         Integer openedPct, Integer startedPct, Integer signedPct) {}
+
+    /** Both windows plus the number of upcoming appointments (next 7 days) still without a signed form. */
+    public record Funnel(Window last7, Window last30, long unsignedUpcoming) {}
+
     private final JdbcTemplate jdbc;
 
     public IntakeFormStats(JdbcTemplate jdbc) {
@@ -45,6 +53,33 @@ public class IntakeFormStats {
         return new Stats(num(r.get("sent")), num(r.get("opened")), num(r.get("signed")), num(r.get("paper")),
                 num(r.get("unsigned")), num(r.get("reminders")), num(r.get("after_reminder")),
                 median == null ? null : Math.round(median.doubleValue()));
+    }
+
+    public Funnel funnel(long businessId, Instant now) {
+        Number upcoming = jdbc.queryForObject("""
+                SELECT count(*) FROM intake_form WHERE business_id = ? AND status <> 'SIGNED'
+                  AND appointment_start_at > ? AND appointment_start_at <= ?
+                """, Number.class, businessId, Timestamp.from(now), Timestamp.from(now.plus(java.time.Duration.ofDays(7))));
+        return new Funnel(window(businessId, now, 7), window(businessId, now, 30), upcoming == null ? 0 : upcoming.longValue());
+    }
+
+    private Window window(long businessId, Instant now, int days) {
+        Map<String, Object> r = jdbc.queryForMap("""
+                SELECT count(*) AS sent,
+                       count(*) FILTER (WHERE opened_at IS NOT NULL OR started_at IS NOT NULL OR status = 'SIGNED') AS opened,
+                       count(*) FILTER (WHERE started_at IS NOT NULL OR status = 'SIGNED') AS started,
+                       count(*) FILTER (WHERE status = 'SIGNED') AS signed
+                FROM intake_form WHERE business_id = ? AND sent_at > ?
+                """, businessId, Timestamp.from(now.minus(java.time.Duration.ofDays(days))));
+        long sent = num(r.get("sent"));
+        long opened = num(r.get("opened"));
+        long started = num(r.get("started"));
+        long signed = num(r.get("signed"));
+        return new Window(days, sent, opened, started, signed, sent - signed, pct(opened, sent), pct(started, sent), pct(signed, sent));
+    }
+
+    private static Integer pct(long part, long whole) {
+        return whole == 0 ? null : (int) Math.round(part * 100.0 / whole);
     }
 
     public CriticalStats critical(long businessId, Instant since) {

@@ -47,6 +47,17 @@ public class BookingHealthCheckScheduler {
     private final HttpClient http;
     private final ObjectMapper mapper = new ObjectMapper();
 
+    private com.salonreview.telegram.TelegramAutomationLog telegramLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTelegramLog(com.salonreview.telegram.TelegramAutomationLog telegramLog) {
+        this.telegramLog = telegramLog;
+    }
+
+    private void track(long businessId, String label, boolean ok) {
+        if (telegramLog != null) telegramLog.record(businessId, "booking_health_alert", label, "", ok);
+    }
+
     @org.springframework.beans.factory.annotation.Autowired
     public BookingHealthCheckScheduler(BookingHealthStateRepository repository, TelegramNotificationService telegram) {
         this(repository, telegram, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
@@ -152,18 +163,20 @@ public class BookingHealthCheckScheduler {
             state.setFailCount(state.getFailCount() + 1);
             state.setLastError(error.get());
             if (state.getFailCount() >= FAILS_BEFORE_ALERT && !state.isAlerted()) {
-                telegram.sendPlainAlert(businessId, "⚠️ Online booking problem: " + error.get()
+                boolean sent = telegram.sendPlainAlert(businessId, "⚠️ Online booking problem: " + error.get()
                         + ".\nClients may not be able to book on the website right now. If something was just changed in "
                         + "Square (a service renamed, deleted or re-created, an artist's schedule), that's the first thing to check."
                         + "\n\n-----\n\n⚠️ Проблема с онлайн-записью: " + error.get()
                         + ".\nКлиенты сейчас могут не суметь записаться на сайте. Если в Square что-то недавно меняли "
                         + "(переименовали, удалили или пересоздали услугу, расписание мастера), проверьте это в первую очередь.");
+                track(businessId, "PROBLEM", sent);
                 state.setAlerted(true);
             }
         } else {
             if (state.isAlerted()) {
-                telegram.sendPlainAlert(businessId, "✅ Online booking works again (" + key.replace('_', ' ') + ")."
+                boolean sent = telegram.sendPlainAlert(businessId, "✅ Online booking works again (" + key.replace('_', ' ') + ")."
                         + "\n\n-----\n\n✅ Онлайн-запись снова работает (" + key.replace('_', ' ') + ").");
+                track(businessId, "RECOVERED", sent);
             }
             state.setFailCount(0);
             state.setAlerted(false);

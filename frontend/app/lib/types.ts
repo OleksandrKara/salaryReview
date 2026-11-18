@@ -580,6 +580,38 @@ export interface SmsAutomationSummary {
   alwaysOn?: boolean;
   // Critical intake alert numbers (intake_critical_alert only, last 30 days).
   critical?: IntakeCriticalStats | null;
+  // Telegram automations: one row per message kind and direction, from the delivery log.
+  telegram?: TelegramAutomationRow[] | null;
+  // Intake form funnel, last 7 and 30 days, plus unsigned upcoming appointments.
+  intakeFunnel?: IntakeFunnel | null;
+}
+
+export interface TelegramAutomationRow {
+  label: string;
+  direction: 'nails' | 'pmu' | 'academy' | '';
+  sent7: number;
+  sent30: number;
+  failed30: number;
+  lastSentAt: string | null;
+  lastFailedAt: string | null;
+}
+
+export interface IntakeFunnelWindow {
+  days: number;
+  sent: number;
+  opened: number;
+  started: number;
+  signed: number;
+  notSigned: number;
+  openedPct: number | null;
+  startedPct: number | null;
+  signedPct: number | null;
+}
+
+export interface IntakeFunnel {
+  last7: IntakeFunnelWindow;
+  last30: IntakeFunnelWindow;
+  unsignedUpcoming: number;
 }
 
 export interface IntakeCriticalStats {

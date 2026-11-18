@@ -70,6 +70,19 @@ public class TelegramNotificationService {
     }
 
     private LeadAlertContextService leadContexts;
+    private TelegramAutomationLog automationLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAutomationLog(TelegramAutomationLog automationLog) {
+        this.automationLog = automationLog;
+    }
+
+    /** Runs a staff alert and records the delivery for the Automations tab. */
+    private boolean tracked(Long businessId, String automationKey, String label, java.util.function.BooleanSupplier send) {
+        boolean ok = send.getAsBoolean();
+        if (automationLog != null && businessId != null) automationLog.record(businessId, automationKey, label, "", ok);
+        return ok;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setLeadContexts(LeadAlertContextService leadContexts) {
@@ -329,7 +342,11 @@ public class TelegramNotificationService {
     /** With MMS attachments (owner request 2026-10-12: a photo-only text arrived as an empty alert).
      * The alert says how many attachments came in, then each image follows as its own Telegram
      * photo (uploaded from our stored bytes, so Telegram never has to reach our server). */
-    public boolean sendInboundSmsAlert(Long businessId, String phoneNumber, String customerName, String body,
+    public boolean sendInboundSmsAlert(Long businessId, String phoneNumber, String customerName, String body, String automationKey, String websiteContext, int attachmentCount, List<SmsMessageMedia> media) {
+        return tracked(businessId, "inbound_sms_alert", "", () -> sendInboundSmsAlert0(businessId, phoneNumber, customerName, body, automationKey, websiteContext, attachmentCount, media));
+    }
+
+    private boolean sendInboundSmsAlert0(Long businessId, String phoneNumber, String customerName, String body,
                                        String automationKey, String websiteContext, int attachmentCount,
                                        List<SmsMessageMedia> media) {
         TelegramNotificationConfig cfg = configService.get(businessId);
@@ -499,7 +516,11 @@ public class TelegramNotificationService {
      * auto-enrolled in the Square discount group, but staff still need to know NOT to also apply
      * the old manual "Same day rebooking discount" (would stack to $20 off). Never throws, same
      * contract as {@link #sendFourHandRequestAlert}. */
-    public boolean sendRebookingPromoAlert(Long businessId, String customerName, String phoneNumber, String appointmentStartAt,
+    public boolean sendRebookingPromoAlert(Long businessId, String customerName, String phoneNumber, String appointmentStartAt, String technicianName) {
+        return tracked(businessId, "rebooking_promo_alert", "", () -> sendRebookingPromoAlert0(businessId, customerName, phoneNumber, appointmentStartAt, technicianName));
+    }
+
+    private boolean sendRebookingPromoAlert0(Long businessId, String customerName, String phoneNumber, String appointmentStartAt,
                                               String technicianName) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
@@ -543,7 +564,11 @@ public class TelegramNotificationService {
      * always-{@code legacySmsBusiness()} shortcut) — this fires from a real per-business webhook,
      * so it must never alert business A's channel about business B's booking. Never throws, same
      * contract as every other send method here. */
-    public boolean sendSameDayBookingAlert(Long businessId, String providerNames, String customerName,
+    public boolean sendSameDayBookingAlert(Long businessId, String providerNames, String customerName, String appointmentStartAt, Duration leadTime) {
+        return tracked(businessId, "same_day_booking_alert", "", () -> sendSameDayBookingAlert0(businessId, providerNames, customerName, appointmentStartAt, leadTime));
+    }
+
+    private boolean sendSameDayBookingAlert0(Long businessId, String providerNames, String customerName,
                                             String appointmentStartAt, Duration leadTime) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
@@ -615,6 +640,10 @@ public class TelegramNotificationService {
      * {@link #sendSameDayBookingAlert}. Never throws, same contract as every other send method
      * here. */
     public boolean sendPaymentFailedAlert(Long businessId, PaymentFailedNotification n) {
+        return tracked(businessId, "payment_failed_alert", "", () -> sendPaymentFailedAlert0(businessId, n));
+    }
+
+    private boolean sendPaymentFailedAlert0(Long businessId, PaymentFailedNotification n) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
@@ -649,6 +678,10 @@ public class TelegramNotificationService {
      * or the page pausing itself after a burst of failures (possible card testing). Same shared
      * staff chat and never-throws contract as every other send method here. */
     public boolean sendCardOnFileAlert(Long businessId, CardOnFileNotification n) {
+        return tracked(businessId, "card_on_file_alert", "", () -> sendCardOnFileAlert0(businessId, n));
+    }
+
+    private boolean sendCardOnFileAlert0(Long businessId, CardOnFileNotification n) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
@@ -854,7 +887,11 @@ public class TelegramNotificationService {
      * candidate, consultation didn't happen, she'll come back later). A URL button, not a callback
      * button: this bot has no update handler, and the link works from any staff member's phone.
      * Same staff chat and never-throws contract as every other send method here. */
-    public boolean sendConsultationFollowUpAlert(Long businessId, String customerName, String artistName,
+    public boolean sendConsultationFollowUpAlert(Long businessId, String customerName, String artistName, java.time.Instant consultationStart, String stopUrl) {
+        return tracked(businessId, "consultation_followup_alert", "", () -> sendConsultationFollowUpAlert0(businessId, customerName, artistName, consultationStart, stopUrl));
+    }
+
+    private boolean sendConsultationFollowUpAlert0(Long businessId, String customerName, String artistName,
                                                  java.time.Instant consultationStart, String stopUrl) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();

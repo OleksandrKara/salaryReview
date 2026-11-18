@@ -68,6 +68,9 @@ public class IntakeForm {
     @Column(name = "opened_at")
     private Instant openedAt;
 
+    @Column(name = "started_at")
+    private Instant startedAt;
+
     @Column(name = "signed_at")
     private Instant signedAt;
 

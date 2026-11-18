@@ -254,18 +254,86 @@ public final class SmsAutomationRegistry {
             )),
             Map.entry("lead_daily_digest", new AutomationMeta(
                     "lead_daily_digest",
-                    "Daily leads digest",
-                    "Two Telegram messages a day per business in its own chat. 8:05am PT: how many leads "
-                            + "need processing (overdue callbacks, new leads, PMU: stuck after consultation), "
-                            + "the oldest few and a button to open the Leads CRM. 7:50pm PT: the day's results "
-                            + "(new, contacted, booked, lost, spam, who worked) and what is left for tomorrow. "
-                            + "Nothing is sent on a day with nothing to report, and each message is sent once.",
+                    "Shift start and end digests",
+                    "Telegram messages at the start (8:05am PT) and end (7:50pm PT) of the day, split by direction: "
+                            + "nails, PMU services and Academy are separate messages. Start: leads to process "
+                            + "(overdue callbacks, new leads, PMU: stuck after consultation) and the oldest few. End: "
+                            + "what the team handled, who worked and what is left. The Academy message is "
+                            + "self-contained so it can be forwarded, and says so when there was nothing to do. "
+                            + "Nothing is sent on a quiet nails or PMU day, and each message is sent once.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("lead_reminder_digest", new AutomationMeta(
+                    "lead_reminder_digest",
+                    "Lead callback reminders digest",
+                    "Telegram digest of lead callbacks whose time has come, as separate messages for nails, PMU services and Academy, each with the lead names, masked phones and links. Sent every time reminders fall due; a failed send is retried. Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("needs_reply_alert", new AutomationMeta(
+                    "needs_reply_alert",
+                    "Waiting-for-reply alerts",
+                    "Telegram alerts when a client's text waits for an answer during a shift: after 15 minutes to the team chat, after 30 minutes to the owner, plus one message when a shift starts about chats that were already waiting (Academy chats as their own message). Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("inbound_sms_alert", new AutomationMeta(
+                    "inbound_sms_alert",
+                    "Inbound text alert",
+                    "Every text a client sends to the business number is forwarded to the team Telegram chat with the client name and a link to the chat. Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("academy_lead_alert", new AutomationMeta(
+                    "academy_lead_alert",
+                    "Academy new request alert",
+                    "Telegram alert in the staff chat for every new Academy course request or newsletter signup, with the lead card link and a button to stop the automatic follow-ups. Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("booking_health_alert", new AutomationMeta(
+                    "booking_health_alert",
+                    "Online booking health alert",
+                    "Telegram alert when online booking stops working (a service renamed, deleted or an artist schedule changed) and another when it works again. Checked every few minutes. Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("payment_failed_alert", new AutomationMeta(
+                    "payment_failed_alert",
+                    "Payment failed alert",
+                    "Telegram alert in the team chat when a client's website payment fails, with the client and the reason. Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("card_on_file_alert", new AutomationMeta(
+                    "card_on_file_alert",
+                    "Card on file alert",
+                    "Telegram alert when a client saves a card on file for a booking. Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("same_day_booking_alert", new AutomationMeta(
+                    "same_day_booking_alert",
+                    "Same-day booking alert",
+                    "Telegram heads-up when a client books an appointment for today with short notice, so the technician is ready. Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("rebooking_promo_alert", new AutomationMeta(
+                    "rebooking_promo_alert",
+                    "Same-day rebooking discount booked alert",
+                    "Telegram alert when a client uses the same-day rebooking discount. Always on.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("consultation_followup_alert", new AutomationMeta(
+                    "consultation_followup_alert",
+                    "Consultation follow-up alert",
+                    "Telegram alert in the PMU team chat when a consultation follow-up is due, with a link to stop it. Always on.",
                     List.of(), false, false, false, Channel.TELEGRAM
             ))
     );
 
     /** Safety automations with no switch: reported as on, and turning them off is not offered. */
-    public static final java.util.Set<String> ALWAYS_ON = java.util.Set.of("intake_critical_alert");
+    public static final java.util.Set<String> ALWAYS_ON = java.util.Set.of("intake_critical_alert", "lead_reminder_digest",
+            "needs_reply_alert", "inbound_sms_alert", "academy_lead_alert", "booking_health_alert", "payment_failed_alert",
+            "card_on_file_alert", "same_day_booking_alert", "rebooking_promo_alert", "consultation_followup_alert");
+
+    /** Telegram automations whose numbers come from telegram_automation_log (one line per message kind and direction). */
+    public static final java.util.Set<String> LOGGED = java.util.Set.of("lead_daily_digest", "lead_reminder_digest", "needs_reply_alert",
+            "inbound_sms_alert", "academy_lead_alert", "booking_health_alert", "payment_failed_alert", "card_on_file_alert",
+            "same_day_booking_alert", "rebooking_promo_alert", "consultation_followup_alert");
 
     private SmsAutomationRegistry() {
     }

@@ -259,6 +259,20 @@ public class IntakeFormService {
         });
     }
 
+    /** First time the client touched a field. Link-preview bots never type, so no bot filter is needed beyond the caller's. */
+    public boolean markStarted(String token) {
+        return forms.findByToken(token).map(f -> {
+            if (!f.isSigned() && f.getStartedAt() == null) {
+                f.setStartedAt(Instant.now());
+                if (f.getOpenedAt() == null) {
+                    f.setOpenedAt(f.getStartedAt());
+                }
+                forms.save(f);
+            }
+            return true;
+        }).orElse(false);
+    }
+
     public enum SubmitResult { OK, ALREADY_SIGNED, NOT_FOUND }
 
     public SubmitResult submit(String token, Map<String, String> rawAnswers, String signatureName, boolean agreed,

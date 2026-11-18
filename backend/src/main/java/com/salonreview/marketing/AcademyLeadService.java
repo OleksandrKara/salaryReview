@@ -17,6 +17,13 @@ import java.util.Map;
  */
 @Service
 public class AcademyLeadService {
+    private com.salonreview.telegram.TelegramAutomationLog telegramLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTelegramLog(com.salonreview.telegram.TelegramAutomationLog telegramLog) {
+        this.telegramLog = telegramLog;
+    }
+
 
     private static final Logger log = LoggerFactory.getLogger(AcademyLeadService.class);
 
@@ -130,6 +137,7 @@ public class AcademyLeadService {
                 ? telegram.sendPlainAlert(businessId, alert, "🧲 Open lead", openLead)
                 : telegram.sendPlainAlert(businessId, alert + "\n\n" + FUNNEL_NOTE,
                         "🛑 Stop follow-ups / Остановить рассылку", links.stopUrl(id), "🧲 Open lead", openLead);
+        if (telegramLog != null) telegramLog.record(businessId, "academy_lead_alert", "", "academy", sent);
 
         HubSpotFormClient.Result hs = hubspot.submit(l.email(), hubspotProperties(l), l.sourcePageUrl(),
                 "PMU Academy: " + (notBlank(l.courseName()) ? l.courseName() : "course request"));
