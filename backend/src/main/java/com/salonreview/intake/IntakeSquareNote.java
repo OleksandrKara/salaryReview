@@ -23,7 +23,7 @@ public final class IntakeSquareNote {
     static final String END = "[/INTAKE FORM]";
     private static final String LEGACY_PREFIX = "Intake form:";
     /** Bump when the block layout changes so already-signed forms are rewritten once. */
-    static final String SIGNED_SYNC_KEY = "SIGNED3";
+    static final String SIGNED_SYNC_KEY = "SIGNED4";
     static final int MAX_DETAIL = 160;
     static final int MAX_NOTES = 240;
 
@@ -40,20 +40,23 @@ public final class IntakeSquareNote {
         if (f.isSigned() && f.getSignedAt() != null) {
             String day = DAY.format(f.getSignedAt());
             if (IntakeForm.VIA_STAFF_PAPER.equals(f.getSignedVia()) || answers == null || answers.isEmpty()) {
-                lines.add(START + " SIGNED " + day + " on paper. Answers are on the paper form.");
+                lines.add(START + " signed " + day + " on paper. Answers are on the paper form.");
             } else {
-                lines.add(START + " SIGNED " + day);
-                String attention = attention(answers);
-                if (!attention.isEmpty()) {
-                    lines.add("ATTENTION: " + attention);
+                lines.add(START + " signed " + day);
+                List<String> flags = attention(answers);
+                for (String flag : flags) {
+                    lines.add("!! " + flag);
                 }
-                lines.add("Service: " + service(answers.get("service"))
-                        + " | Fungal/contagious: " + yn(answers.get("fungal"))
-                        + " | Cuts/irritated skin: " + yn(answers.get("skin"))
-                        + " | Allergies: " + yn(answers.get("allergies"))
-                        + " | Sensitivity/pain: " + yn(answers.get("sensitivity"))
-                        + " | Epilepsy/seizures: " + (answers.containsKey("epilepsy") ? yn(answers.get("epilepsy")) : "not asked")
-                        + " | Enhancements to remove: " + yn(answers.get("enhancements")));
+                if (!flags.isEmpty()) {
+                    lines.add("");
+                }
+                lines.add("Service: " + service(answers.get("service")));
+                lines.add("Fungal/contagious: " + yn(answers.get("fungal")));
+                lines.add("Cuts/irritated skin: " + yn(answers.get("skin")));
+                lines.add("Allergies: " + yn(answers.get("allergies")));
+                lines.add("Sensitivity/pain: " + yn(answers.get("sensitivity")));
+                lines.add("Epilepsy/seizures: " + (answers.containsKey("epilepsy") ? yn(answers.get("epilepsy")) : "not asked"));
+                lines.add("Enhancements to remove: " + yn(answers.get("enhancements")));
                 String notes = clean(answers.get("notes"), MAX_NOTES);
                 if (!notes.isEmpty()) {
                     lines.add("Notes: " + notes);
@@ -67,26 +70,29 @@ public final class IntakeSquareNote {
         return String.join("\n", lines);
     }
 
-    private static String attention(Map<String, String> a) {
+    private static List<String> attention(Map<String, String> a) {
         List<String> flags = new ArrayList<>();
         if (!"NO".equals(a.get("fungal"))) {
-            flags.add("fungal/contagious condition " + yn(a.get("fungal")).toUpperCase(Locale.ROOT));
+            flags.add("Fungal/contagious condition: " + yn(a.get("fungal")).toUpperCase(Locale.ROOT));
         }
         if (!"NO".equals(a.get("skin"))) {
-            flags.add("cuts/irritated skin " + yn(a.get("skin")).toUpperCase(Locale.ROOT));
+            flags.add("Cuts/irritated skin: " + yn(a.get("skin")).toUpperCase(Locale.ROOT));
         }
         if ("YES".equals(a.get("allergies"))) {
-            flags.add("allergies YES: " + clean(a.get("allergiesDetails"), MAX_DETAIL));
+            flags.add(withDetails("Allergies: YES", a.get("allergiesDetails")));
         }
         if ("YES".equals(a.get("sensitivity"))) {
-            flags.add("sensitivity/pain YES: " + clean(a.get("sensitivityDetails"), MAX_DETAIL));
+            flags.add(withDetails("Sensitivity/pain: YES", a.get("sensitivityDetails")));
         }
         if (IntakeAnswers.hasEpilepsyFlag(a)) {
-            String details = clean(a.get("epilepsyDetails"), MAX_DETAIL);
-            flags.add("epilepsy/seizures " + yn(a.get("epilepsy")).toUpperCase(Locale.ROOT)
-                    + (details.isEmpty() ? "" : ": " + details));
+            flags.add(withDetails("Epilepsy/seizures: " + yn(a.get("epilepsy")).toUpperCase(Locale.ROOT), a.get("epilepsyDetails")));
         }
-        return String.join("; ", flags);
+        return flags;
+    }
+
+    private static String withDetails(String head, String details) {
+        String d = clean(details, MAX_DETAIL);
+        return d.isEmpty() ? head : head + ", " + d;
     }
 
     private static String service(String code) {
