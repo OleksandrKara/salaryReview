@@ -114,4 +114,30 @@ class PmuBookingStaffAlertServiceTest {
         service.handleBookingCreated(2L, booking("b6", "V1", "API"));
         verify(telegram, times(1)).sendProcedureBookingAlert(any(), any(), any(), any(), any(), any(), any());
     }
+
+    @Test
+    void usesLiveSquareCustomerWhenMirrorHasNoRowYet() {
+        when(square.catalogNames(any())).thenReturn(Map.of("V1", "Powder Brows"));
+        when(square.customerById("C9")).thenReturn(Optional.of(new SquareClient.Customer("C9", "Ira", "B", null,
+                "+16195550000", null, null)));
+        var b = new SquareWebhookEvent.Booking("b9", "ACCEPTED", "C9", "2026-11-05T18:00:00Z", "2026-10-29T10:00:00Z",
+                "2026-10-29T10:00:00Z", null, null, null,
+                List.of(new SquareClient.AppointmentSegment("TM1", "V1", 120)), "API");
+        service.handleBookingCreated(2L, b);
+        verify(telegram).sendProcedureBookingAlert(eq(2L), eq("Powder Brows"), eq("Ira B"), eq("+16195550000"),
+                any(), any(), any());
+    }
+
+    @Test
+    void waitsForCrmLeadBeforeAlerting() throws Exception {
+        when(square.catalogNames(any())).thenReturn(Map.of("V1", "Powder Brows"));
+        service.leadWaitMs = 20;
+        when(telegram.leadContext(anyLong(), any(), any())).thenReturn(
+                com.salonreview.telegram.LeadAlertContext.MISSING,
+                new com.salonreview.telegram.LeadAlertContext(
+                        com.salonreview.telegram.LeadAlertContext.State.FOUND, 5L, false, List.of(), null));
+        service.handleBookingCreated(2L, booking("b10", "V1", "API"));
+        verify(telegram, never()).sendProcedureBookingAlert(any(), any(), any(), any(), any(), any(), any());
+        verify(telegram, org.mockito.Mockito.timeout(2000)).sendProcedureBookingAlert(any(), any(), any(), any(), any(), any(), any());
+    }
 }
