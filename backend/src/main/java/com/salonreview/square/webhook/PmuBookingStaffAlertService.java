@@ -43,6 +43,14 @@ public class PmuBookingStaffAlertService {
     private final TelegramNotificationService telegram;
     private final SmsAutomationService automations;
     private final PmuBookingStaffAlertRepository alerts;
+    static final int MAX_LEAD_WAITS = 8;
+    long leadWaitMs = 30_000;
+    private final java.util.concurrent.ScheduledExecutorService retries =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "pmu-alert-retry");
+                t.setDaemon(true);
+                return t;
+            });
 
     public PmuBookingStaffAlertService(SquareClientProvider squareClients, ProviderRepository providers,
                                        SquareCustomerMirrorRepository customers,
@@ -87,16 +95,47 @@ public class PmuBookingStaffAlertService {
             } catch (org.springframework.dao.DataIntegrityViolationException dup) {
                 return;
             }
-            var cust = customers.findByBusinessIdAndSquareCustomerId(businessId, booking.customerId() == null ? "" : booking.customerId());
-            boolean sent = telegram.sendProcedureBookingAlert(businessId, String.join(", ", serviceNames),
-                    customerName(businessId, booking.customerId()), cust.map(c -> c.getPhoneNumber()).orElse(null),
-                    cust.map(c -> c.getEmailAddress()).orElse(null), providerNames(booking), booking.startAt());
-            if (sent) {
-                row.setDeliveryStatus("SENT");
-                row.setDeliveredAt(java.time.Instant.now());
-            } else {
-                row.setDeliveryStatus("FAILED");
+            deliver(businessId, booking, row, String.join(", ", serviceNames), 0);
+        } catch (RuntimeException ex) {
+            log.warn("PMU staff booking alert failed for booking {}: {}", booking.id(), ex.toString());
+        }
+    }
+
+    /** The website creates the Square booking first and the CRM lead a few minutes later, and the customer
+     * mirror lags too. So the name and phone come from Square directly when the mirror has no row yet, and
+     * while no CRM lead exists the alert is retried for a few minutes so it can carry the "Open lead" link. */
+    private void deliver(Long businessId, SquareWebhookEvent.Booking booking, PmuBookingStaffAlert row,
+                         String services, int attempt) {
+        try {
+            String customerId = booking.customerId() == null ? "" : booking.customerId();
+            var mirror = customers.findByBusinessIdAndSquareCustomerId(businessId, customerId);
+            String name = customerName(businessId, booking.customerId());
+            String phone = mirror.map(c -> c.getPhoneNumber()).orElse(null);
+            String email = mirror.map(c -> c.getEmailAddress()).orElse(null);
+            if (name == null || phone == null) {
+                try {
+                    var live = squareClients.forBusiness(businessId).customerById(booking.customerId());
+                    if (live != null && live.isPresent()) {
+                        var c = live.get();
+                        if (name == null && !c.fullName().isBlank()) name = c.fullName();
+                        if (phone == null) phone = c.phoneNumber();
+                        if (email == null) email = c.emailAddress();
+                    }
+                } catch (RuntimeException e) {
+                    log.warn("Live Square customer lookup failed for booking {}: {}", booking.id(), e.toString());
+                }
             }
+            var ctx = telegram.leadContext(businessId, phone, email);
+            if (ctx != null && ctx.state() == com.salonreview.telegram.LeadAlertContext.State.MISSING
+                    && attempt < MAX_LEAD_WAITS) {
+                retries.schedule(() -> deliver(businessId, booking, row, services, attempt + 1),
+                        leadWaitMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                return;
+            }
+            boolean sent = telegram.sendProcedureBookingAlert(businessId, services, name, phone, email,
+                    providerNames(booking), booking.startAt());
+            row.setDeliveryStatus(sent ? "SENT" : "FAILED");
+            if (sent) row.setDeliveredAt(Instant.now());
             alerts.save(row);
         } catch (RuntimeException ex) {
             log.warn("PMU staff booking alert failed for booking {}: {}", booking.id(), ex.toString());

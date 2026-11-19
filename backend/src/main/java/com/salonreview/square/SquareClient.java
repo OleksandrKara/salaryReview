@@ -977,6 +977,12 @@ public class SquareClient {
         return canonical;
     }
 
+    /** One customer straight from Square (cached), for callers that cannot wait for the mirror. */
+    public java.util.Optional<Customer> customerById(String customerId) {
+        if (customerId == null || customerId.isBlank()) return java.util.Optional.empty();
+        return java.util.Optional.ofNullable(fetchCustomers(List.of(customerId)).get(customerId));
+    }
+
     private Map<String, Customer> fetchCustomers(Collection<String> customerIds) {
         List<String> ids = customerIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
         List<String> missing = ids.stream().filter(id -> !customerCache.containsKey(id)).toList();
