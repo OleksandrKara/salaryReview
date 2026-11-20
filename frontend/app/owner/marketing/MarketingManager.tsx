@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../lib/api';
-import type { MarketingVariantStat, TrafficSourceKey } from '../../lib/types';
+import type { MarketingConversionsData, MarketingVariantStat, TrafficSourceKey } from '../../lib/types';
 import TrafficSourceFilter, { ADS_ONLY_SOURCES } from './TrafficSourceFilter';
 import PeriodFilter from './PeriodFilter';
 import { parsePeriodParams, periodToBounds } from './period';
 import type { PeriodSelection } from './period';
 import VariantTable from './VariantTable';
+import OverviewSummary from './OverviewSummary';
 
 // datetime-local inputs use the browser's local timezone with no offset in the string;
 // new Date(...)/.toISOString() round-trip through UTC correctly for both directions.
@@ -21,12 +22,14 @@ function toDatetimeLocalValue(iso: string): string {
 export default function MarketingManager({
   slug,
   initialVariants,
+  initialConversions,
   initialStatsSince,
   readOnly = false,
   timeZone,
 }: {
   slug: string;
   initialVariants: MarketingVariantStat[];
+  initialConversions: MarketingConversionsData | null;
   initialStatsSince: string | null;
   readOnly?: boolean;
   // Phase 6.3: the business's real configured timezone, from BusinessSettingsDto — see page.tsx.
@@ -34,6 +37,9 @@ export default function MarketingManager({
 }) {
   const searchParams = useSearchParams();
   const [variants, setVariants] = useState(initialVariants);
+  const [conversions, setConversions] = useState(initialConversions);
+  const [loading, setLoading] = useState(false);
+  const requestId = useRef(0);
   const [statsSince, setStatsSince] = useState(initialStatsSince);
   const [cutoffInput, setCutoffInput] = useState(initialStatsSince ? toDatetimeLocalValue(initialStatsSince) : '');
   const [error, setError] = useState('');
@@ -48,9 +54,20 @@ export default function MarketingManager({
 
   async function refresh(nextSources: Set<TrafficSourceKey> = sources, nextSelection: PeriodSelection = selection) {
     const bounds = periodToBounds(nextSelection, timeZone);
-    const data = await api.getMarketingDashboard(slug, nextSources, bounds.from, bounds.to);
-    setVariants(data.variants);
-    setStatsSince(data.statsSince);
+    const id = ++requestId.current;
+    setLoading(true);
+    try {
+      const [data, conv] = await Promise.all([
+        api.getMarketingDashboard(slug, nextSources, bounds.from, bounds.to),
+        api.getMarketingConversions(slug, nextSources, bounds.from, bounds.to).catch(() => null),
+      ]);
+      if (id !== requestId.current) return;
+      setVariants(data.variants);
+      setStatsSince(data.statsSince);
+      setConversions(conv);
+    } finally {
+      if (id === requestId.current) setLoading(false);
+    }
   }
 
   function changeSources(next: Set<TrafficSourceKey>) {
@@ -134,65 +151,74 @@ export default function MarketingManager({
     }
   }
 
-  return (
-    <div>
-      {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
+  const cutoffText = statsSince
+    ? `Showing stats since ${new Date(statsSince).toLocaleString()}. Earlier activity (such as test traffic) is excluded.`
+    : 'No cutoff set, showing all-time stats.';
 
-      <div className="mb-4">
+  return (
+    <div className="space-y-6">
+      {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
+
+      <div className="space-y-3">
         <TrafficSourceFilter
           selected={sources}
           onChange={changeSources}
-          description="Counts page views, clicks, contacts, and bookings for the selected source(s) only. Bookings are matched via contact-capture data and may slightly undercount."
+          disabled={loading}
+          description="Applies to everything below: totals, results by source and variants. Bookings are matched via contact-capture data and may slightly undercount."
         />
+        <PeriodFilter value={selection} onChange={changePeriod} timeZone={timeZone} disabled={loading} />
+        {readOnly ? (
+          <p className="px-1 text-xs text-zinc-500">{cutoffText}</p>
+        ) : (
+          <details className="rounded-lg bg-white ring-1 ring-zinc-200">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs text-zinc-600">
+              <span className="font-medium text-zinc-700">Data cutoff.</span> {cutoffText}
+            </summary>
+            <div className="flex flex-wrap items-end gap-3 border-t border-zinc-100 p-3">
+              <label className="text-sm">
+                <span className="mb-1 block text-xs font-medium text-zinc-500">Hide stats before</span>
+                <input
+                  type="datetime-local"
+                  value={cutoffInput}
+                  onChange={(e) => setCutoffInput(e.target.value)}
+                  className="rounded border border-zinc-300 px-2 py-1 text-sm"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={cutoffBusy || !cutoffInput}
+                onClick={saveCutoff}
+                className="rounded bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+              >
+                Save cutoff
+              </button>
+              {statsSince && (
+                <button type="button" disabled={cutoffBusy} onClick={clearCutoff} className="rounded px-3 py-1.5 text-sm font-medium text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-50">
+                  Clear
+                </button>
+              )}
+            </div>
+          </details>
+        )}
       </div>
 
-      <div className="mb-4">
-        <PeriodFilter value={selection} onChange={changePeriod} timeZone={timeZone} />
-      </div>
+      {conversions?.available && <OverviewSummary data={conversions} selected={sources} loading={loading} />}
 
-      {readOnly ? (
-        <p className="mb-6 rounded-lg p-4 text-xs text-zinc-500 ring-1 ring-zinc-200">
-          {statsSince ? `Showing stats since ${new Date(statsSince).toLocaleString()} — earlier activity (e.g. test traffic) is excluded from the numbers below.` : 'No cutoff set — showing all-time stats.'}
-        </p>
-      ) : (
-        <div className="mb-6 flex flex-wrap items-end gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
-          <label className="text-sm">
-            <span className="mb-1 block text-xs font-medium text-zinc-500">Hide stats before</span>
-            <input
-              type="datetime-local"
-              value={cutoffInput}
-              onChange={(e) => setCutoffInput(e.target.value)}
-              className="rounded border border-zinc-300 px-2 py-1 text-sm"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={cutoffBusy || !cutoffInput}
-            onClick={saveCutoff}
-            className="rounded bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-          >
-            Save cutoff
-          </button>
-          {statsSince && (
-            <button type="button" disabled={cutoffBusy} onClick={clearCutoff} className="rounded px-3 py-1.5 text-sm font-medium text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-50">
-              Clear
-            </button>
-          )}
-          <span className="text-xs text-zinc-500">
-            {statsSince ? `Showing stats since ${new Date(statsSince).toLocaleString()} — earlier activity (e.g. your own test traffic) is excluded from the numbers below.` : 'No cutoff set — showing all-time stats.'}
-          </span>
+      <section aria-label="Variant performance" className={`transition-opacity ${loading ? 'opacity-50' : ''}`}>
+        <div className="mb-2">
+          <h2 className="text-sm font-semibold text-zinc-900">Variant performance</h2>
+          <p className="mt-0.5 text-xs text-zinc-500">Which version of the page works best for the selected sources and period.</p>
         </div>
-      )}
-
-      <VariantTable
-        variants={variants}
-        onRename={onRename}
-        onEditDescription={onEditDescription}
-        onDuplicate={onDuplicate}
-        onDelete={onDelete}
-        busyVariantId={busyVariantId}
-        readOnly={readOnly}
-      />
+        <VariantTable
+          variants={variants}
+          onRename={onRename}
+          onEditDescription={onEditDescription}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+          busyVariantId={busyVariantId}
+          readOnly={readOnly}
+        />
+      </section>
     </div>
   );
 }

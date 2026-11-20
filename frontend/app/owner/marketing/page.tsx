@@ -3,10 +3,10 @@ import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
 import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 import AbuseBlocksPanel from './AbuseBlocksPanel';
-import ConversionsPanel from './ConversionsPanel';
 import MarketingManager from './MarketingManager';
 import MarketingTabs from './MarketingTabs';
 import { parsePeriodParams, periodToBounds } from './period';
+import { ADS_ONLY_SOURCES, sourcesParam } from './TrafficSourceFilter';
 
 export default async function MarketingDashboardPage({
   searchParams,
@@ -52,7 +52,7 @@ export default async function MarketingDashboardPage({
   const [data, abuseBlocks, conversions] = await Promise.all([
     serverApi.getMarketingDashboard(slug, undefined, bounds.from, bounds.to),
     serverApi.getAbuseBlocks(),
-    serverApi.getMarketingConversions(slug, bounds.from, bounds.to).catch(() => null),
+    serverApi.getMarketingConversions(slug, bounds.from, bounds.to, sourcesParam(new Set(ADS_ONLY_SOURCES))).catch(() => null),
   ]);
 
   return (
@@ -71,10 +71,7 @@ export default async function MarketingDashboardPage({
             <span className="text-sm text-zinc-500">Landing page: {data.landingPageSlug}</span>
           </div>
 
-          {conversions?.available && <ConversionsPanel data={conversions} />}
-
-          <div className="mt-6">
-            <h2 className="mb-2 text-sm font-medium text-zinc-500">Variant performance</h2>
+          <div className="mt-4">
             {/* Keyed by slug so switching pages via the shared selector (a client-side navigation
                 that doesn't otherwise remount this component) forces a fresh mount — otherwise the
                 already-mounted instance keeps showing whatever it last fetched, ignoring the new
@@ -83,6 +80,7 @@ export default async function MarketingDashboardPage({
               key={data.landingPageSlug}
               slug={data.landingPageSlug}
               initialVariants={data.variants}
+              initialConversions={conversions}
               initialStatsSince={data.statsSince}
               readOnly={me.role !== 'OWNER'}
               timeZone={timeZone}
