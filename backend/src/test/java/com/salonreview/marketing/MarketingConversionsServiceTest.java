@@ -11,7 +11,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,7 +22,7 @@ import static org.mockito.Mockito.when;
 class MarketingConversionsServiceTest {
 
     @Test
-    void splitsResultsBySourceAndTotalsOnlyTheSelectedOnes() {
+    void splitsResultsBySource() {
         UUID page = UUID.randomUUID();
         MarketingDashboardRepository dash = mock(MarketingDashboardRepository.class);
         MarketingConversionsRepository repo = mock(MarketingConversionsRepository.class);
@@ -51,18 +50,24 @@ class MarketingConversionsServiceTest {
                 new MarketingConversionsRepository.AdsCampaignRow(1L, "Brows", "ENABLED", 25_500_000L, 900, 30, 2.0)));
 
         var service = new MarketingConversionsService(dash, repo, squares, ctx);
-        MarketingConversionsDto dto = service.conversions("pmu", null, null, Set.of("google_ads"));
+        MarketingConversionsDto dto = service.conversions("pmu", null, null);
 
-        assertThat(dto.pageViews()).isEqualTo(100);
-        assertThat(dto.payingCustomers()).isEqualTo(1);
-        assertThat(dto.revenue()).isEqualByComparingTo("350");
+        assertThat(dto.pageViews()).isEqualTo(150);
         assertThat(dto.bySource()).hasSize(7);
         var direct = dto.bySource().stream().filter(r -> r.key().equals("direct")).findFirst().orElseThrow();
         assertThat(direct.visitors()).isEqualTo(50);
         assertThat(direct.deposits()).isEqualTo(1);
         var google = dto.bySource().stream().filter(r -> r.key().equals("google_ads")).findFirst().orElseThrow();
         assertThat(google.fullPayments()).isEqualTo(1);
-        assertThat(dto.googleAds().spend()).isEqualByComparingTo("25.50");
-        assertThat(dto.googleAds().clicks()).isEqualTo(30);
+        assertThat(google.revenue()).isEqualByComparingTo("350");
+
+        when(dash.listLandingPages(2L)).thenReturn(List.of(new MarketingDashboardRepository.LandingPageSummary("pmu", "PMU", true)));
+        var ppc = service.googlePpc(null, null);
+        assertThat(ppc.spend()).isEqualByComparingTo("25.50");
+        assertThat(ppc.clicks()).isEqualTo(30);
+        assertThat(ppc.results().visitors()).isEqualTo(100);
+        assertThat(ppc.results().deposits()).isEqualTo(1);
+        assertThat(ppc.results().fullPayments()).isEqualTo(1);
+        assertThat(ppc.results().revenue()).isEqualByComparingTo("350");
     }
 }

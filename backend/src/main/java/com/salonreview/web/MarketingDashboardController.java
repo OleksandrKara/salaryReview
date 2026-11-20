@@ -3,6 +3,7 @@ package com.salonreview.web;
 import com.salonreview.marketing.MarketingDashboardRepository.LandingPageSummary;
 import com.salonreview.marketing.MarketingConversionsService;
 import com.salonreview.marketing.MarketingDashboardService;
+import com.salonreview.web.dto.GooglePpcDto;
 import com.salonreview.web.dto.MarketingConversionsDto;
 import com.salonreview.marketing.TrafficSourceParam;
 import com.salonreview.web.dto.MarketingDashboardDto;
@@ -28,16 +29,21 @@ public class MarketingDashboardController {
         this.conversionsService = conversionsService;
     }
 
-    /** Weighted conversions (text/call taps, consultations, deposits, full payments) and Square
+    /** Conversions by traffic source (text/call taps, consultations, deposits, full payments) and Square
      * revenue for one landing page and the shared period filter. */
     @GetMapping("/marketing/conversions")
     public MarketingConversionsDto conversions(@RequestParam(required = false) String slug,
                                                @RequestParam(required = false) String from,
-                                               @RequestParam(required = false) String to,
-                                               @RequestParam(required = false) String sources) {
+                                               @RequestParam(required = false) String to) {
         return conversionsService.conversions(slug,
-                from == null ? null : LocalDate.parse(from), to == null ? null : LocalDate.parse(to),
-                TrafficSourceParam.parse(sources));
+                from == null ? null : LocalDate.parse(from), to == null ? null : LocalDate.parse(to));
+    }
+
+    /** Google Ads spend and results for the whole business (every landing page) and the period. */
+    @GetMapping("/marketing/google-ppc")
+    public GooglePpcDto googlePpc(@RequestParam(required = false) String from,
+                                  @RequestParam(required = false) String to) {
+        return conversionsService.googlePpc(from == null ? null : LocalDate.parse(from), to == null ? null : LocalDate.parse(to));
     }
 
     /** sources is a comma-separated list of traffic-source buckets (meta_ads, google_ads,

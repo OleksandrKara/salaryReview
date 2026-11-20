@@ -6,7 +6,6 @@ import AbuseBlocksPanel from './AbuseBlocksPanel';
 import MarketingManager from './MarketingManager';
 import MarketingTabs from './MarketingTabs';
 import { parsePeriodParams, periodToBounds } from './period';
-import { ADS_ONLY_SOURCES, sourcesParam } from './TrafficSourceFilter';
 
 export default async function MarketingDashboardPage({
   searchParams,
@@ -52,7 +51,7 @@ export default async function MarketingDashboardPage({
   const [data, abuseBlocks, conversions] = await Promise.all([
     serverApi.getMarketingDashboard(slug, undefined, bounds.from, bounds.to),
     serverApi.getAbuseBlocks(),
-    serverApi.getMarketingConversions(slug, bounds.from, bounds.to, sourcesParam(new Set(ADS_ONLY_SOURCES))).catch(() => null),
+    serverApi.getMarketingConversions(slug, bounds.from, bounds.to).catch(() => null),
   ]);
 
   return (

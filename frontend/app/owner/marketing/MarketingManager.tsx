@@ -46,7 +46,7 @@ export default function MarketingManager({
     try {
       const [data, conv] = await Promise.all([
         api.getMarketingDashboard(slug, nextSources, bounds.from, bounds.to),
-        api.getMarketingConversions(slug, nextSources, bounds.from, bounds.to).catch(() => null),
+        api.getMarketingConversions(slug, bounds.from, bounds.to).catch(() => null),
       ]);
       if (id !== requestId.current) return;
       setVariants(data.variants);
@@ -114,22 +114,23 @@ export default function MarketingManager({
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
       <div className="space-y-3">
+        <PeriodFilter value={selection} onChange={changePeriod} timeZone={timeZone} disabled={loading} />
+      </div>
+
+      {conversions?.available && <OverviewSummary data={conversions} loading={loading} />}
+
+      {variants.length > 1 && (
+      <section aria-label="Variant performance" className={`space-y-3 transition-opacity ${loading ? 'opacity-50' : ''}`}>
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-900">Variant performance</h2>
+          <p className="mt-0.5 text-xs text-zinc-500">Which version of the page works best for the selected sources and period.</p>
+        </div>
         <TrafficSourceFilter
           selected={sources}
           onChange={changeSources}
           disabled={loading}
-          description="Applies to everything below: totals, results by source and variants. Bookings are matched via contact-capture data and may slightly undercount."
+          description="Filters the variant table only."
         />
-        <PeriodFilter value={selection} onChange={changePeriod} timeZone={timeZone} disabled={loading} />
-      </div>
-
-      {conversions?.available && <OverviewSummary data={conversions} selected={sources} loading={loading} />}
-
-      <section aria-label="Variant performance" className={`transition-opacity ${loading ? 'opacity-50' : ''}`}>
-        <div className="mb-2">
-          <h2 className="text-sm font-semibold text-zinc-900">Variant performance</h2>
-          <p className="mt-0.5 text-xs text-zinc-500">Which version of the page works best for the selected sources and period.</p>
-        </div>
         <VariantTable
           variants={variants}
           onRename={onRename}
@@ -140,6 +141,7 @@ export default function MarketingManager({
           readOnly={readOnly}
         />
       </section>
+      )}
     </div>
   );
 }
