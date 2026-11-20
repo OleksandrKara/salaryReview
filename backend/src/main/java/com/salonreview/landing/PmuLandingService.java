@@ -24,7 +24,6 @@ import com.salonreview.sms.ConsultationOfferService;
 public class PmuLandingService {
 
     private static final Logger log = LoggerFactory.getLogger(PmuLandingService.class);
-    private static final double DEPOSIT_THRESHOLD = 300.0;
     private static final double DEPOSIT_AMOUNT = 100.0;
     private static final String NAILS_URL = "https://akluxnails.com/";
     private static final Set<String> EXCLUDED_CATEGORIES = Set.of("DEPOSIT", "WAX");
@@ -283,7 +282,7 @@ public class PmuLandingService {
     }
 
     private static double depositFor(double price) {
-        return price >= DEPOSIT_THRESHOLD ? DEPOSIT_AMOUNT : 0.0;
+        return price > 0 ? Math.min(price, DEPOSIT_AMOUNT) : DEPOSIT_AMOUNT;
     }
 
     private Placed place(JsonNode item, Map<String, String> categories, Function<String, String> artistName) {

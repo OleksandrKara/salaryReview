@@ -69,6 +69,7 @@ class LandingPmuPaymentTest {
     private TelegramNotificationService telegram;
     private PmuLandingService menu;
     private ConsultationOfferService offers;
+    private com.salonreview.marketing.LeadIntakeService leadIntake;
     private InternalNotificationController notifications;
     private MockMvc mvc;
     private MockMvc disabled;
@@ -100,6 +101,8 @@ class LandingPmuPaymentTest {
         LandingAbuseGuard guard = new LandingAbuseGuard(repository, new TurnstileVerifier("", "http://127.0.0.1:1/unused"));
         LandingFourHandService fourHand = new LandingFourHandService(provider, telegram, sms, businesses);
         LandingPmuPaymentService payments = new LandingPmuPaymentService(gateway, menu, fourHand, telegram, offers);
+        leadIntake = mock(com.salonreview.marketing.LeadIntakeService.class);
+        payments.setLeadIntake(leadIntake);
         mvc = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, true, true, new LandingBusinessResolver(businesses),
                 repository, guard, fourHand, null, payments, notifications)).setControllerAdvice(new LandingWriteAdvice(org.mockito.Mockito.mock(LandingFailureAlerter.class))).build();
         disabled = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, true, false,
@@ -247,6 +250,29 @@ class LandingPmuPaymentTest {
         assertThat(alert.getValue().customerName()).isEqualTo("Ann Test");
         assertThat(count("submissions", null)).isZero();
         assertThat(count("contacts", null)).isZero();
+    }
+
+    @Test
+    void declinedCardStillCreatesACrmLeadWithTheReasonOnTheTimeline() throws Exception {
+        when(gateway.createBooking(anyLong(), any(), any(), any(), any(), anyLong(), org.mockito.ArgumentMatchers.anyInt(), any(), any()))
+                .thenReturn(booking());
+        when(gateway.createPayment(anyLong(), any(), any(), anyLong(), any(), any())).thenThrow(square("CVV_FAILURE"));
+        mvc.perform(json(DEP, deposit(REAL_PHONE, ""))).andExpect(status().isPaymentRequired());
+        ArgumentCaptor<com.salonreview.marketing.LeadIntakeService.Lead> lead =
+                ArgumentCaptor.forClass(com.salonreview.marketing.LeadIntakeService.Lead.class);
+        ArgumentCaptor<String> note = ArgumentCaptor.forClass(String.class);
+        verify(leadIntake).captureFailedBooking(lead.capture(), note.capture());
+        assertThat(lead.getValue().businessId()).isEqualTo(2L);
+        assertThat(lead.getValue().name()).isEqualTo("Ann Test");
+        assertThat(note.getValue()).contains("CVV_FAILURE").contains("$100 deposit");
+    }
+
+    @Test
+    void slotConflictBeforePaymentAlsoCreatesALead() throws Exception {
+        when(gateway.createBooking(anyLong(), any(), any(), any(), any(), anyLong(), org.mockito.ArgumentMatchers.anyInt(), any(), any()))
+                .thenThrow(square("BOOKING_TIME_NOT_AVAILABLE"));
+        mvc.perform(json(SVC, service(VAR, REAL_PHONE, ",\"source_id\":\"cnon:card-nonce-ok\",\"deposit_policy_accepted\":true"))).andExpect(status().is4xxClientError());
+        verify(leadIntake).captureFailedBooking(any(), any());
     }
 
     @Test

@@ -1202,6 +1202,7 @@ const STRINGS = {
   crmDaysShort: { EN: 'd', RU: 'дн' },
   leadEventATTEMPT: { EN: 'Tried to reach, no answer', RU: 'Попытка связаться, без ответа' },
   leadEventMISSED_CALL: { EN: 'Missed call, call back', RU: 'Пропущенный звонок, нужно перезвонить' },
+  leadEventPAYMENT_FAILED: { EN: 'Deposit payment failed', RU: 'Не прошла оплата депозита' },
   leadEventCALLBACK_CLEARED: { EN: 'Callback reminder cleared', RU: 'Напоминание о перезвоне убрано' },
   leadErr: { EN: 'Something went wrong. Try again.', RU: 'Что-то пошло не так. Попробуйте ещё раз.' },
 
