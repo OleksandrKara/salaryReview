@@ -19,7 +19,8 @@ export default async function MarketingFunnelPage({
     serverApi.getMe(),
     serverApi.getBusinessSettings().catch(() => null),
   ]);
-  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
+  if (me?.role === 'ADS_MANAGER') redirect('/owner/marketing/google-ppc');
+  if (me?.role !== 'OWNER') redirect('/reports');
   const timeZone = businessSettings?.timezone;
 
   // Same shared period filter every marketing tab reads (see PeriodFilter/../period) — defaults

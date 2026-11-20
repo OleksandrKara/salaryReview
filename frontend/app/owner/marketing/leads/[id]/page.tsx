@@ -3,6 +3,7 @@ import { serverApi } from '../../../../lib/serverApi';
 import { t } from '../../../../lib/i18n';
 import PageHeader from '../../../../components/PageHeader';
 import BackLink from '../../BackLink';
+import LeadMoney from '../../../../components/LeadMoney';
 import { consultationLabel, statusLabel, statusTone } from '../../adLeads';
 
 const TZ = 'America/Los_Angeles';
@@ -46,13 +47,14 @@ export default async function AdLeadPage({ params }: { params: Promise<{ id: str
       </div>
       <p className="mt-1 text-sm text-zinc-500">
         Lead since {fmtDate(lead.createdAt)}
-        {lead.totalPaid > 0 && <> | Paid {usd.format(lead.totalPaid)}</>}
       </p>
       {lead.status === 'LOST' && (
         <p className="mt-3 rounded-lg bg-zinc-100 p-3 text-sm text-zinc-700">
           Lost{lostLabel ? `: ${lostLabel}` : ''}{lead.lostComment ? `. ${lead.lostComment}` : ''}
         </p>
       )}
+
+      <div className="mt-4"><LeadMoney outlook={lead.outlook} language={lang} /></div>
 
       <Section title="How they found us">
         <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">

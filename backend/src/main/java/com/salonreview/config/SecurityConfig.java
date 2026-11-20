@@ -139,21 +139,13 @@ public class SecurityConfig {
                         // other owner routes). Listed first so it wins over the owner-only catch-all.
                         .requestMatchers(HttpMethod.GET, "/api/owner/retention", "/api/owner/retention/**")
                                 .hasAnyRole("OWNER", "MANAGER")
-                        // ADS_MANAGER: read-only visibility into marketing only — dashboard, contacts,
-                        // analytics, abuse blocks. Listed first (GET-only) so it wins over the owner-only
-                        // catch-all below; every write under /api/owner/marketing/** (variant rename/
-                        // active/description, delete, duplicate, stats-since) still falls through to that
-                        // catch-all and stays OWNER-only — except ad spend just below, the one deliberate
-                        // write this role is allowed (entering the month's ad budget is what Ads Manager
-                        // is there to do, not a hole in its read-only scope).
-                        .requestMatchers(HttpMethod.GET, "/api/owner/marketing", "/api/owner/marketing/**")
-                                .hasAnyRole("OWNER", "ADS_MANAGER")
-                        .requestMatchers(HttpMethod.POST, "/api/owner/marketing/ads-report/spend")
-                                .hasAnyRole("OWNER", "ADS_MANAGER")
-                        // Read-only despite being a POST (the contact-id batch needs a body) — the
-                        // Contacts tab's lazy scroll-triggered follow-up fetch, same ADS_MANAGER
-                        // visibility as the bulk GET /api/owner/marketing/contacts above.
-                        .requestMatchers(HttpMethod.POST, "/api/owner/marketing/contacts/enrich")
+                        // ADS_MANAGER: read-only, and only what the PPC agency works from: the Google PPC page with
+                        // its lead list, the trimmed lead card, and the lost-leads report. Listed first (GET-only)
+                        // so it wins over the owner-only catch-all below; every other marketing endpoint (overview,
+                        // contacts, funnel, ads report, LTV, SEO, AI) and every write stays OWNER-only.
+                        .requestMatchers(HttpMethod.GET, "/api/owner/marketing/google-ppc",
+                                "/api/owner/marketing/google-ppc/leads", "/api/owner/marketing/leads/*",
+                                "/api/owner/marketing/lost-report")
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
                         // SMS automations hub: MANAGER gets read/reply access to the activity/
                         // conversation view (openspec/changes/lead-followup-and-manager-inbox
