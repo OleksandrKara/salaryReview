@@ -11,26 +11,16 @@ import type { PeriodSelection } from './period';
 import VariantTable from './VariantTable';
 import OverviewSummary from './OverviewSummary';
 
-// datetime-local inputs use the browser's local timezone with no offset in the string;
-// new Date(...)/.toISOString() round-trip through UTC correctly for both directions.
-function toDatetimeLocalValue(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 export default function MarketingManager({
   slug,
   initialVariants,
   initialConversions,
-  initialStatsSince,
   readOnly = false,
   timeZone,
 }: {
   slug: string;
   initialVariants: MarketingVariantStat[];
   initialConversions: MarketingConversionsData | null;
-  initialStatsSince: string | null;
   readOnly?: boolean;
   // Phase 6.3: the business's real configured timezone, from BusinessSettingsDto — see page.tsx.
   timeZone?: string;
@@ -40,11 +30,8 @@ export default function MarketingManager({
   const [conversions, setConversions] = useState(initialConversions);
   const [loading, setLoading] = useState(false);
   const requestId = useRef(0);
-  const [statsSince, setStatsSince] = useState(initialStatsSince);
-  const [cutoffInput, setCutoffInput] = useState(initialStatsSince ? toDatetimeLocalValue(initialStatsSince) : '');
   const [error, setError] = useState('');
   const [busyVariantId, setBusyVariantId] = useState<string | null>(null);
-  const [cutoffBusy, setCutoffBusy] = useState(false);
   const [sources, setSources] = useState<Set<TrafficSourceKey>>(() => new Set(ADS_ONLY_SOURCES));
   // Seeded from the URL (?period=&from=&to=) — see PeriodFilter/../period, shared by every
   // marketing tab. Defaults to 'all' (like Funnel, unlike most tabs' 'mtd') — layered on top of,
@@ -63,7 +50,6 @@ export default function MarketingManager({
       ]);
       if (id !== requestId.current) return;
       setVariants(data.variants);
-      setStatsSince(data.statsSince);
       setConversions(conv);
     } finally {
       if (id === requestId.current) setLoading(false);
@@ -123,38 +109,6 @@ export default function MarketingManager({
     return withVariantBusy(v, () => api.deleteMarketingVariant(v.variantId));
   }
 
-  async function saveCutoff() {
-    setError('');
-    setCutoffBusy(true);
-    try {
-      const iso = cutoffInput ? new Date(cutoffInput).toISOString() : null;
-      await api.setMarketingStatsSince(slug, iso);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save cutoff');
-    } finally {
-      setCutoffBusy(false);
-    }
-  }
-
-  async function clearCutoff() {
-    setError('');
-    setCutoffBusy(true);
-    try {
-      await api.setMarketingStatsSince(slug, null);
-      setCutoffInput('');
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to clear cutoff');
-    } finally {
-      setCutoffBusy(false);
-    }
-  }
-
-  const cutoffText = statsSince
-    ? `Showing stats since ${new Date(statsSince).toLocaleString()}. Earlier activity (such as test traffic) is excluded.`
-    : 'No cutoff set, showing all-time stats.';
-
   return (
     <div className="space-y-6">
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
@@ -167,39 +121,6 @@ export default function MarketingManager({
           description="Applies to everything below: totals, results by source and variants. Bookings are matched via contact-capture data and may slightly undercount."
         />
         <PeriodFilter value={selection} onChange={changePeriod} timeZone={timeZone} disabled={loading} />
-        {readOnly ? (
-          <p className="px-1 text-xs text-zinc-500">{cutoffText}</p>
-        ) : (
-          <details className="rounded-lg bg-white ring-1 ring-zinc-200">
-            <summary className="cursor-pointer select-none px-3 py-2 text-xs text-zinc-600">
-              <span className="font-medium text-zinc-700">Data cutoff.</span> {cutoffText}
-            </summary>
-            <div className="flex flex-wrap items-end gap-3 border-t border-zinc-100 p-3">
-              <label className="text-sm">
-                <span className="mb-1 block text-xs font-medium text-zinc-500">Hide stats before</span>
-                <input
-                  type="datetime-local"
-                  value={cutoffInput}
-                  onChange={(e) => setCutoffInput(e.target.value)}
-                  className="rounded border border-zinc-300 px-2 py-1 text-sm"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={cutoffBusy || !cutoffInput}
-                onClick={saveCutoff}
-                className="rounded bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-              >
-                Save cutoff
-              </button>
-              {statsSince && (
-                <button type="button" disabled={cutoffBusy} onClick={clearCutoff} className="rounded px-3 py-1.5 text-sm font-medium text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-50">
-                  Clear
-                </button>
-              )}
-            </div>
-          </details>
-        )}
       </div>
 
       {conversions?.available && <OverviewSummary data={conversions} selected={sources} loading={loading} />}

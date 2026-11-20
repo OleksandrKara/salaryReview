@@ -81,7 +81,6 @@ export default async function MarketingDashboardPage({
               slug={data.landingPageSlug}
               initialVariants={data.variants}
               initialConversions={conversions}
-              initialStatsSince={data.statsSince}
               readOnly={me.role !== 'OWNER'}
               timeZone={timeZone}
             />
