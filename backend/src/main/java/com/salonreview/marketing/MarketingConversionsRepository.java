@@ -15,7 +15,11 @@ import java.util.UUID;
 @Repository
 public class MarketingConversionsRepository {
 
-    public record ContactRow(String customerId, String bookingId, String serviceName, Instant createdAt, String channel) {}
+    public record ContactRow(String customerId, String bookingId, String serviceName, Instant createdAt, String channel,
+                             String name, String phone, String email, String campaign, String pageSlug,
+                             String bookingStatus, Instant bookingStartAt, BigDecimal bookingPrice, String artist) {}
+
+    public record CustomerRow(String customerId, String name, String phone, String email) {}
 
     public record PaymentRow(String customerId, BigDecimal amount, Instant createdAt) {}
 
@@ -53,13 +57,36 @@ public class MarketingConversionsRepository {
         Timestamp t = to == null ? null : Timestamp.from(to);
         return jdbc.query(
                 "SELECT c.square_customer_id, c.square_booking_id, c.booking_service_name, c.created_at, "
+                        + "c.given_name, c.phone_number, c.email_address, c.utm_campaign, c.landing_page_slug, "
+                        + "c.booking_status, c.booking_start_at, c.booking_price, c.booking_artist_name, "
                         + "COALESCE(" + TrafficSourceSql.contactChannelCase("c") + ", 'other') AS channel "
                         + "FROM marketing.contacts c WHERE c.business_id = ? AND c.landing_page_slug = ? "
                         + "AND (?::timestamptz IS NULL OR c.created_at >= ?) AND (?::timestamptz IS NULL OR c.created_at < ?)",
                 (rs, i) -> new ContactRow(rs.getString("square_customer_id"), rs.getString("square_booking_id"),
                         rs.getString("booking_service_name"), rs.getTimestamp("created_at").toInstant(),
-                        rs.getString("channel")),
+                        rs.getString("channel"), rs.getString("given_name"), rs.getString("phone_number"),
+                        rs.getString("email_address"), rs.getString("utm_campaign"), rs.getString("landing_page_slug"),
+                        rs.getString("booking_status"),
+                        rs.getTimestamp("booking_start_at") == null ? null : rs.getTimestamp("booking_start_at").toInstant(),
+                        rs.getBigDecimal("booking_price"), rs.getString("booking_artist_name")),
                 businessId, slug, f, f, t, t);
+    }
+
+    public List<CustomerRow> findCustomers(Long businessId, Collection<String> customerIds) {
+        if (customerIds.isEmpty()) return List.of();
+        String marks = String.join(",", java.util.Collections.nCopies(customerIds.size(), "?"));
+        Object[] args = new Object[customerIds.size() + 1];
+        args[0] = businessId;
+        int i = 1;
+        for (String id : customerIds) args[i++] = id;
+        return jdbc.query(
+                "SELECT square_customer_id, given_name, family_name, phone_number, email_address FROM square_customer "
+                        + "WHERE business_id = ? AND square_customer_id IN (" + marks + ")",
+                (rs, n) -> new CustomerRow(rs.getString("square_customer_id"),
+                        ((rs.getString("given_name") == null ? "" : rs.getString("given_name")) + " "
+                                + (rs.getString("family_name") == null ? "" : rs.getString("family_name"))).trim(),
+                        rs.getString("phone_number"), rs.getString("email_address")),
+                args);
     }
 
     public List<PaymentRow> findPayments(Long businessId, Collection<String> customerIds) {
