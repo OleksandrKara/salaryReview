@@ -652,7 +652,9 @@ public class TelegramNotificationService {
             return false;
         }
 
-        String text = businessLabel(businessId) + formatPaymentFailedMessage(n);
+        boolean hasPhone = n.phoneNumber() != null && !n.phoneNumber().replaceAll("\\D", "").isEmpty();
+        String text = businessLabel(businessId) + formatPaymentFailedMessage(n)
+                + (hasPhone ? "\n\nOpen lead: " + leadLink(n.phoneNumber(), businessId) : "");
         try {
             Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
             HttpRequest req = HttpRequest.newBuilder()

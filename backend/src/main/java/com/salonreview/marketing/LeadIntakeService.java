@@ -436,6 +436,33 @@ public class LeadIntakeService {
         }
     }
 
+    /**
+     * A website booking whose deposit payment (or slot reservation) failed: the person still goes into the CRM as a NEW lead
+     * and the timeline records what failed and why. Returns the lead id, or null when it could not be recorded. Never throws.
+     */
+    public Long captureFailedBooking(Lead lead, String note) {
+        try {
+            capture(lead);
+            String digits = lead.phone() == null ? "" : lead.phone().replaceAll("\\D", "");
+            String key = !digits.isEmpty() ? digits : lead.email() == null || lead.email().isBlank() ? null : lead.email().trim().toLowerCase(Locale.ROOT);
+            if (key == null) return null;
+            var ids = jdbc.queryForList("""
+                    SELECT id FROM lead_intake WHERE business_id = ? AND outcome <> 'DUPLICATE'
+                      AND COALESCE(NULLIF(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), ''), lower(NULLIF(email, ''))) = ?
+                    ORDER BY created_at, id LIMIT 1
+                    """, Long.class, lead.businessId(), key);
+            if (ids.isEmpty()) return null;
+            long id = ids.get(0);
+            String text = note == null ? null : note.length() > 500 ? note.substring(0, 500) : note;
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'PAYMENT_FAILED', ?, 'Website')",
+                    id, lead.businessId(), text);
+            return id;
+        } catch (RuntimeException e) {
+            log.warn("Failed-booking lead capture failed for business {}: {}", lead.businessId(), e.toString());
+            return null;
+        }
+    }
+
     /** A newly created consultation booking brings the person's lead back to NEW; old or non-consultation bookings do nothing. */
     public void reopenOnConsultationBooking(long businessId, String squareBookingId) {
         if (squareBookingId == null || !enabled(businessId)) return;

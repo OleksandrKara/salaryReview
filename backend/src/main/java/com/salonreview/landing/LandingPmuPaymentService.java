@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonreview.marketing.LeadIntakeService;
 import com.salonreview.sms.ConsultationOfferService;
 import com.salonreview.telegram.PaymentFailedNotification;
 import com.salonreview.telegram.TelegramNotificationService;
@@ -59,6 +60,12 @@ public class LandingPmuPaymentService {
     private final LandingFourHandService customers;
     private final TelegramNotificationService telegram;
     private final ConsultationOfferService offers;
+    private LeadIntakeService leadIntake;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setLeadIntake(LeadIntakeService leadIntake) {
+        this.leadIntake = leadIntake;
+    }
 
     public LandingPmuPaymentService(LandingSquareGateway square, PmuLandingService menu,
                                     LandingFourHandService customers, TelegramNotificationService telegram,
@@ -103,18 +110,26 @@ public class LandingPmuPaymentService {
         }
 
         Customer c = r.customer();
-        String customerId = customers.prepareCustomer(businessId, c.givenName(), c.familyName(), c.email(), c.phone(),
-                c.marketingOptIn(), r.tracking());
-        JsonNode booking = reserve(businessId, customerId, r.startAt(), r.teamMemberId(), option.variationId(),
-                option.variationVersion(), option.durationMinutes(), r.note(),
-                deposit > 0 ? depositPolicyNote(deposit) : null);
+        String customerId;
+        JsonNode booking;
+        try {
+            customerId = customers.prepareCustomer(businessId, c.givenName(), c.familyName(), c.email(), c.phone(),
+                    c.marketingOptIn(), r.tracking());
+            booking = reserve(businessId, customerId, r.startAt(), r.teamMemberId(), option.variationId(),
+                    option.variationVersion(), option.durationMinutes(), r.note(),
+                    deposit > 0 ? depositPolicyNote(deposit) : null);
+        } catch (RuntimeException e) {
+            recordFailedAttempt(businessId, c, option.serviceName(), deposit, r.tracking(),
+                    "Could not reserve the time before payment (" + e.getMessage() + "); the card was not charged.");
+            throw e;
+        }
         String bookingId = booking.path("id").asText();
         String paymentId = null;
         if (deposit > 0) {
             paymentId = charge(businessId, c, option.serviceName(), bookingId, customerId, r.sourceId(),
                     Math.round(deposit * 100),
                     "Deposit for " + option.serviceName() + " (booking " + bookingId
-                            + "); cancellation policy accepted online");
+                            + "); cancellation policy accepted online", r.tracking());
         }
         return new Result(bookingId, booking.path("status").asText(), booking.path("start_at").asText(r.startAt()),
                 option.durationMinutes(), option.serviceName(), option.price(), deposit, remaining, artist, paymentId,
@@ -169,7 +184,7 @@ public class LandingPmuPaymentService {
                 variation.path("version").asLong(0), durationMinutes, r.note(), null);
         String bookingId = booking.path("id").asText();
         String paymentId = charge(businessId, c, t.name(), bookingId, customerId, r.sourceId(), LEGACY_DEPOSIT_CENTS,
-                "Deposit for " + t.name() + " (booking " + bookingId + ")");
+                "Deposit for " + t.name() + " (booking " + bookingId + ")", r.tracking());
         double deposit = LEGACY_DEPOSIT_CENTS / 100.0;
         return new Result(bookingId, booking.path("status").asText(), booking.path("start_at").asText(r.startAt()),
                 durationMinutes, t.name(), fullPrice, deposit, fullPrice - deposit,
@@ -196,9 +211,30 @@ public class LandingPmuPaymentService {
         }
     }
 
+    /** Puts the person into the CRM as a NEW lead with the failure on the timeline. Never throws. */
+    private void recordFailedAttempt(long businessId, Customer c, String serviceName, double amount,
+                                     LandingTracking tracking, String reason) {
+        if (leadIntake == null) return;
+        try {
+            String source = tracking == null ? null : LandingTracking.classify(tracking);
+            String name = ((c.givenName() == null ? "" : c.givenName()) + " "
+                    + (c.familyName() == null ? "" : c.familyName())).trim();
+            String what = "Tried to book " + serviceName + (amount > 0 ? " with a " + formatMoney(amount) + " deposit" : "");
+            leadIntake.captureFailedBooking(new LeadIntakeService.Lead(businessId, "Booking", source,
+                    LandingPhones.forStorage(c.phone()), c.email(), name, "Website booking, deposit not paid", null, null),
+                    what + ". " + reason);
+        } catch (RuntimeException e) {
+            log.warn("Failed-booking lead capture failed (client error unaffected): {}", e.toString());
+        }
+    }
+
+    private static String formatMoney(double v) {
+        return String.format(java.util.Locale.US, v == Math.rint(v) ? "$%,.0f" : "$%,.2f", v);
+    }
+
     /** Charges the card; on any failure cancels the reservation, alerts staff and throws. */
     private String charge(long businessId, Customer c, String serviceName, String bookingId, String customerId,
-                          String sourceId, long amountCents, String note) {
+                          String sourceId, long amountCents, String note, LandingTracking tracking) {
         // One key per charge: a retry after a lost response returns the original payment instead of a second one.
         String key = UUID.randomUUID().toString();
         try {
@@ -222,6 +258,9 @@ public class LandingPmuPaymentService {
             } catch (RuntimeException ce) {
                 log.error("Failed to cancel booking {} after a deposit charge failure: {}", bookingId, ce.toString());
             }
+            recordFailedAttempt(businessId, c, serviceName, amountCents / 100.0, tracking,
+                    "Card payment failed: " + message + (codes.isEmpty() ? "" : " (" + String.join(", ", codes) + ")")
+                            + ". The booking was cancelled.");
             try {
                 String name = c.givenName() + " " + c.familyName();
                 telegram.sendPaymentFailedAlert(businessId, new PaymentFailedNotification(businessId, null, name,
