@@ -8,6 +8,7 @@ import { DAY, LAPSED_AFTER_DAYS, hasNextStep, isActive, isLapsed, isOverdue, lac
 import LeadFilterBar from './LeadFilterBar';
 import { EMPTY_FILTERS, filtersToApiParams, filtersToUrlParams, isDefault, parseFilters, type LeadFilters } from './leadFilters';
 import LeadIcons from './LeadIcons';
+import { leadMatches, parseSearch } from './leadSearch';
 import ReminderSheet, { type ReachedOutBody } from './ReminderSheet';
 import NeedsReplyPanel from './NeedsReplyPanel';
 import OutdatedPanel, { LockIcon } from './OutdatedPanel';
@@ -126,6 +127,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const [queueFailed, setQueueFailed] = useState(false);
   const [outdatedTotal, setOutdatedTotal] = useState<number | null>(null);
   const [q, setQ] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
   const [academyOnly, setAcademyOnly] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [reaching, setReaching] = useState<Lead | null>(null);
@@ -243,17 +245,29 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   }, [restricted, loadQueue]);
 
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      if (!searchRef.current || searchRef.current.offsetParent === null) return;
+      e.preventDefault();
+      searchRef.current.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
     fetch('/api/leads/outdated?page=0', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOutdatedTotal(d.total); }).catch(() => undefined);
   }, []);
 
   const mineOnly = ownerView != null && (mineChoice ?? !ownerView.canSetDefault);
   const mineSet = useMemo(() => new Set(ownerView?.mine ?? []), [ownerView]);
+  const parsedQuery = useMemo(() => parseSearch(q), [q]);
   const base = useMemo(() => {
-    const needle = q.trim().toLowerCase();
     return leads.filter((l) =>
-      (!academyOnly || l.academy) && (!mineOnly || mineSet.has(l.id)) &&
-      (!needle || [l.name, l.phoneNumber, l.email, l.source, l.lastNote].some((v) => v?.toLowerCase().includes(needle))));
-  }, [leads, q, academyOnly, mineOnly, mineSet]);
+      (!academyOnly || l.academy) && (!mineOnly || mineSet.has(l.id)) && leadMatches(l, parsedQuery));
+  }, [leads, parsedQuery, academyOnly, mineOnly, mineSet]);
   const othersWaiting = useMemo(
     () => (ownerView && mineOnly ? leads.filter((l) => !mineSet.has(l.id) && isActive(l) && needsAction(l, now)).length : 0),
     [leads, ownerView, mineOnly, mineSet, now]);
@@ -339,13 +353,50 @@ export default function LeadsManager({ initialLeads, language = null, restricted
 
   return (
     <div className="flex min-w-0 max-w-full flex-col gap-4 overflow-x-clip">
-      <div className={`flex flex-col gap-2 sm:flex-row ${archive || reply ? 'hidden' : ''}`}>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t(language, 'leadsSearch')}
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-        />
+      <div className={`flex flex-col gap-1.5 ${archive || reply ? 'hidden' : ''}`}>
+        <div className="relative">
+          <svg viewBox="0 0 20 20" aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" />
+          </svg>
+          <input
+            ref={searchRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.preventDefault(); setQ(''); } }}
+            type="text"
+            inputMode="search"
+            enterKeyHint="search"
+            autoComplete="off"
+            spellCheck={false}
+            data-testid="lead-search"
+            placeholder={t(language, 'leadsSearch')}
+            aria-label={t(language, 'leadsSearch')}
+            className="w-full rounded-lg border border-zinc-300 bg-white py-2.5 pl-9 pr-10 text-sm focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-200 sm:py-2"
+          />
+          {q ? (
+            <button
+              type="button"
+              onClick={() => { setQ(''); searchRef.current?.focus(); }}
+              aria-label={t(language, 'leadsSearchClear')}
+              title={t(language, 'leadsSearchClear')}
+              className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="m5 5 10 10M15 5 5 15" /></svg>
+            </button>
+          ) : (
+            <kbd aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-zinc-200 px-1.5 text-xs text-zinc-400 sm:block">/</kbd>
+          )}
+        </div>
+        <p className="min-h-4 text-xs text-zinc-500" role="status" aria-live="polite" data-testid="lead-search-status">
+          {!parsedQuery.raw
+            ? t(language, 'leadsSearchHint')
+            : base.length === 0
+              ? tf(language, 'leadsSearchNone', { q: parsedQuery.raw })
+              : <>
+                  {tf(language, 'leadsSearchFound', { n: base.length, total: leads.length })}
+                  {parsedQuery.phoneLike && parsedQuery.digits && <> {tf(language, 'leadsSearchDigits', { digits: parsedQuery.digits })}</>}
+                </>}
+        </p>
       </div>
 
       <div className={archive || reply ? 'hidden' : ''}>
