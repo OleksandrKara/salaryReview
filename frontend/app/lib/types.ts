@@ -2711,7 +2711,12 @@ export interface GooglePpcCustomer {
 export interface AdLeadRow {
   id: number; name: string | null; status: LeadStatus; createdAt: string; campaign: string | null;
   searchQuery: string | null; consultation: string | null; procedure: string | null; lostReason: string | null;
-  customerId: string | null;
+  customerId: string | null; collected: number | null; remaining: number | null; nextProcedureAt: string | null;
+}
+export interface AdLeadCampaignMoney { campaign: string | null; leads: number; collected: number; withUpcoming: number; remaining: number }
+export interface AdLeadMoney {
+  leftToCollect: number; leftLeads: number; leftEstimate: number; leftPrepaid: number; partial: boolean;
+  collected: number; campaigns: AdLeadCampaignMoney[];
 }
 export interface AdLeadAppointment { status: string | null; startAt: string | null; services: string | null; technician: string | null; paid: number | null; consultation: boolean }
 export interface AdLeadCard {

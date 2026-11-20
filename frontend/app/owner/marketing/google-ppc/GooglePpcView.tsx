@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
-import type { AdLeadRow, GooglePpcCustomer, GooglePpcData } from '../../../lib/types';
+import type { AdLeadCampaignMoney, AdLeadMoney, AdLeadRow, GooglePpcCustomer, GooglePpcData } from '../../../lib/types';
 import { consultationLabel, statusLabel, statusTone } from '../adLeads';
 import PeriodFilter from '../PeriodFilter';
 import { parsePeriodParams, periodToBounds } from '../period';
@@ -17,10 +17,11 @@ const dash = '-';
 
 const perUnit = (spend: number, n: number) => (n > 0 ? usd2.format(spend / n) : dash);
 
-export default function GooglePpcView({ initialData, initialLeads, timeZone }: { initialData: GooglePpcData | null; initialLeads: AdLeadRow[]; timeZone?: string }) {
+export default function GooglePpcView({ initialData, initialLeads, initialMoney, timeZone }: { initialData: GooglePpcData | null; initialLeads: AdLeadRow[]; initialMoney: AdLeadMoney | null; timeZone?: string }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState(initialData);
   const [leads, setLeads] = useState(initialLeads);
+  const [money, setMoney] = useState(initialMoney);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(initialData === null);
   const requestId = useRef(0);
@@ -32,13 +33,15 @@ export default function GooglePpcView({ initialData, initialLeads, timeZone }: {
     const id = ++requestId.current;
     setLoading(true);
     try {
-      const [d, l] = await Promise.all([
+      const [d, l, m] = await Promise.all([
         api.getGooglePpc(bounds.from, bounds.to),
         api.getGooglePpcLeads(bounds.from, bounds.to).catch(() => [] as AdLeadRow[]),
+        api.getGooglePpcMoney(bounds.from, bounds.to).catch(() => null),
       ]);
       if (id !== requestId.current) return;
       setData(d);
       setLeads(l);
+      setMoney(m);
       setFailed(false);
     } catch {
       if (id === requestId.current) setFailed(true);
@@ -50,6 +53,7 @@ export default function GooglePpcView({ initialData, initialLeads, timeZone }: {
   return (
     <div className="mt-4 space-y-6">
       <PeriodFilter value={selection} onChange={changePeriod} timeZone={timeZone} disabled={loading} />
+      {money && <MoneyCard money={money} loading={loading} />}
       {failed || !data ? (
         <p className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
           Google Ads data could not be loaded. Try again in a moment.
@@ -61,13 +65,46 @@ export default function GooglePpcView({ initialData, initialLeads, timeZone }: {
       ) : (
         <div className={`space-y-6 transition-opacity ${loading ? 'opacity-50' : ''}`} aria-busy={loading}>
           <Kpis data={data} />
-          <Campaigns data={data} />
+          <Campaigns data={data} money={money} />
           <Pages data={data} />
           <Leads leads={leads} timeZone={timeZone} />
           <Customers customers={data.customers} leads={leads} timeZone={timeZone} />
         </div>
       )}
     </div>
+  );
+}
+
+function MoneyCard({ money, loading }: { money: AdLeadMoney; loading: boolean }) {
+  const pct = money.leftEstimate > 0 ? Math.min(100, Math.round((money.leftPrepaid / money.leftEstimate) * 100)) : 0;
+  return (
+    <section aria-label="Money from Google Ads leads" className={`rounded-xl bg-white p-4 ring-1 ring-zinc-200 transition-opacity ${loading ? 'opacity-50' : ''}`}>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-zinc-500">Left to collect</div>
+          <div className={`mt-1 text-3xl font-semibold tabular-nums ${money.leftToCollect > 0 ? 'text-amber-700' : 'text-zinc-900'}`}>{usd0.format(money.leftToCollect)}</div>
+          <div className="mt-1 text-xs text-zinc-500">
+            {money.leftLeads > 0
+              ? `${num(money.leftLeads)} ${money.leftLeads === 1 ? 'lead has' : 'leads have'} a procedure booked ahead and a balance to pay`
+              : 'No Google Ads lead has a balance to pay on a booked procedure'}
+          </div>
+          {money.leftEstimate > 0 && (
+            <div className="mt-3">
+              <div className="h-2 overflow-hidden rounded-full bg-zinc-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Prepaid share of booked procedures">
+                <div className="h-full rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
+              </div>
+              <p className="mt-1 text-xs tabular-nums text-zinc-500">Prepaid {usd0.format(money.leftPrepaid)} of {usd0.format(money.leftEstimate)} booked</p>
+            </div>
+          )}
+          {money.partial && <p className="mt-2 text-xs text-zinc-500">Some booked services have no price yet, so this may be higher.</p>}
+        </div>
+        <div className="min-w-0 sm:border-l sm:border-zinc-100 sm:pl-4">
+          <div className="text-xs font-medium text-zinc-500">Collected from leads in this period</div>
+          <div className="mt-1 text-3xl font-semibold tabular-nums text-zinc-900">{usd0.format(money.collected)}</div>
+          <div className="mt-1 text-xs text-zinc-500">All payments of Google Ads leads created in the selected period. Left to collect covers every Google Ads lead with a booking ahead, whenever it came in.</div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -105,22 +142,42 @@ function Kpis({ data }: { data: GooglePpcData }) {
   );
 }
 
-function Campaigns({ data }: { data: GooglePpcData }) {
+function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null }) {
+  const byName = new Map<string, AdLeadCampaignMoney>((money?.campaigns ?? []).filter((m) => m.campaign).map((m) => [m.campaign as string, m]));
+  const known = new Set(data.campaigns.map((c) => c.name));
+  // Leads whose campaign has no spend row this period (or no campaign at all) still count toward the totals.
+  const extra = (money?.campaigns ?? []).filter((m) => !m.campaign || !known.has(m.campaign));
   const rows = data.campaigns;
   return (
     <section aria-label="Campaigns">
       <h2 className="mb-2 text-sm font-semibold text-zinc-900">Campaigns</h2>
       <ul className="space-y-2 sm:hidden">
-        {rows.map((c) => (
-          <li key={c.campaignId} className="rounded-xl bg-white p-3 ring-1 ring-zinc-200">
-            <div className="flex items-start justify-between gap-2">
-              <span className="min-w-0 break-words text-sm font-medium text-zinc-900">{c.name}</span>
-              <span className="text-sm font-semibold tabular-nums">{usd0.format(c.spend)}</span>
-            </div>
+        {rows.map((c) => {
+          const m = byName.get(c.name);
+          return (
+            <li key={c.campaignId} className="rounded-xl bg-white p-3 ring-1 ring-zinc-200">
+              <div className="flex items-start justify-between gap-2">
+                <span className="min-w-0 break-words text-sm font-medium text-zinc-900">{c.name}</span>
+                <span className="text-sm font-semibold tabular-nums">{usd0.format(c.spend)}</span>
+              </div>
+              <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                <Cell label="Clicks" value={num(c.clicks)} />
+                <Cell label="CPC" value={perUnit(c.spend, c.clicks)} />
+                <Cell label="Conversions" value={num(Math.round(c.platformConversions))} />
+                <Cell label="Collected" value={m ? usd0.format(m.collected) : dash} />
+                <Cell label="Left to collect" value={m ? usd0.format(m.remaining) : dash} />
+                <Cell label="Leads" value={m ? num(m.leads) : dash} />
+              </dl>
+            </li>
+          );
+        })}
+        {extra.map((m) => (
+          <li key={m.campaign ?? 'none'} className="rounded-xl bg-white p-3 ring-1 ring-zinc-200">
+            <div className="min-w-0 break-words text-sm font-medium text-zinc-900">{m.campaign ?? 'No campaign recorded'}</div>
             <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
-              <Cell label="Clicks" value={num(c.clicks)} />
-              <Cell label="CPC" value={perUnit(c.spend, c.clicks)} />
-              <Cell label="Conversions" value={num(Math.round(c.platformConversions))} />
+              <Cell label="Collected" value={usd0.format(m.collected)} />
+              <Cell label="Left to collect" value={usd0.format(m.remaining)} />
+              <Cell label="Leads" value={num(m.leads)} />
             </dl>
           </li>
         ))}
@@ -136,18 +193,36 @@ function Campaigns({ data }: { data: GooglePpcData }) {
               <th className="px-3 py-2 text-right font-medium">CPC</th>
               <th className="px-3 py-2 text-right font-medium" title="Conversions reported by Google Ads itself">Google conversions</th>
               <th className="px-3 py-2 text-right font-medium">Cost per conversion</th>
+              <th className="px-3 py-2 text-right font-medium">Leads</th>
+              <th className="px-3 py-2 text-right font-medium" title="All payments of this campaign's leads created in the period">Collected</th>
+              <th className="px-3 py-2 text-right font-medium" title="Balance still to pay on procedures booked ahead">Left to collect</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((c) => (
-              <tr key={c.campaignId} className="border-t border-zinc-100">
-                <td className="px-3 py-2 font-medium text-zinc-900">{c.name}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd0.format(c.spend)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(c.impressions)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(c.clicks)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{perUnit(c.spend, c.clicks)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(Math.round(c.platformConversions))}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{perUnit(c.spend, c.platformConversions)}</td>
+            {rows.map((c) => {
+              const m = byName.get(c.name);
+              return (
+                <tr key={c.campaignId} className="border-t border-zinc-100">
+                  <td className="px-3 py-2 font-medium text-zinc-900">{c.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{usd0.format(c.spend)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(c.impressions)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(c.clicks)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{perUnit(c.spend, c.clicks)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(Math.round(c.platformConversions))}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{perUnit(c.spend, c.platformConversions)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{m ? num(m.leads) : dash}</td>
+                  <td className="px-3 py-2 text-right font-medium tabular-nums">{m ? usd0.format(m.collected) : dash}</td>
+                  <td className={`px-3 py-2 text-right font-medium tabular-nums ${m && m.remaining > 0 ? 'text-amber-700' : ''}`}>{m ? usd0.format(m.remaining) : dash}</td>
+                </tr>
+              );
+            })}
+            {extra.map((m) => (
+              <tr key={m.campaign ?? 'none'} className="border-t border-zinc-100 text-zinc-600">
+                <td className="px-3 py-2">{m.campaign ?? 'No campaign recorded'}</td>
+                {[0, 1, 2, 3, 4, 5].map((i) => <td key={i} className="px-3 py-2 text-right tabular-nums">{dash}</td>)}
+                <td className="px-3 py-2 text-right tabular-nums">{num(m.leads)}</td>
+                <td className="px-3 py-2 text-right font-medium tabular-nums">{usd0.format(m.collected)}</td>
+                <td className={`px-3 py-2 text-right font-medium tabular-nums ${m.remaining > 0 ? 'text-amber-700' : ''}`}>{usd0.format(m.remaining)}</td>
               </tr>
             ))}
           </tbody>
@@ -249,6 +324,17 @@ function Leads({ leads, timeZone }: { leads: AdLeadRow[]; timeZone?: string }) {
                   {l.campaign && <span className="text-zinc-500"> | {l.campaign}</span>}
                 </div>
                 {stage && <div className="mt-0.5 break-words text-xs text-zinc-600">{stage}</div>}
+                {(l.collected ?? 0) > 0 || l.remaining != null ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums">
+                    <span className="text-zinc-500">Collected <span className="font-semibold text-zinc-900">{usd0.format(l.collected ?? 0)}</span></span>
+                    {l.remaining != null && (
+                      <span className={l.remaining > 0 ? 'text-amber-700' : 'text-emerald-700'}>
+                        {l.remaining > 0 ? <>Left to collect <span className="font-semibold">{usd0.format(l.remaining)}</span></> : <span className="font-semibold">Paid in full</span>}
+                        {l.nextProcedureAt && <span className="text-zinc-500"> | {fmtDate(l.nextProcedureAt, timeZone)}</span>}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
               </Link>
             </li>
           );

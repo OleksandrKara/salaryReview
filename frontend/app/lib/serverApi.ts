@@ -34,6 +34,7 @@ import type {
   MarketingLtvData,
   MarketingConversionsData,
   AdLeadCard,
+  AdLeadMoney,
   AdLeadRow,
   GooglePpcData,
   MarketingAnalyticsData,
@@ -386,6 +387,13 @@ export const serverApi = {
     if (from) query.set('from', from);
     if (to) query.set('to', to);
     return serverFetch<GooglePpcData>(`/api/owner/marketing/google-ppc?${query.toString()}`);
+  },
+
+  getGooglePpcMoney: (from?: string, to?: string) => {
+    const query = new URLSearchParams();
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
+    return serverFetch<AdLeadMoney>(`/api/owner/marketing/google-ppc/money?${query.toString()}`);
   },
 
   getGooglePpcLeads: (from?: string, to?: string) => {

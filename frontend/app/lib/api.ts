@@ -89,6 +89,7 @@ import type {
   MarketingSyncStatusData,
   MarketingDashboardData,
   MarketingConversionsData,
+  AdLeadMoney,
   AdLeadRow,
   GooglePpcData,
   MarketingLandingPage,
@@ -742,6 +743,13 @@ export const api = {
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     return proxyGet<GooglePpcData>(`/api/owner/marketing/google-ppc?${params.toString()}`);
+  },
+
+  getGooglePpcMoney: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return proxyGet<AdLeadMoney>(`/api/owner/marketing/google-ppc/money?${params.toString()}`);
   },
 
   getGooglePpcLeads: (from?: string, to?: string) => {

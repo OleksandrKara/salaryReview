@@ -1027,6 +1027,12 @@ public class LeadFollowUpService {
         return new Outlook(collected, upcoming, estimate, prepaid, remaining, partial);
     }
 
+    /** Money picture of one lead without loading its whole card (used for per-campaign totals). */
+    Outlook outlookOf(LeadView lead) {
+        if (customerIds(lead).isEmpty()) return null;
+        return outlook(appointments(lead), spend(lead), payments(lead), Instant.now());
+    }
+
     private Spend spend(LeadView lead) {
         java.math.BigDecimal zero = java.math.BigDecimal.ZERO;
         List<String> customers = customerIds(lead);
