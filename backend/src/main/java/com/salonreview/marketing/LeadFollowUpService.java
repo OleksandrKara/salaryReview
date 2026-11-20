@@ -410,12 +410,19 @@ public class LeadFollowUpService {
 
     public record OutdatedPage(int total, int clients, int never, int page, int pages, List<OutdatedRow> items) {}
 
+    /** Digits of a phone-like query (brackets, dashes, dots, spaces and a plus are ignored), else empty. */
+    static String phoneLikeDigits(String needle) {
+        if (needle == null || !needle.matches("[\\d\\s()+.\\-\\u2010-\\u2015/]+")) return "";
+        return needle.replaceAll("\\D", "");
+    }
+
     /** The pre-CRM archive, newest first. seg: "clients" (has visited), "never" (never visited) or all. */
     public OutdatedPage outdated(String q, String seg, int page) {
         long b = business.id();
         String cons = ConsultationCatalog.isConsultationSql("b", consultations.ids(b));
         String needle = q == null ? "" : q.trim().toLowerCase();
-        String digits = needle.matches("[\\d\\s()+.-]+") ? needle.replaceAll("\\D", "") : "";
+        String digits = phoneLikeDigits(needle);
+        String digitsNoCountry = digits.length() >= 11 && digits.startsWith("1") ? digits.substring(1) : digits;
         String like = "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
         String base = "SELECT y.*, COALESCE(st.visits, 0) AS visits, st.last_visit, st.next_visit, COALESCE(st.consulted, FALSE) AS consulted FROM ("
                 + LEADS_SELECT + " WHERE f.status = 'OUTDATED') y LEFT JOIN LATERAL ("
@@ -425,8 +432,9 @@ public class LeadFollowUpService {
                 + "bool_or(b.status = 'ACCEPTED' AND " + cons + ") AS consulted "
                 + "FROM square_booking b WHERE b.business_id = ? AND y.square_customer_id IS NOT NULL AND b.square_customer_id = y.square_customer_id) st ON TRUE "
                 + "WHERE (?::text = '' OR lower(COALESCE(y.name, '')) LIKE ? ESCAPE '\\' OR lower(COALESCE(y.email, '')) LIKE ? ESCAPE '\\' "
-                + "OR (?::text <> '' AND regexp_replace(COALESCE(y.phone_number, ''), '\\D', '', 'g') LIKE '%' || ?::text || '%'))";
-        Object[] args = {b, b, needle, like, like, digits, digits};
+                + "OR (?::text <> '' AND (regexp_replace(COALESCE(y.phone_number, ''), '\\D', '', 'g') LIKE '%' || ?::text || '%' "
+                + "OR regexp_replace(regexp_replace(COALESCE(y.phone_number, ''), '\\D', '', 'g'), '^1(?=\\d{10}$)', '') LIKE '%' || ?::text || '%')))";
+        Object[] args = {b, b, needle, like, like, digits, digits, digitsNoCountry};
         var counts = jdbc.queryForMap("SELECT count(*)::int AS total, count(*) FILTER (WHERE visits > 0)::int AS clients FROM (" + base + ") z", args);
         int total = ((Number) counts.get("total")).intValue();
         int clients = ((Number) counts.get("clients")).intValue();
