@@ -2643,6 +2643,41 @@ export interface MarketingConversionsData {
   totalPoints: number;
   payingCustomers: number;
   revenue: number;
+  /** Every traffic channel, regardless of the selected sources; "other" fits no bucket. */
+  bySource: MarketingSourceRow[];
+  /** Spend from the daily Google Ads sync for the same period; null when nothing was synced. */
+  googleAds: MarketingGoogleAds | null;
+}
+
+export interface MarketingSourceRow {
+  key: string;
+  visitors: number;
+  smsTaps: number;
+  callTaps: number;
+  consultations: number;
+  deposits: number;
+  fullPayments: number;
+  payingCustomers: number;
+  revenue: number;
+  points: number;
+}
+
+export interface MarketingGoogleAdsCampaign {
+  campaignId: number;
+  name: string;
+  status: string | null;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  platformConversions: number;
+}
+
+export interface MarketingGoogleAds {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  platformConversions: number;
+  campaigns: MarketingGoogleAdsCampaign[];
 }
 
 // --- Leads CRM (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.

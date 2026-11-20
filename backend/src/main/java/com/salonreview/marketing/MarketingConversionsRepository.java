@@ -7,13 +7,15 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
 
 @Repository
 public class MarketingConversionsRepository {
 
-    public record ContactRow(String customerId, String bookingId, String serviceName, Instant createdAt) {}
+    public record ContactRow(String customerId, String bookingId, String serviceName, Instant createdAt, String channel) {}
 
     public record PaymentRow(String customerId, BigDecimal amount, Instant createdAt) {}
 
@@ -23,24 +25,26 @@ public class MarketingConversionsRepository {
         this.jdbc = jdbc;
     }
 
-    public long countPageViews(UUID landingPageId, Instant from, Instant to) {
-        return eventCount("e.event_type = 'page_view'", landingPageId, from, to, "COUNT(DISTINCT e.session_id)");
-    }
-
-    /** Distinct visitors who tapped a text link (target "sms") or a call link (target "phone"). */
-    public long countClickVisitors(UUID landingPageId, String target, Instant from, Instant to) {
-        return eventCount("e.event_type = 'click' AND e.metadata->>'target' = '" + target + "'",
-                landingPageId, from, to, "COUNT(DISTINCT e.session_id)");
-    }
-
-    private long eventCount(String where, UUID landingPageId, Instant from, Instant to, String agg) {
-        String sql = "SELECT " + agg + " FROM marketing.events e WHERE e.landing_page_id = ? AND " + where
+    /** Distinct visitors per traffic channel (the channel of the visitor's first visit; "other"
+     * when it fits no bucket) for page views, text taps and call taps in the window. */
+    public Map<String, Map<String, Long>> countVisitorsByChannel(UUID landingPageId, Instant from, Instant to) {
+        String sql = "SELECT COALESCE(x.ch, 'other') AS ch, x.kind AS kind, COUNT(DISTINCT x.session_id) AS n FROM ("
+                + " SELECT e.session_id,"
+                + "  CASE WHEN e.event_type = 'page_view' THEN 'views' WHEN e.metadata->>'target' = 'sms' THEN 'sms' ELSE 'call' END AS kind,"
+                + "  (SELECT " + TrafficSourceSql.visitChannelCase("vi") + " FROM marketing.visits vi"
+                + "   WHERE vi.visitor_id = e.session_id ORDER BY vi.occurred_at LIMIT 1) AS ch"
+                + " FROM marketing.events e WHERE e.landing_page_id = ?"
+                + " AND (e.event_type = 'page_view' OR (e.event_type = 'click' AND e.metadata->>'target' IN ('sms','phone')))"
                 + " AND (?::timestamptz IS NULL OR e.created_at >= ?) AND (?::timestamptz IS NULL OR e.created_at < ?)"
-                + " AND " + TrafficSourceSql.notAutomated("e.session_id");
+                + " AND " + TrafficSourceSql.notAutomated("e.session_id")
+                + ") x GROUP BY 1, 2";
         Timestamp f = from == null ? null : Timestamp.from(from);
         Timestamp t = to == null ? null : Timestamp.from(to);
-        Long n = jdbc.queryForObject(sql, Long.class, landingPageId, f, f, t, t);
-        return n == null ? 0 : n;
+        Map<String, Map<String, Long>> out = new HashMap<>();
+        jdbc.query(sql, rs -> {
+            out.computeIfAbsent(rs.getString("ch"), k -> new HashMap<>()).put(rs.getString("kind"), rs.getLong("n"));
+        }, landingPageId, f, f, t, t);
+        return out;
     }
 
     /** People who left contact details on this page in the window (one row per phone number). */
@@ -48,11 +52,13 @@ public class MarketingConversionsRepository {
         Timestamp f = from == null ? null : Timestamp.from(from);
         Timestamp t = to == null ? null : Timestamp.from(to);
         return jdbc.query(
-                "SELECT c.square_customer_id, c.square_booking_id, c.booking_service_name, c.created_at "
+                "SELECT c.square_customer_id, c.square_booking_id, c.booking_service_name, c.created_at, "
+                        + "COALESCE(" + TrafficSourceSql.contactChannelCase("c") + ", 'other') AS channel "
                         + "FROM marketing.contacts c WHERE c.business_id = ? AND c.landing_page_slug = ? "
                         + "AND (?::timestamptz IS NULL OR c.created_at >= ?) AND (?::timestamptz IS NULL OR c.created_at < ?)",
                 (rs, i) -> new ContactRow(rs.getString("square_customer_id"), rs.getString("square_booking_id"),
-                        rs.getString("booking_service_name"), rs.getTimestamp("created_at").toInstant()),
+                        rs.getString("booking_service_name"), rs.getTimestamp("created_at").toInstant(),
+                        rs.getString("channel")),
                 businessId, slug, f, f, t, t);
     }
 
@@ -70,5 +76,21 @@ public class MarketingConversionsRepository {
                 (rs, n) -> new PaymentRow(rs.getString("square_customer_id"), rs.getBigDecimal("total_money"),
                         rs.getTimestamp("created_at").toInstant()),
                 args);
+    }
+
+    public record AdsCampaignRow(long campaignId, String name, String status, long costMicros, long impressions, long clicks, double conversions) {}
+
+    /** Google Ads spend per campaign from the daily sync, for the window (inclusive dates). */
+    public List<AdsCampaignRow> findGoogleAdsCampaigns(Long businessId, java.time.LocalDate from, java.time.LocalDate to) {
+        return jdbc.query(
+                "SELECT campaign_id, MAX(campaign_name) AS name, MAX(campaign_status) AS status, SUM(cost_micros) AS cost, "
+                        + "SUM(impressions) AS imps, SUM(clicks) AS clicks, SUM(conversions) AS conv "
+                        + "FROM google_ads_daily WHERE business_id = ? "
+                        + "AND (?::date IS NULL OR day >= ?) AND (?::date IS NULL OR day <= ?) "
+                        + "GROUP BY campaign_id HAVING SUM(cost_micros) > 0 OR SUM(clicks) > 0 ORDER BY SUM(cost_micros) DESC",
+                (rs, i) -> new AdsCampaignRow(rs.getLong("campaign_id"), rs.getString("name"), rs.getString("status"),
+                        rs.getLong("cost"), rs.getLong("imps"), rs.getLong("clicks"), rs.getDouble("conv")),
+                businessId, from == null ? null : java.sql.Date.valueOf(from), from == null ? null : java.sql.Date.valueOf(from),
+                to == null ? null : java.sql.Date.valueOf(to), to == null ? null : java.sql.Date.valueOf(to));
     }
 }

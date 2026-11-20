@@ -88,6 +88,7 @@ import type {
   MarketingContactsData,
   MarketingSyncStatusData,
   MarketingDashboardData,
+  MarketingConversionsData,
   MarketingLandingPage,
   RagCitation,
   RagDocumentSummary,
@@ -725,6 +726,13 @@ export const api = {
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     return proxyGet<MarketingDashboardData>(`/api/owner/marketing?${params.toString()}`);
+  },
+
+  getMarketingConversions: (slug: string, sources: Set<TrafficSourceKey>, from?: string, to?: string) => {
+    const params = new URLSearchParams({ slug, sources: sourcesParam(sources) });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return proxyGet<MarketingConversionsData>(`/api/owner/marketing/conversions?${params.toString()}`);
   },
 
   getMarketingPages: () => proxyGet<MarketingLandingPage[]>('/api/owner/marketing/pages'),

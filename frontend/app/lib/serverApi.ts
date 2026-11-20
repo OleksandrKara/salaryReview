@@ -369,9 +369,10 @@ export const serverApi = {
     return serverFetch<MarketingDashboardData>(`/api/owner/marketing?${query.toString()}`);
   },
 
-  getMarketingConversions: (slug?: string, from?: string, to?: string) => {
+  getMarketingConversions: (slug?: string, from?: string, to?: string, sources?: string) => {
     const query = new URLSearchParams();
     if (slug) query.set('slug', slug);
+    if (sources) query.set('sources', sources);
     if (from) query.set('from', from);
     if (to) query.set('to', to);
     return serverFetch<MarketingConversionsData>(`/api/owner/marketing/conversions?${query.toString()}`);

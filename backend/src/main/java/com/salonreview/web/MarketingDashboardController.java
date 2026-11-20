@@ -33,9 +33,11 @@ public class MarketingDashboardController {
     @GetMapping("/marketing/conversions")
     public MarketingConversionsDto conversions(@RequestParam(required = false) String slug,
                                                @RequestParam(required = false) String from,
-                                               @RequestParam(required = false) String to) {
+                                               @RequestParam(required = false) String to,
+                                               @RequestParam(required = false) String sources) {
         return conversionsService.conversions(slug,
-                from == null ? null : LocalDate.parse(from), to == null ? null : LocalDate.parse(to));
+                from == null ? null : LocalDate.parse(from), to == null ? null : LocalDate.parse(to),
+                TrafficSourceParam.parse(sources));
     }
 
     /** sources is a comma-separated list of traffic-source buckets (meta_ads, google_ads,
