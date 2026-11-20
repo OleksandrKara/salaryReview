@@ -60,7 +60,11 @@ public class MarketingConversionsService {
         BigDecimal revenue = BigDecimal.ZERO;
     }
 
-    private record PageResult(Map<String, Agg> agg, Map<String, BigDecimal> googlePaid, Set<String> googleDeposit) {}
+    private record Draft(MarketingConversionsRepository.ContactRow first, MarketingConversionsRepository.ContactRow booking,
+                         List<GooglePpcDto.Payment> payments, BigDecimal total) {}
+
+    private record PageResult(Map<String, Agg> agg, Map<String, BigDecimal> googlePaid, Set<String> googleDeposit,
+                              Map<String, Draft> googleDrafts) {}
 
     public MarketingConversionsDto conversions(String slugParam, LocalDate periodFrom, LocalDate periodTo) {
         try {
@@ -92,6 +96,7 @@ public class MarketingConversionsService {
         Map<String, BigDecimal> paid = new HashMap<>();
         Set<String> deposit = new HashSet<>();
         List<GooglePpcDto.PageResults> pages = new ArrayList<>();
+        Map<String, Draft> drafts = new HashMap<>();
         for (var lp : dashboardRepository.listLandingPages(businessId)) {
             Optional<UUID> id = dashboardRepository.findLandingPageId(lp.slug(), businessId);
             if (id.isEmpty()) continue;
@@ -100,6 +105,7 @@ public class MarketingConversionsService {
             total.views += g.views; total.sms += g.sms; total.calls += g.calls; total.consultations += g.consultations;
             r.googlePaid().forEach((c, amt) -> paid.merge(c, amt, BigDecimal::max));
             deposit.addAll(r.googleDeposit());
+            r.googleDrafts().forEach((c, d) -> drafts.merge(c, d, (a, b) -> b.total().compareTo(a.total()) > 0 ? b : a));
             if (g.views > 0 || g.consultations > 0 || g.revenue.signum() > 0) {
                 pages.add(new GooglePpcDto.PageResults(lp.slug(), lp.name(), g.views, g.sms, g.calls,
                         g.consultations, g.deposits, g.full, g.revenue));
@@ -124,7 +130,25 @@ public class MarketingConversionsService {
             out.add(new GooglePpcDto.Campaign(c.campaignId(), c.name(), c.status(), micros(c.costMicros()),
                     c.impressions(), c.clicks(), c.conversions()));
         }
-        return new GooglePpcDto(!campaigns.isEmpty(), micros(cost), imps, clicks, conv, results, out, pages);
+        var names = new HashMap<String, MarketingConversionsRepository.CustomerRow>();
+        repository.findCustomers(businessId, drafts.keySet()).forEach(c -> names.put(c.customerId(), c));
+        List<GooglePpcDto.PayingCustomer> customers = new ArrayList<>();
+        drafts.forEach((cid, d) -> {
+            var f = d.first();
+            var b = d.booking();
+            var sq = names.get(cid);
+            String name = sq != null && sq.name() != null && !sq.name().isBlank() ? sq.name() : f.name();
+            customers.add(new GooglePpcDto.PayingCustomer(cid, name,
+                    sq != null && sq.phone() != null ? sq.phone() : f.phone(),
+                    sq != null && sq.email() != null ? sq.email() : f.email(),
+                    f.createdAt(), f.pageSlug(), f.campaign(),
+                    b == null ? null : b.serviceName(), b == null ? null : b.bookingStatus(),
+                    b == null ? null : b.bookingStartAt(), b == null ? null : b.artist(),
+                    d.total(), deposit.contains(cid),
+                    deposit.contains(cid) && d.total().compareTo(FULL_MIN_TOTAL) >= 0, d.payments()));
+        });
+        customers.sort((x, y) -> y.total().compareTo(x.total()));
+        return new GooglePpcDto(!campaigns.isEmpty(), micros(cost), imps, clicks, conv, results, out, pages, customers);
     }
 
     private PageResult compute(Long businessId, String slug, UUID pageId, LocalDate periodFrom, LocalDate periodTo, ZoneId zone) {
@@ -146,26 +170,36 @@ public class MarketingConversionsService {
 
         Map<String, Instant> firstSeen = new HashMap<>();
         Map<String, String> customerChannel = new HashMap<>();
+        Map<String, MarketingConversionsRepository.ContactRow> firstRow = new HashMap<>();
+        Map<String, MarketingConversionsRepository.ContactRow> bookingRow = new HashMap<>();
         for (var c : repository.findContacts(businessId, slug, from, to)) {
             Agg a = agg.getOrDefault(c.channel(), agg.get("other"));
             if (c.bookingId() != null) a.consultations++;
             if (c.customerId() != null) {
+                if (c.bookingId() != null) {
+                    var cur = bookingRow.get(c.customerId());
+                    if (cur == null || c.createdAt().isAfter(cur.createdAt())) bookingRow.put(c.customerId(), c);
+                }
                 Instant seen = firstSeen.get(c.customerId());
                 if (seen == null || c.createdAt().isBefore(seen)) {
                     firstSeen.put(c.customerId(), c.createdAt());
+                    firstRow.put(c.customerId(), c);
                     customerChannel.put(c.customerId(), agg.containsKey(c.channel()) ? c.channel() : "other");
                 }
             }
         }
         Map<String, BigDecimal> paidTotal = new HashMap<>();
         Set<String> deposit = new HashSet<>();
+        Map<String, List<GooglePpcDto.Payment>> payLists = new HashMap<>();
         for (var p : repository.findPayments(businessId, firstSeen.keySet())) {
             if (p.createdAt().isBefore(firstSeen.get(p.customerId()))) continue;
+            payLists.computeIfAbsent(p.customerId(), k -> new ArrayList<>()).add(new GooglePpcDto.Payment(p.createdAt(), p.amount()));
             paidTotal.merge(p.customerId(), p.amount(), BigDecimal::add);
             if (p.amount().compareTo(DEPOSIT_MIN) >= 0) deposit.add(p.customerId());
         }
         Map<String, BigDecimal> googlePaid = new HashMap<>();
         Set<String> googleDeposit = new HashSet<>();
+        Map<String, Draft> googleDrafts = new HashMap<>();
         for (var e : paidTotal.entrySet()) {
             String ch = customerChannel.get(e.getKey());
             Agg a = agg.get(ch);
@@ -178,10 +212,13 @@ public class MarketingConversionsService {
             }
             if (GOOGLE.equals(ch)) {
                 googlePaid.put(e.getKey(), e.getValue());
+                var pl = payLists.get(e.getKey());
+                pl.sort((x, y) -> x.at().compareTo(y.at()));
+                googleDrafts.put(e.getKey(), new Draft(firstRow.get(e.getKey()), bookingRow.get(e.getKey()), pl, e.getValue()));
                 if (dep) googleDeposit.add(e.getKey());
             }
         }
-        return new PageResult(agg, googlePaid, googleDeposit);
+        return new PageResult(agg, googlePaid, googleDeposit, googleDrafts);
     }
 
     private static SourceRow toRow(String ch, Agg a) {

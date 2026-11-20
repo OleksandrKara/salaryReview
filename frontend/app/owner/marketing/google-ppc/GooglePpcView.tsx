@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
-import type { GooglePpcData } from '../../../lib/types';
+import type { GooglePpcCustomer, GooglePpcData } from '../../../lib/types';
 import PeriodFilter from '../PeriodFilter';
 import { parsePeriodParams, periodToBounds } from '../period';
 import type { PeriodSelection } from '../period';
@@ -56,6 +56,7 @@ export default function GooglePpcView({ initialData, timeZone }: { initialData: 
           <Kpis data={data} />
           <Campaigns data={data} />
           <Pages data={data} />
+          <Customers customers={data.customers} timeZone={timeZone} />
         </div>
       )}
     </div>
@@ -181,6 +182,88 @@ function Pages({ data }: { data: GooglePpcData }) {
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+function fmtDate(iso: string | null, timeZone?: string): string {
+  if (!iso) return dash;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone });
+}
+
+function Customers({ customers, timeZone }: { customers: GooglePpcCustomer[]; timeZone?: string }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  if (customers.length === 0) return null;
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  const allOpen = open.size === customers.length;
+  return (
+    <section aria-label="Paying customers">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-zinc-900">Paying customers ({customers.length})</h2>
+        <button
+          type="button"
+          onClick={() => setOpen(allOpen ? new Set() : new Set(customers.map((c) => c.customerId)))}
+          className="rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-700"
+        >
+          {allOpen ? 'Collapse all' : 'Expand all'}
+        </button>
+      </div>
+      <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl bg-white ring-1 ring-zinc-200">
+        {customers.map((c) => {
+          const isOpen = open.has(c.customerId);
+          const stage = c.full ? 'Full payment' : c.deposit ? 'Deposit' : 'Paid';
+          return (
+            <li key={c.customerId}>
+              <button
+                type="button"
+                onClick={() => toggle(c.customerId)}
+                aria-expanded={isOpen}
+                className="flex min-h-[44px] w-full items-center justify-between gap-3 px-3 py-2 text-left"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-zinc-900">{c.name || c.phone || 'Unknown'}</span>
+                  <span className="block truncate text-xs text-zinc-500">{c.service ?? 'No booking matched'} | {stage}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="text-sm font-semibold tabular-nums text-zinc-900">{usd0.format(c.total)}</span>
+                  <span aria-hidden="true" className="text-zinc-400">{isOpen ? '\u25B2' : '\u25BC'}</span>
+                </span>
+              </button>
+              {isOpen && (
+                <div className="space-y-3 bg-zinc-50 px-3 py-3 text-xs">
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3">
+                    <Cell label="Phone" value={c.phone ?? dash} />
+                    <Cell label="Email" value={c.email ?? dash} />
+                    <Cell label="First contact" value={fmtDate(c.firstContactAt, timeZone)} />
+                    <Cell label="Landing page" value={c.pageSlug ?? dash} />
+                    <Cell label="Campaign (utm)" value={c.campaign ?? dash} />
+                    <Cell label="Service" value={c.service ?? dash} />
+                    <Cell label="Booking status" value={c.bookingStatus ?? dash} />
+                    <Cell label="Appointment" value={fmtDate(c.bookingStartAt, timeZone)} />
+                    <Cell label="Technician" value={c.artist ?? dash} />
+                  </dl>
+                  <div>
+                    <div className="mb-1 text-zinc-500">Payments</div>
+                    <ul className="space-y-1">
+                      {c.payments.map((p, i) => (
+                        <li key={i} className="flex justify-between gap-2 tabular-nums">
+                          <span>{fmtDate(p.at, timeZone)}</span>
+                          <span className="font-medium text-zinc-900">{usd2.format(p.amount)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

@@ -13,7 +13,8 @@ public record GooglePpcDto(
         double platformConversions,
         Results results,
         List<Campaign> campaigns,
-        List<PageResults> pages
+        List<PageResults> pages,
+        List<PayingCustomer> customers
 ) {
     public record Results(long visitors, long smsTaps, long callTaps, long consultations, long deposits,
                           long fullPayments, long payingCustomers, BigDecimal revenue) {}
@@ -23,4 +24,12 @@ public record GooglePpcDto(
 
     public record PageResults(String slug, String name, long visitors, long smsTaps, long callTaps,
                               long consultations, long deposits, long fullPayments, BigDecimal revenue) {}
+
+    public record Payment(java.time.Instant at, BigDecimal amount) {}
+
+    public record PayingCustomer(String customerId, String name, String phone, String email,
+                                 java.time.Instant firstContactAt, String pageSlug, String campaign,
+                                 String service, String bookingStatus, java.time.Instant bookingStartAt,
+                                 String artist, BigDecimal total, boolean deposit, boolean full,
+                                 List<Payment> payments) {}
 }

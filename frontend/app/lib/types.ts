@@ -2686,6 +2686,25 @@ export interface GooglePpcData {
   };
   campaigns: GooglePpcCampaign[];
   pages: GooglePpcPage[];
+  customers: GooglePpcCustomer[];
+}
+
+export interface GooglePpcCustomer {
+  customerId: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  firstContactAt: string;
+  pageSlug: string | null;
+  campaign: string | null;
+  service: string | null;
+  bookingStatus: string | null;
+  bookingStartAt: string | null;
+  artist: string | null;
+  total: number;
+  deposit: boolean;
+  full: boolean;
+  payments: { at: string; amount: number }[];
 }
 
 // --- Leads CRM (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.

@@ -40,8 +40,8 @@ class MarketingConversionsServiceTest {
                 "direct", Map.of("views", 50L, "sms", 1L)));
         Instant t0 = Instant.parse("2026-11-01T10:00:00Z");
         when(repo.findContacts(any(), any(), any(), any())).thenReturn(List.of(
-                new MarketingConversionsRepository.ContactRow("c1", "b1", "x", t0, "google_ads"),
-                new MarketingConversionsRepository.ContactRow("c2", "b2", "x", t0, "direct")));
+                new MarketingConversionsRepository.ContactRow("c1", "b1", "x", t0, "google_ads", "Ann", "+1555", null, "Brows", "pmu", "ACCEPTED", null, null, null),
+                new MarketingConversionsRepository.ContactRow("c2", "b2", "x", t0, "direct", null, null, null, null, "pmu", null, null, null, null)));
         when(repo.findPayments(any(), any())).thenReturn(List.of(
                 new MarketingConversionsRepository.PaymentRow("c1", new BigDecimal("100"), t0.plusSeconds(60)),
                 new MarketingConversionsRepository.PaymentRow("c1", new BigDecimal("250"), t0.plusSeconds(120)),
@@ -69,5 +69,9 @@ class MarketingConversionsServiceTest {
         assertThat(ppc.results().deposits()).isEqualTo(1);
         assertThat(ppc.results().fullPayments()).isEqualTo(1);
         assertThat(ppc.results().revenue()).isEqualByComparingTo("350");
+        assertThat(ppc.customers()).hasSize(1);
+        assertThat(ppc.customers().get(0).name()).isEqualTo("Ann");
+        assertThat(ppc.customers().get(0).payments()).hasSize(2);
+        assertThat(ppc.customers().get(0).full()).isTrue();
     }
 }
