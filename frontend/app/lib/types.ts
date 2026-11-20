@@ -2707,6 +2707,23 @@ export interface GooglePpcCustomer {
   payments: { at: string; amount: number }[];
 }
 
+// --- Ads Manager (read-only) lead views, served under /api/owner/marketing.
+export interface AdLeadRow {
+  id: number; name: string | null; status: LeadStatus; createdAt: string; campaign: string | null;
+  searchQuery: string | null; consultation: string | null; procedure: string | null; lostReason: string | null;
+  customerId: string | null;
+}
+export interface AdLeadAppointment { status: string | null; startAt: string | null; services: string | null; technician: string | null; paid: number | null; consultation: boolean }
+export interface AdLeadCard {
+  id: number; name: string | null; phone: string | null; email: string | null; status: LeadStatus; createdAt: string;
+  source: string; campaign: string | null; searchQuery: string | null; landing: string | null;
+  lostReason: string | null; lostComment: string | null;
+  firstVisit: { at: string; landing: string | null; trafficSource: string | null; utm: string | null; adClick: string | null; device: string | null } | null;
+  appointments: AdLeadAppointment[];
+  payments: { id: string; at: string; amount: number; tip: number | null; description: string | null }[];
+  totalPaid: number; steps: { at: string; text: string | null }[];
+}
+
 // --- Leads CRM (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'OUTDATED';
 export interface OutdatedRow {

@@ -21,7 +21,7 @@ export default async function RetentionPage({
 }) {
   const me = await serverApi.getMe();
   if (me.role === 'PROVIDER') redirect('/me');
-  if (me.role === 'ADS_MANAGER') redirect('/owner/marketing');
+  if (me.role === 'ADS_MANAGER') redirect('/owner/marketing/google-ppc');
 
   // Managers can't reach the Square settings page — fails open (see /admin/redos's own comment).
   const squareConnection = await serverApi.getSquareConnection().catch(() => null);

@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const PROVIDER_HOME = '/me';
 const MANAGER_HOME = '/admin/leads';
 const OWNER_HOME = '/reports';
-const ADS_MANAGER_HOME = '/owner/marketing';
+const ADS_MANAGER_HOME = '/owner/marketing/google-ppc';
 
 // Owner + manager (providers blocked). Retention is view-only for managers, same data as owners.
 // Manual credits are routine payroll bookkeeping, not a salary decision, so managers get it too

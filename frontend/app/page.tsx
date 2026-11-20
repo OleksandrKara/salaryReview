@@ -24,7 +24,7 @@ export default async function Home() {
         } else if (me.role === 'MANAGER') {
           target = '/admin/leads';
         } else if (me.role === 'ADS_MANAGER') {
-          target = '/owner/marketing';
+          target = '/owner/marketing/google-ppc';
         } else if (me.role === 'OWNER' && !(await ownerBusinessConfigured(sid))) {
           // A freshly created business (Phase 5.1) has no salon_config row yet — every other
           // owner page (/reports, /owner/overview, ...) 500s on it (SettlementService and

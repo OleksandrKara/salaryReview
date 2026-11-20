@@ -1,9 +1,11 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
-import type { GooglePpcCustomer, GooglePpcData } from '../../../lib/types';
+import type { AdLeadRow, GooglePpcCustomer, GooglePpcData } from '../../../lib/types';
+import { consultationLabel, statusLabel, statusTone } from '../adLeads';
 import PeriodFilter from '../PeriodFilter';
 import { parsePeriodParams, periodToBounds } from '../period';
 import type { PeriodSelection } from '../period';
@@ -15,9 +17,10 @@ const dash = '-';
 
 const perUnit = (spend: number, n: number) => (n > 0 ? usd2.format(spend / n) : dash);
 
-export default function GooglePpcView({ initialData, timeZone }: { initialData: GooglePpcData | null; timeZone?: string }) {
+export default function GooglePpcView({ initialData, initialLeads, timeZone }: { initialData: GooglePpcData | null; initialLeads: AdLeadRow[]; timeZone?: string }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState(initialData);
+  const [leads, setLeads] = useState(initialLeads);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(initialData === null);
   const requestId = useRef(0);
@@ -29,9 +32,13 @@ export default function GooglePpcView({ initialData, timeZone }: { initialData: 
     const id = ++requestId.current;
     setLoading(true);
     try {
-      const d = await api.getGooglePpc(bounds.from, bounds.to);
+      const [d, l] = await Promise.all([
+        api.getGooglePpc(bounds.from, bounds.to),
+        api.getGooglePpcLeads(bounds.from, bounds.to).catch(() => [] as AdLeadRow[]),
+      ]);
       if (id !== requestId.current) return;
       setData(d);
+      setLeads(l);
       setFailed(false);
     } catch {
       if (id === requestId.current) setFailed(true);
@@ -56,7 +63,8 @@ export default function GooglePpcView({ initialData, timeZone }: { initialData: 
           <Kpis data={data} />
           <Campaigns data={data} />
           <Pages data={data} />
-          <Customers customers={data.customers} timeZone={timeZone} />
+          <Leads leads={leads} timeZone={timeZone} />
+          <Customers customers={data.customers} leads={leads} timeZone={timeZone} />
         </div>
       )}
     </div>
@@ -191,7 +199,67 @@ function fmtDate(iso: string | null, timeZone?: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone });
 }
 
-function Customers({ customers, timeZone }: { customers: GooglePpcCustomer[]; timeZone?: string }) {
+const STATUS_FILTERS = ['ALL', 'ACTIVE', 'BOOKED', 'LOST'] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number];
+const FILTER_LABEL: Record<StatusFilter, string> = { ALL: 'All', ACTIVE: 'In progress', BOOKED: 'Booked', LOST: 'Lost' };
+const inFilter = (l: AdLeadRow, f: StatusFilter) =>
+  f === 'ALL' ? true : f === 'ACTIVE' ? l.status === 'NEW' || l.status === 'CONTACTED' : l.status === f;
+
+function Leads({ leads, timeZone }: { leads: AdLeadRow[]; timeZone?: string }) {
+  const [filter, setFilter] = useState<StatusFilter>('ALL');
+  if (leads.length === 0) return null;
+  const shown = leads.filter((l) => inFilter(l, filter));
+  return (
+    <section aria-label="Google Ads leads">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-zinc-900">Leads ({leads.length})</h2>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter leads by status">
+          {STATUS_FILTERS.map((f) => {
+            const n = leads.filter((l) => inFilter(l, f)).length;
+            return (
+              <button
+                key={f}
+                type="button"
+                aria-pressed={filter === f}
+                onClick={() => setFilter(f)}
+                className={`min-h-[32px] rounded-full px-3 py-1 text-xs font-medium ${filter === f ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-700'}`}
+              >
+                {FILTER_LABEL[f]} <span className="tabular-nums opacity-70">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl bg-white ring-1 ring-zinc-200">
+        {shown.map((l) => {
+          const stage = l.procedure ? `Procedure: ${l.procedure}` : consultationLabel(l.consultation);
+          return (
+            <li key={l.id}>
+              <Link href={`/owner/marketing/leads/${l.id}`} className="block px-3 py-3 hover:bg-zinc-50">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <span className="min-w-0 break-words text-sm font-medium text-zinc-900">{l.name || 'No name'}</span>
+                  <span className="flex shrink-0 items-center gap-2 text-xs text-zinc-500">
+                    <span className={`rounded-full px-2 py-0.5 font-medium ${statusTone(l.status)}`}>{statusLabel(l.status)}</span>
+                    <span className="tabular-nums">{fmtDate(l.createdAt, timeZone)}</span>
+                  </span>
+                </div>
+                <div className="mt-1 break-words text-xs text-zinc-600">
+                  <span className="text-zinc-500">Search: </span>
+                  {l.searchQuery ? <span className="font-medium text-zinc-800">{l.searchQuery}</span> : <span className="text-zinc-400">not provided by Google</span>}
+                  {l.campaign && <span className="text-zinc-500"> | {l.campaign}</span>}
+                </div>
+                {stage && <div className="mt-0.5 break-words text-xs text-zinc-600">{stage}</div>}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      {shown.length === 0 && <p className="mt-2 text-xs text-zinc-500">No leads with this status in the period.</p>}
+    </section>
+  );
+}
+
+function Customers({ customers, leads, timeZone }: { customers: GooglePpcCustomer[]; leads: AdLeadRow[]; timeZone?: string }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   if (customers.length === 0) return null;
   const toggle = (id: string) =>
@@ -201,6 +269,7 @@ function Customers({ customers, timeZone }: { customers: GooglePpcCustomer[]; ti
       return next;
     });
   const allOpen = open.size === customers.length;
+  const leadByCustomer = new Map(leads.filter((l) => l.customerId).map((l) => [l.customerId as string, l.id]));
   return (
     <section aria-label="Paying customers">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -247,6 +316,11 @@ function Customers({ customers, timeZone }: { customers: GooglePpcCustomer[]; ti
                     <Cell label="Appointment" value={fmtDate(c.bookingStartAt, timeZone)} />
                     <Cell label="Technician" value={c.artist ?? dash} />
                   </dl>
+                  {leadByCustomer.has(c.customerId) && (
+                    <Link href={`/owner/marketing/leads/${leadByCustomer.get(c.customerId)}`} className="inline-block text-sm font-medium text-zinc-900 underline">
+                      Open lead
+                    </Link>
+                  )}
                   <div>
                     <div className="mb-1 text-zinc-500">Payments</div>
                     <ul className="space-y-1">

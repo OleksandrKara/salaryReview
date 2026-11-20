@@ -30,7 +30,7 @@ export default async function OwnerOverviewPage({
   const toMonth   = Number(sp.toMonth)   || defToMonth;
 
   const me = await serverApi.getMe();
-  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
+  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing/google-ppc' : '/reports');
 
   const squareConnection = await serverApi.getSquareConnection();
   if (!squareConnection.accessTokenSet) {

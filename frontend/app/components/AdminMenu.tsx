@@ -131,7 +131,7 @@ function linksFor(role: Role, leadsAccess = false): NavSections {
   }
   if (role === 'ADS_MANAGER') {
     // Read-only marketing access only — no salary/SOP/KB data, so no COMMON links here.
-    return { flat: [{ href: '/owner/marketing', key: 'navMarketing' }], groups: [] };
+    return { flat: [{ href: '/owner/marketing/google-ppc', key: 'navMarketing' }], groups: [] };
   }
   // PROVIDER
   return {

@@ -20,7 +20,7 @@ export function parseLostFilters(q: { days?: string; from?: string; to?: string;
   return { days, from, to, sources, reason };
 }
 
-export function lostHref(f: LostFilters): string {
+export function lostHref(f: LostFilters, base = '/admin/leads/lost-report'): string {
   const p = new URLSearchParams();
   if (f.from) {
     p.set('from', f.from);
@@ -29,7 +29,7 @@ export function lostHref(f: LostFilters): string {
   f.sources.forEach((s) => p.append('source', s));
   if (f.reason) p.set('reason', f.reason);
   const qs = p.toString();
-  return `/admin/leads/lost-report${qs ? `?${qs}` : ''}`;
+  return `${base}${qs ? `?${qs}` : ''}`;
 }
 
 export function toggleSource(f: LostFilters, source: string): LostFilters {

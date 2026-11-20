@@ -5,7 +5,7 @@ import MerchantRulesTable from './MerchantRulesTable';
 
 export default async function MerchantRulesPage() {
   const me = await serverApi.getMe();
-  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
+  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing/google-ppc' : '/reports');
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">

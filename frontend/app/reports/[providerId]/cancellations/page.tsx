@@ -26,7 +26,7 @@ export default async function CancellationsPage({
 
   const me = await serverApi.getMe();
   // Owner-only review surface (managers don't manage salaries / cancellations review).
-  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
+  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing/google-ppc' : '/reports');
 
   const items: CancelledAppointment[] = await serverApi.listCancellations(
     year, month, half, Number(providerId),
