@@ -4,7 +4,8 @@ import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
-import type { AdLeadCampaignMoney, AdLeadMoney, AdLeadRow, GooglePpcCustomer, GooglePpcData } from '../../../lib/types';
+import type { AdLeadCampaignMoney, AdLeadMoney, AdLeadRow, GooglePpcCustomer, GooglePpcData, Margins } from '../../../lib/types';
+import { romiPercent } from './romi';
 import { consultationLabel, statusLabel, statusTone } from '../adLeads';
 import PeriodFilter from '../PeriodFilter';
 import { parsePeriodParams, periodToBounds } from '../period';
@@ -17,11 +18,12 @@ const dash = '-';
 
 const perUnit = (spend: number, n: number) => (n > 0 ? usd2.format(spend / n) : dash);
 
-export default function GooglePpcView({ initialData, initialLeads, initialMoney, timeZone }: { initialData: GooglePpcData | null; initialLeads: AdLeadRow[]; initialMoney: AdLeadMoney | null; timeZone?: string }) {
+export default function GooglePpcView({ initialData, initialLeads, initialMoney, initialMargins, timeZone }: { initialData: GooglePpcData | null; initialLeads: AdLeadRow[]; initialMoney: AdLeadMoney | null; initialMargins: Margins | null; timeZone?: string }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState(initialData);
   const [leads, setLeads] = useState(initialLeads);
   const [money, setMoney] = useState(initialMoney);
+  const [margins, setMargins] = useState(initialMargins);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(initialData === null);
   const requestId = useRef(0);
@@ -64,7 +66,7 @@ export default function GooglePpcView({ initialData, initialLeads, initialMoney,
         </p>
       ) : (
         <div className={`space-y-6 transition-opacity ${loading ? 'opacity-50' : ''}`} aria-busy={loading}>
-          <Kpis data={data} />
+          <Kpis data={data} margins={margins} onMargins={setMargins} money={money} />
           <Campaigns data={data} money={money} />
           <Pages data={data} />
           <Leads leads={leads} timeZone={timeZone} />
@@ -108,9 +110,9 @@ function MoneyCard({ money, loading }: { money: AdLeadMoney; loading: boolean })
   );
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Kpi({ label, value, sub, className = '' }: { label: string; value: string; sub?: string; className?: string }) {
   return (
-    <div className="min-w-0 rounded-xl bg-white p-3 ring-1 ring-zinc-200 sm:p-4">
+    <div className={`min-w-0 rounded-xl bg-white p-3 ring-1 ring-zinc-200 sm:p-4 ${className}`}>
       <div className="text-xs font-medium text-zinc-500">{label}</div>
       <div className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 sm:text-2xl">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-zinc-500">{sub}</div>}
@@ -118,13 +120,19 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
   );
 }
 
-function Kpis({ data }: { data: GooglePpcData }) {
+function Kpis({ data, margins, onMargins, money }: { data: GooglePpcData; margins: Margins | null; onMargins: (m: Margins | null) => void; money: AdLeadMoney | null }) {
   const r = data.results;
   const roi = data.spend > 0 ? ((r.revenue - data.spend) / data.spend) * 100 : null;
   const roas = data.spend > 0 ? r.revenue / data.spend : null;
+  const romi = margins ? romiPercent(r.revenue, data.spend, r.deposits, margins) : roi;
+  // Same math with the balances still to pay on procedures already booked by this period's leads (one more procedure of materials each).
+  const romiAhead = money && money.periodLeft > 0
+    ? (margins ? romiPercent(r.revenue + money.periodLeft, data.spend, r.deposits + money.periodLeftLeads, margins)
+      : data.spend > 0 ? ((r.revenue + money.periodLeft - data.spend) / data.spend) * 100 : null)
+    : null;
   return (
     <section aria-label="Google Ads results">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Kpi label="Spend" value={usd0.format(data.spend)} sub={`${num(data.clicks)} clicks, ${num(data.impressions)} impressions`} />
         <Kpi label="Cost per click" value={perUnit(data.spend, data.clicks)} sub={`${num(r.visitors)} landing page visitors`} />
         <Kpi label="Cost per consultation" value={perUnit(data.spend, r.consultations)} sub={`${num(r.consultations)} consultations`} />
@@ -132,13 +140,100 @@ function Kpis({ data }: { data: GooglePpcData }) {
         <Kpi label="Revenue" value={usd0.format(r.revenue)} sub={`${num(r.payingCustomers)} paying customers`} />
         <Kpi label="ROAS" value={roas === null ? dash : `${roas.toFixed(2)}x`} sub="Revenue divided by spend" />
         <Kpi label="ROI" value={roi === null ? dash : `${roi.toFixed(0)}%`} sub="(Revenue - spend) / spend" />
-        <Kpi label="ROMI" value={roi === null ? dash : `${roi.toFixed(0)}%`} sub="Same as ROI until margins are set" />
+        <Kpi label="ROMI" value={romi === null ? dash : `${romi.toFixed(0)}%`} sub={margins ? 'After materials, master and Square fees (approx.)' : 'Same as ROI until cost assumptions are set'} />
+        <Kpi
+          className="col-span-2 lg:col-span-1"
+          label="ROMI with left to collect"
+          value={romiAhead === null ? dash : `${romiAhead.toFixed(0)}%`}
+          sub={money && money.periodLeft > 0 ? `If the ${usd0.format(money.periodLeft)} still to collect from this period's leads is paid` : 'Nothing left to collect from this period\'s leads'}
+        />
       </div>
+      <MarginsEditor margins={margins} onChange={onMargins} />
       <p className="mt-2 text-xs text-zinc-500">
         Revenue is Square payments from customers whose first visit came from Google Ads, counted after their first contact.
         Bookings are matched via contact-capture data and may slightly undercount.
       </p>
     </section>
+  );
+}
+
+/** Light, open editor for the rough costs behind ROMI: anyone can change or clear them at any time. */
+function MarginsEditor({ margins, onChange }: { margins: Margins | null; onChange: (m: Margins | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [material, setMaterial] = useState(String(margins?.materialPerProcedure ?? 50));
+  const [master, setMaster] = useState(String(margins?.masterPct ?? 45));
+  const [square, setSquare] = useState(String(margins?.squarePct ?? 3));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const m = Number(material), a = Number(master), q = Number(square);
+  const valid = [m, a, q].every((n) => Number.isFinite(n) && n >= 0) && a + q < 100 && m <= 10000 && material !== '' && master !== '' && square !== '';
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      onChange(await api.saveMargins({ materialPerProcedure: m, masterPct: a, squarePct: q }));
+      setOpen(false);
+    } catch {
+      setError('Could not save. Check the numbers and try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clear() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.clearMargins();
+      onChange(null);
+      setOpen(false);
+    } catch {
+      setError('Could not clear. Try again in a moment.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const summary = margins
+    ? `Materials ${usd0.format(margins.materialPerProcedure)} per procedure, master ${margins.masterPct}%, Square ${margins.squarePct}%`
+    : 'No cost assumptions set';
+  const field = 'mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 sm:text-sm';
+
+  return (
+    <div className="mt-3 rounded-xl bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="min-w-0 break-words">ROMI assumptions: {summary}</span>
+        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="min-h-[36px] rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 ring-1 ring-zinc-200">
+          {open ? 'Close' : 'Edit'}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-3 space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label className="block text-xs text-zinc-600" htmlFor="margin-material">Materials per procedure ($)
+              <input id="margin-material" inputMode="decimal" value={material} onChange={(e) => setMaterial(e.target.value)} className={field} />
+            </label>
+            <label className="block text-xs text-zinc-600" htmlFor="margin-master">Master share (% of revenue)
+              <input id="margin-master" inputMode="decimal" value={master} onChange={(e) => setMaster(e.target.value)} className={field} />
+            </label>
+            <label className="block text-xs text-zinc-600" htmlFor="margin-square">Square fee (% of revenue)
+              <input id="margin-square" inputMode="decimal" value={square} onChange={(e) => setSquare(e.target.value)} className={field} />
+            </label>
+          </div>
+          <p className="text-zinc-500">
+            Rough numbers. Materials are counted once per customer who paid a deposit. Rent, insurance and other overhead are not included.
+            {margins?.updatedBy ? ` Last changed by ${margins.updatedBy}.` : ''}
+          </p>
+          {error && <p role="alert" className="text-red-700">{error}</p>}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={save} disabled={!valid || busy} className="min-h-[40px] rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Save</button>
+            {margins && <button type="button" onClick={clear} disabled={busy} className="min-h-[40px] rounded-lg bg-white px-4 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-300 disabled:opacity-50">Clear</button>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

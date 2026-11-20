@@ -35,6 +35,7 @@ import type {
   MarketingConversionsData,
   AdLeadCard,
   AdLeadMoney,
+  Margins,
   AdLeadRow,
   GooglePpcData,
   MarketingAnalyticsData,
@@ -387,6 +388,10 @@ export const serverApi = {
     if (from) query.set('from', from);
     if (to) query.set('to', to);
     return serverFetch<GooglePpcData>(`/api/owner/marketing/google-ppc?${query.toString()}`);
+  },
+
+  getMargins: async (): Promise<Margins | null> => {
+    return serverFetch<Margins | null>('/api/margins').catch(() => null);
   },
 
   getGooglePpcMoney: (from?: string, to?: string) => {
