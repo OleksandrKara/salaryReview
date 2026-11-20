@@ -36,6 +36,14 @@ public class MarketingAdLeadsController {
         return ads.googleLeads(from, to);
     }
 
+    /** Left to collect for Google Ads leads with a procedure booked ahead, and collected / left per campaign. */
+    @GetMapping("/google-ppc/money")
+    public AdLeadsService.Money money(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ads.money(from, to);
+    }
+
     @GetMapping("/leads/{id}")
     public AdLeadsService.Card lead(@PathVariable long id) {
         return ads.card(id);

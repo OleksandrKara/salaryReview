@@ -18,16 +18,17 @@ export default async function GooglePpcPage({
   if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
   const timeZone = businessSettings?.timezone;
   const bounds = periodToBounds(parsePeriodParams(params), timeZone);
-  const [data, leads] = await Promise.all([
+  const [data, leads, money] = await Promise.all([
     serverApi.getGooglePpc(bounds.from, bounds.to).catch(() => null),
     serverApi.getGooglePpcLeads(bounds.from, bounds.to).catch(() => []),
+    serverApi.getGooglePpcMoney(bounds.from, bounds.to).catch(() => null),
   ]);
 
   return (
     <main className="mx-auto w-full min-w-0 max-w-6xl p-4 sm:p-8">
       <PageHeader title="Google PPC" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <MarketingTabs />
-      <GooglePpcView initialData={data} initialLeads={leads} timeZone={timeZone} />
+      <GooglePpcView initialData={data} initialLeads={leads} initialMoney={money} timeZone={timeZone} />
     </main>
   );
 }
