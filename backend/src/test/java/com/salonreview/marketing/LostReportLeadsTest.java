@@ -20,6 +20,8 @@ class LostReportLeadsTest {
 
     @Autowired private BusinessRepository businesses;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private LeadFollowUpService realService;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean private CurrentBusinessContext currentBusiness;
 
     private long lost(long b, String phone, String source, String reason, String outcome, String lostAgo) {
         return jdbc.queryForObject("""
@@ -47,5 +49,35 @@ class LostReportLeadsTest {
         assertThat(row.phoneLast4()).isEqualTo("7194");
         assertThat(row.source()).isEqualTo("Google Ads");
         assertThat(row.reason()).isEqualTo("PRICE");
+    }
+
+    @Test
+    void customRangeSelectsOnlyLeadsLostInsideIt() {
+        long b = businesses.save(Business.builder().name("Lost2").shortCode("lr2-" + System.nanoTime()).timezone("UTC").active(true).build()).getId();
+        lost(b, "+16195550011", "Yelp", "PRICE", "MATCHED", "2 days");
+        long old = lost(b, "+16195550012", "Yelp", "TIMING", "MATCHED", "200 days");
+        CurrentBusinessContext ctx = mock(CurrentBusinessContext.class);
+        when(ctx.id()).thenReturn(b);
+        LeadFollowUpService service = new LeadFollowUpService(jdbc, ctx, null, null, null, null, null, null, null, null, null, null, "https://x");
+        java.time.LocalDate day = java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")).minusDays(200);
+
+        var report = service.lostReport(90, day.minusDays(1), day.plusDays(1));
+
+        assertThat(report.leads()).extracting(LostLead -> LostLead.id()).containsExactly(old);
+    }
+
+    @Test
+    void reasonOfLostLeadCanBeChangedWithoutMovingLostAt() {
+        long b = businesses.save(Business.builder().name("Lost3").shortCode("lr3-" + System.nanoTime()).timezone("UTC").active(true).build()).getId();
+        long id = lost(b, "+16195550021", "Yelp", "TIMING", "MATCHED", "2 days");
+        when(currentBusiness.id()).thenReturn(b);
+        LeadFollowUpService service = realService;
+        java.sql.Timestamp before = jdbc.queryForObject("SELECT lost_at FROM lead_intake WHERE id = ?", java.sql.Timestamp.class, id);
+
+        service.update(id, new LeadFollowUpService.UpdateRequest(null, null, null, "price", null, null), "tester");
+
+        assertThat(jdbc.queryForObject("SELECT lost_reason FROM lead_intake WHERE id = ?", String.class, id)).isEqualTo("PRICE");
+        assertThat(jdbc.queryForObject("SELECT lost_at FROM lead_intake WHERE id = ?", java.sql.Timestamp.class, id)).isEqualTo(before);
+        assertThat(jdbc.queryForObject("SELECT status FROM lead_intake WHERE id = ?", String.class, id)).isEqualTo("LOST");
     }
 }

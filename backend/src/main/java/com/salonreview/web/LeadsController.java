@@ -118,9 +118,12 @@ public class LeadsController {
     }
 
     @GetMapping("/lost-report")
-    public LeadFollowUpService.LostReport lostReport(@RequestParam(defaultValue = "90") int days, @AuthenticationPrincipal AppUserPrincipal me) {
+    public LeadFollowUpService.LostReport lostReport(@RequestParam(defaultValue = "90") int days,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @AuthenticationPrincipal AppUserPrincipal me) {
         if (academyOnly(me)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not available");
-        return leads.lostReport(days);
+        return leads.lostReport(days, from, to);
     }
 
     @GetMapping("/lookup")

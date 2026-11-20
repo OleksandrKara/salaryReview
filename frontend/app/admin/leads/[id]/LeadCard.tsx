@@ -470,6 +470,14 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
             {lead.lostComment ? `: ${lead.lostComment}` : ''}
           </span>
         )}
+        {lead.status === 'LOST' && !losing && (
+          <button
+            className={link}
+            onClick={() => { setLostReason(lead.lostReason ?? ''); setLostComment(lead.lostComment ?? ''); setLosing(true); }}
+          >
+            {t(language, 'leadLostChange')}
+          </button>
+        )}
         {losing && (
           <div className="flex w-full min-w-0 flex-col gap-2 rounded bg-red-50 p-3">
             <select aria-label="lost reason" value={lostReason} onChange={(e) => setLostReason(e.target.value)} className={`${field} w-full text-base sm:text-sm`}>
@@ -490,10 +498,10 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
                 className={primary}
                 disabled={busy || !lostReason || (lostReason === 'OTHER' && !lostComment.trim())}
                 onClick={async () => {
-                  if (await send(`/api/leads/${lead.id}`, 'PATCH', { status: 'LOST', lostReason, lostComment })) { setLosing(false); setLostReason(''); setLostComment(''); }
+                  if (await send(`/api/leads/${lead.id}`, 'PATCH', lead.status === 'LOST' ? { lostReason, lostComment } : { status: 'LOST', lostReason, lostComment })) { setLosing(false); setLostReason(''); setLostComment(''); }
                 }}
               >
-                {t(language, 'leadLostConfirm')}
+                {t(language, lead.status === 'LOST' ? 'leadLostSave' : 'leadLostConfirm')}
               </button>
               <button className={link} onClick={() => { setLosing(false); setLostReason(''); setLostComment(''); }}>{t(language, 'leadLostCancel')}</button>
             </div>

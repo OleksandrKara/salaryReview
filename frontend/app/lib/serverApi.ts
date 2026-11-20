@@ -290,7 +290,8 @@ export const serverApi = {
 
   searchLeads: (qs: string) => serverFetch<LeadSearchPage>(`/api/leads/search?${qs}`),
 
-  getLostReport: (days: number) => serverFetch<LostReport>(`/api/leads/lost-report?days=${days}`),
+  getLostReport: (days: number, from?: string | null, to?: string | null) =>
+    serverFetch<LostReport>(`/api/leads/lost-report?days=${days}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`),
 
   getLead: (id: number) => serverFetch<LeadDetail>(`/api/leads/${id}`),
 
