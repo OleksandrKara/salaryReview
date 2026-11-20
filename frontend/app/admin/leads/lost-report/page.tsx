@@ -12,11 +12,11 @@ const chipOff = 'text-zinc-700 ring-zinc-300 hover:bg-zinc-50';
 
 export default async function LostReportPage({
   searchParams,
-}: { searchParams: Promise<{ days?: string; source?: string | string[]; reason?: string }> }) {
+}: { searchParams: Promise<{ days?: string; from?: string; to?: string; source?: string | string[]; reason?: string }> }) {
   const f = parseLostFilters(await searchParams);
   const me = await serverApi.getMe();
   const lang = me.preferredLanguage;
-  const report = await serverApi.getLostReport(f.days);
+  const report = await serverApi.getLostReport(f.days, f.from, f.to);
   const label = (r: string) => {
     const key = `leadLost_${r}`;
     return t(lang, key as 'leadLost_PRICE') || r;
@@ -29,7 +29,7 @@ export default async function LostReportPage({
   const summaries = sourceSummaries(all, f);
   const reasons = reasonCounts(all.filter((l) => f.sources.length === 0 || f.sources.includes(l.source ?? '')));
   const filtered = f.sources.length > 0 || f.reason !== null;
-  const withDays = (days: number): LostFilters => ({ ...f, days });
+  const withDays = (days: number): LostFilters => ({ ...f, days, from: null, to: null });
 
   return (
     <main className="mx-auto w-full min-w-0 max-w-4xl p-4 sm:p-8">
@@ -41,11 +41,23 @@ export default async function LostReportPage({
           <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">{t(lang, 'leadLostReportPeriod')}</p>
           <div className="flex flex-wrap gap-2">
             {LOST_PERIODS.map((d) => (
-              <Link key={d} href={lostHref(withDays(d))} className={`${chip} ${d === f.days ? chipOn : chipOff}`}>
+              <Link key={d} href={lostHref(withDays(d))} className={`${chip} ${!f.from && d === f.days ? chipOn : chipOff}`}>
                 {t(lang, 'leadLostReportDays').replace('{n}', String(d))}
               </Link>
             ))}
+            <span className={`${chip} ${f.from ? chipOn : chipOff}`}>{t(lang, 'leadLostReportCustom')}</span>
           </div>
+          <form method="get" action="/admin/leads/lost-report" className="mt-2 flex flex-wrap items-end gap-2">
+            {f.sources.map((s) => <input key={s} type="hidden" name="source" value={s} />)}
+            {f.reason && <input type="hidden" name="reason" value={f.reason} />}
+            <label className="flex flex-col text-xs text-zinc-500">{t(lang, 'leadLostReportFrom')}
+              <input type="date" name="from" required defaultValue={f.from ?? ''} className="rounded border border-zinc-300 px-2 py-1.5 text-base text-zinc-900 sm:text-sm" />
+            </label>
+            <label className="flex flex-col text-xs text-zinc-500">{t(lang, 'leadLostReportTo')}
+              <input type="date" name="to" defaultValue={f.to ?? ''} className="rounded border border-zinc-300 px-2 py-1.5 text-base text-zinc-900 sm:text-sm" />
+            </label>
+            <button type="submit" className="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white">{t(lang, 'leadLostReportApply')}</button>
+          </form>
         </div>
         {all.length > 0 ? (
           <>
@@ -76,7 +88,7 @@ export default async function LostReportPage({
               </div>
             </div>
             {filtered ? (
-              <Link href={lostHref({ days: f.days, sources: [], reason: null })} className="self-start text-sm text-zinc-600 underline">{t(lang, 'leadLostReportReset')}</Link>
+              <Link href={lostHref({ days: f.days, from: f.from, to: f.to, sources: [], reason: null })} className="self-start text-sm text-zinc-600 underline">{t(lang, 'leadLostReportReset')}</Link>
             ) : null}
           </>
         ) : null}

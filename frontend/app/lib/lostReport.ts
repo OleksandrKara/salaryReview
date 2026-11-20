@@ -2,23 +2,30 @@ import type { LostLead } from './types';
 
 export const LOST_PERIODS = [30, 90, 180, 365];
 
-export interface LostFilters { days: number; sources: string[]; reason: string | null }
+export interface LostFilters { days: number; from: string | null; to: string | null; sources: string[]; reason: string | null }
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface SourceSummary { source: string; count: number; share: number; topReasons: { reason: string; count: number }[] }
 
 const UNKNOWN = '';
 
-export function parseLostFilters(q: { days?: string; source?: string | string[]; reason?: string }): LostFilters {
+export function parseLostFilters(q: { days?: string; from?: string; to?: string; source?: string | string[]; reason?: string }): LostFilters {
   const days = LOST_PERIODS.includes(Number(q.days)) ? Number(q.days) : 90;
   const raw = q.source === undefined ? [] : Array.isArray(q.source) ? q.source : [q.source];
   const sources = [...new Set(raw.filter((s) => s !== ''))];
   const reason = q.reason && /^[A-Z_]{2,40}$/.test(q.reason) ? q.reason : null;
-  return { days, sources, reason };
+  const from = q.from && DATE_RE.test(q.from) ? q.from : null;
+  const to = from && q.to && DATE_RE.test(q.to) && q.to >= from ? q.to : null;
+  return { days, from, to, sources, reason };
 }
 
 export function lostHref(f: LostFilters): string {
   const p = new URLSearchParams();
-  if (f.days !== 90) p.set('days', String(f.days));
+  if (f.from) {
+    p.set('from', f.from);
+    if (f.to) p.set('to', f.to);
+  } else if (f.days !== 90) p.set('days', String(f.days));
   f.sources.forEach((s) => p.append('source', s));
   if (f.reason) p.set('reason', f.reason);
   const qs = p.toString();
