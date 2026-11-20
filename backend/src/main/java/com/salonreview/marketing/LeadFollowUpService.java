@@ -1272,6 +1272,12 @@ public class LeadFollowUpService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "comment required for reason OTHER");
             }
         }
+        boolean reasonOnly = req.status() == null && reason != null;
+        if (reasonOnly) {
+            if (!"LOST".equals(find(id).status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lost reason applies only to lost leads");
+            if (!LOST_REASONS.contains(reason)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown lost reason");
+            if ("OTHER".equals(reason) && comment == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "comment required for reason OTHER");
+        }
         String source = req.source() == null || req.source().isBlank() ? null : req.source().trim();
         if (source != null) {
             if (!SOURCES.contains(source)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown source");
@@ -1301,6 +1307,11 @@ public class LeadFollowUpService {
                 WHERE id = ? AND business_id = ?
                 """, req.status(), req.status(), reason, req.status(), req.status(), comment, req.status(),
                 req.status(), req.status(), by, id, business.id());
+        if (reasonOnly) {
+            jdbc.update("UPDATE lead_intake SET lost_reason = ?, lost_comment = ?, updated_by = ?, updated_at = now() WHERE id = ? AND business_id = ?",
+                    reason, comment, by, id, business.id());
+            addEvent(id, "LOST_REASON", comment == null ? reason : reason + ": " + comment, by);
+        }
         if (req.status() != null && !"NEW".equals(req.status()) && !"CONTACTED".equals(req.status())) closeReminders(id);
         if (clear) closeReminders(id);
         else if (callback != null) replaceReminders(id, callback.toInstant(), "MANUAL", by, false);
@@ -1572,27 +1583,47 @@ public class LeadFollowUpService {
     }
 
     public LostReport lostReport(int days) {
+        return lostReport(days, null, null);
+    }
+
+    /** from/to are America/Los_Angeles calendar days (inclusive); when from is set they replace the rolling days window. */
+    public LostReport lostReport(int days, java.time.LocalDate from, java.time.LocalDate to) {
         int d = Math.max(1, Math.min(days, 730));
+        java.time.ZoneId la = java.time.ZoneId.of(LEAD_TZ);
+        java.time.LocalDate today = java.time.LocalDate.now(la);
+        Timestamp start;
+        Timestamp end;
+        if (from != null) {
+            java.time.LocalDate last = to == null ? today : to;
+            if (last.isBefore(from)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "to is before from");
+            if (java.time.temporal.ChronoUnit.DAYS.between(from, last) > 1100) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "period too long");
+            start = Timestamp.from(from.atStartOfDay(la).toInstant());
+            end = Timestamp.from(last.plusDays(1).atStartOfDay(la).toInstant());
+            d = (int) Math.max(1, java.time.temporal.ChronoUnit.DAYS.between(from, last) + 1);
+        } else {
+            start = Timestamp.from(Instant.now().minus(java.time.Duration.ofDays(d)));
+            end = Timestamp.from(today.plusDays(1).atStartOfDay(la).toInstant());
+        }
         List<LostRow> byReason = jdbc.query("""
                 SELECT lost_reason, count(*) FROM lead_intake
-                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND outcome <> 'DUPLICATE' AND lost_at >= now() - make_interval(days => ?)
+                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND outcome <> 'DUPLICATE' AND lost_at >= ? AND lost_at < ?
                 GROUP BY lost_reason ORDER BY count(*) DESC
-                """, (rs, i) -> new LostRow(rs.getString(1), null, rs.getInt(2)), business.id(), d);
+                """, (rs, i) -> new LostRow(rs.getString(1), null, rs.getInt(2)), business.id(), start, end);
         List<LostRow> bySource = jdbc.query("""
                 SELECT lost_reason, source, count(*) FROM lead_intake
-                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND outcome <> 'DUPLICATE' AND lost_at >= now() - make_interval(days => ?)
+                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND outcome <> 'DUPLICATE' AND lost_at >= ? AND lost_at < ?
                 GROUP BY lost_reason, source ORDER BY count(*) DESC, source
-                """, (rs, i) -> new LostRow(rs.getString(1), rs.getString(2), rs.getInt(3)), business.id(), d);
+                """, (rs, i) -> new LostRow(rs.getString(1), rs.getString(2), rs.getInt(3)), business.id(), start, end);
         List<LostLead> lostLeads = jdbc.query("""
                 SELECT id, name, right(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), 4) AS last4, channel, source,
                        lost_reason, lost_comment, lost_at
                 FROM lead_intake
                 WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND outcome <> 'DUPLICATE'
-                  AND lost_at >= now() - make_interval(days => ?)
+                  AND lost_at >= ? AND lost_at < ?
                 ORDER BY lost_at DESC, id DESC LIMIT 1000
                 """, (rs, i) -> new LostLead(rs.getLong("id"), rs.getString("name"), rs.getString("last4"),
                 rs.getString("channel"), rs.getString("source"), rs.getString("lost_reason"), rs.getString("lost_comment"),
-                iso(rs.getTimestamp("lost_at"))), business.id(), d);
+                iso(rs.getTimestamp("lost_at"))), business.id(), start, end);
         return new LostReport(d, byReason.stream().mapToInt(LostRow::count).sum(), byReason, bySource, lostLeads);
     }
 
