@@ -13,12 +13,13 @@ const BASE_TABS = [
   { href: '/owner/marketing/contacts', label: 'Contacts' },
   { href: '/owner/marketing/funnel', label: 'Funnel' },
   { href: '/owner/marketing/ads-report', label: 'Ads Report' },
+  { href: '/owner/marketing/google-ppc', label: 'Google PPC' },
   { href: '/owner/marketing/ltv', label: 'LTV' },
 ];
 const SEO_TAB = { href: '/owner/marketing/seo', label: 'SEO' };
 const AI_TAB = { href: '/owner/marketing/ai', label: 'AI' };
 // Business-wide tabs (one domain per business, not per landing page): no ?slug=, no page selector.
-const BUSINESS_WIDE = new Set([SEO_TAB.href, AI_TAB.href]);
+const BUSINESS_WIDE = new Set([SEO_TAB.href, AI_TAB.href, '/owner/marketing/google-ppc']);
 
 // Also the default landing page every marketing page.tsx server component should scope its own
 // data fetch to when ?slug= is absent — mani is the only page with real ad spend/history (see

@@ -2626,27 +2626,12 @@ export interface PermissionsOverview {
   users: UserPermissionsRow[];
 }
 
-export interface MarketingConversionRow {
-  key: string;
-  label: string;
-  hint: string;
-  weight: number;
-  count: number;
-  points: number;
-}
-
 export interface MarketingConversionsData {
   available: boolean;
   landingPageSlug: string;
   pageViews: number;
-  rows: MarketingConversionRow[];
-  totalPoints: number;
-  payingCustomers: number;
-  revenue: number;
-  /** Every traffic channel, regardless of the selected sources; "other" fits no bucket. */
+  /** Every traffic channel; "other" fits no bucket. */
   bySource: MarketingSourceRow[];
-  /** Spend from the daily Google Ads sync for the same period; null when nothing was synced. */
-  googleAds: MarketingGoogleAds | null;
 }
 
 export interface MarketingSourceRow {
@@ -2659,10 +2644,9 @@ export interface MarketingSourceRow {
   fullPayments: number;
   payingCustomers: number;
   revenue: number;
-  points: number;
 }
 
-export interface MarketingGoogleAdsCampaign {
+export interface GooglePpcCampaign {
   campaignId: number;
   name: string;
   status: string | null;
@@ -2672,12 +2656,36 @@ export interface MarketingGoogleAdsCampaign {
   platformConversions: number;
 }
 
-export interface MarketingGoogleAds {
+export interface GooglePpcPage {
+  slug: string;
+  name: string;
+  visitors: number;
+  smsTaps: number;
+  callTaps: number;
+  consultations: number;
+  deposits: number;
+  fullPayments: number;
+  revenue: number;
+}
+
+export interface GooglePpcData {
+  hasSpend: boolean;
   spend: number;
   impressions: number;
   clicks: number;
   platformConversions: number;
-  campaigns: MarketingGoogleAdsCampaign[];
+  results: {
+    visitors: number;
+    smsTaps: number;
+    callTaps: number;
+    consultations: number;
+    deposits: number;
+    fullPayments: number;
+    payingCustomers: number;
+    revenue: number;
+  };
+  campaigns: GooglePpcCampaign[];
+  pages: GooglePpcPage[];
 }
 
 // --- Leads CRM (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.
