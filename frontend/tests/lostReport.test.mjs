@@ -8,13 +8,17 @@ const L = (id, source, reason) => ({ id, name: 'N', phoneLast4: '1111', channel:
 const leads = [L(1, 'Yelp', 'PRICE'), L(2, 'Yelp', 'PRICE'), L(3, 'Yelp', 'TIMING'), L(4, 'Google Ads', 'PRICE'), L(5, null, 'OTHER')];
 
 test('filters parse from the URL with safe defaults', () => {
-  assert.deepEqual(parseLostFilters({}), { days: 90, sources: [], reason: null });
-  assert.deepEqual(parseLostFilters({ days: '30', source: ['Yelp', 'Yelp', 'Google Ads'], reason: 'PRICE' }), { days: 30, sources: ['Yelp', 'Google Ads'], reason: 'PRICE' });
-  assert.deepEqual(parseLostFilters({ days: '7', source: 'Yelp', reason: 'drop table' }), { days: 90, sources: ['Yelp'], reason: null });
+  assert.deepEqual(parseLostFilters({}), { days: 90, from: null, to: null, sources: [], reason: null });
+  assert.deepEqual(parseLostFilters({ days: '30', source: ['Yelp', 'Yelp', 'Google Ads'], reason: 'PRICE' }), { days: 30, from: null, to: null, sources: ['Yelp', 'Google Ads'], reason: 'PRICE' });
+  assert.deepEqual(parseLostFilters({ days: '7', source: 'Yelp', reason: 'drop table' }), { days: 90, from: null, to: null, sources: ['Yelp'], reason: null });
+  assert.deepEqual(parseLostFilters({ from: '2026-10-01', to: '2026-10-31' }), { days: 90, from: '2026-10-01', to: '2026-10-31', sources: [], reason: null });
+  assert.deepEqual(parseLostFilters({ from: '2026-10-31', to: '2026-10-01' }).to, null);
+  assert.equal(parseLostFilters({ from: 'x', to: '2026-10-01' }).from, null);
 });
 
 test('href round-trips and omits defaults', () => {
-  assert.equal(lostHref({ days: 90, sources: [], reason: null }), '/admin/leads/lost-report');
+  assert.equal(lostHref({ days: 90, from: null, to: null, sources: [], reason: null }), '/admin/leads/lost-report');
+  assert.equal(lostHref({ days: 90, from: '2026-10-01', to: '2026-10-31', sources: [], reason: null }), '/admin/leads/lost-report?from=2026-10-01&to=2026-10-31');
   const f = { days: 180, sources: ['Google Ads', 'Yelp'], reason: 'PRICE' };
   assert.deepEqual(parseLostFilters(Object.fromEntries([['days', '180'], ['reason', 'PRICE']])).days, 180);
   assert.equal(lostHref(f), '/admin/leads/lost-report?days=180&source=Google+Ads&source=Yelp&reason=PRICE');
