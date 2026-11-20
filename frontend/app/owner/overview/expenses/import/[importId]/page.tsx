@@ -5,7 +5,7 @@ import ReconciliationWorkspace from './ReconciliationWorkspace';
 
 export default async function ReconciliationPage({ params }: { params: Promise<{ importId: string }> }) {
   const me = await serverApi.getMe();
-  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
+  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing/google-ppc' : '/reports');
 
   const { importId } = await params;
 

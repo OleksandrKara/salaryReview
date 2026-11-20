@@ -16,10 +16,20 @@ const BASE_TABS = [
   { href: '/owner/marketing/google-ppc', label: 'Google PPC' },
   { href: '/owner/marketing/ltv', label: 'LTV' },
 ];
+const LOST_TAB = { href: '/owner/marketing/lost-report', label: 'Lost leads' };
 const SEO_TAB = { href: '/owner/marketing/seo', label: 'SEO' };
 const AI_TAB = { href: '/owner/marketing/ai', label: 'AI' };
 // Business-wide tabs (one domain per business, not per landing page): no ?slug=, no page selector.
-const BUSINESS_WIDE = new Set([SEO_TAB.href, AI_TAB.href, '/owner/marketing/google-ppc']);
+const BUSINESS_WIDE = new Set([SEO_TAB.href, AI_TAB.href, LOST_TAB.href, '/owner/marketing/google-ppc']);
+
+/** Google PPC first, then the overview and the lost-leads report, then the remaining tabs in their usual order. */
+function adsManagerTabs(extra: { href: string; label: string }[]) {
+  const byHref = (h: string) => BASE_TABS.find((t) => t.href === h)!;
+  return [
+    byHref('/owner/marketing/google-ppc'), byHref('/owner/marketing'), LOST_TAB,
+    ...BASE_TABS.filter((t) => !['/owner/marketing/google-ppc', '/owner/marketing'].includes(t.href)), ...extra,
+  ];
+}
 
 // Also the default landing page every marketing page.tsx server component should scope its own
 // data fetch to when ?slug= is absent — mani is the only page with real ad spend/history (see
@@ -63,6 +73,9 @@ export default function MarketingTabs() {
   // something that might not apply".
   const [seoMonitoringEnabled, setSeoMonitoringEnabled] = useState(false);
   const [aiVisibilityEnabled, setAiVisibilityEnabled] = useState(false);
+  // The Ads Manager (PPC agency) lands on Google PPC and gets the lost-leads report; the tab order
+  // depends on the role, so the bar stays hidden (keeping its height) until /api/me answers.
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,13 +87,15 @@ export default function MarketingTabs() {
     let cancelled = false;
     api.getMe().then((me) => {
       if (cancelled) return;
+      setRole(me.role);
       setSeoMonitoringEnabled(me.features.seoMonitoringEnabled);
       setAiVisibilityEnabled(me.features.aiVisibilityEnabled);
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
-  const TABS = [...BASE_TABS, ...(seoMonitoringEnabled ? [SEO_TAB] : []), ...(aiVisibilityEnabled ? [AI_TAB] : [])];
+  const extra = [...(seoMonitoringEnabled ? [SEO_TAB] : []), ...(aiVisibilityEnabled ? [AI_TAB] : [])];
+  const TABS = role === 'ADS_MANAGER' ? adsManagerTabs(extra) : [...BASE_TABS, ...extra];
 
   // Contacts pools every site's leads, so it defaults to (and offers) "All sites" (owner request
   // 2026-10-12: the selector showed one site while the table listed every site's contacts). The
@@ -110,7 +125,7 @@ export default function MarketingTabs() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Owner request 2026-10-12: every tab visible on a phone without sideways scrolling. Below
             sm the tabs form a 4-column grid (7 tabs = 2 rows); from sm up a single wrapping row. */}
-        <nav aria-label="Marketing sections" className="grid w-full grid-cols-4 gap-1 sm:flex sm:w-auto sm:flex-wrap">
+        <nav aria-label="Marketing sections" className={`${role === null ? 'invisible ' : ''}grid w-full grid-cols-4 gap-1 sm:flex sm:w-auto sm:flex-wrap`}>
           {TABS.map((tab) => {
             const active = pathname === tab.href;
             // design.md D6: SEO is scoped to the business's one primary domain, not a per-landing-

@@ -19,7 +19,7 @@ export default async function ManagerTimeAdminPage({
 }) {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER') {
-    redirect(me.role === 'PROVIDER' ? '/me' : me.role === 'ADS_MANAGER' ? '/owner/marketing' : '/manager/time');
+    redirect(me.role === 'PROVIDER' ? '/me' : me.role === 'ADS_MANAGER' ? '/owner/marketing/google-ppc' : '/manager/time');
   }
 
   const sp = await searchParams;

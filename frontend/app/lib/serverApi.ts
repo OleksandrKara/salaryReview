@@ -33,6 +33,8 @@ import type {
   MarketingAdsReportData,
   MarketingLtvData,
   MarketingConversionsData,
+  AdLeadCard,
+  AdLeadRow,
   GooglePpcData,
   MarketingAnalyticsData,
   MarketingContactsData,
@@ -385,6 +387,18 @@ export const serverApi = {
     if (to) query.set('to', to);
     return serverFetch<GooglePpcData>(`/api/owner/marketing/google-ppc?${query.toString()}`);
   },
+
+  getGooglePpcLeads: (from?: string, to?: string) => {
+    const query = new URLSearchParams();
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
+    return serverFetch<AdLeadRow[]>(`/api/owner/marketing/google-ppc/leads?${query.toString()}`);
+  },
+
+  getAdLead: (id: number) => serverFetch<AdLeadCard>(`/api/owner/marketing/leads/${id}`),
+
+  getAdLostReport: (days: number, from?: string | null, to?: string | null) =>
+    serverFetch<LostReport>(`/api/owner/marketing/lost-report?days=${days}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`),
 
   getMarketingPages: () => serverFetch<MarketingLandingPage[]>('/api/owner/marketing/pages'),
 

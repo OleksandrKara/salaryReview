@@ -10,7 +10,7 @@ export default async function ReviewsPage() {
   const me = await serverApi.getMe();
   if (me.role === 'PROVIDER') redirect('/me');
   if (me.role === 'MANAGER') redirect('/admin/leads');
-  if (me.role === 'ADS_MANAGER') redirect('/owner/marketing');
+  if (me.role === 'ADS_MANAGER') redirect('/owner/marketing/google-ppc');
 
   const overview = await serverApi.getReviews();
 

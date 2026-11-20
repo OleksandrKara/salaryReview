@@ -5,7 +5,7 @@ import StatementUploadForm from './StatementUploadForm';
 
 export default async function ImportStatementPage() {
   const me = await serverApi.getMe();
-  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
+  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing/google-ppc' : '/reports');
 
   return (
     <main className="mx-auto max-w-xl p-4 sm:p-8">

@@ -95,7 +95,7 @@ export default function Landing() {
       window.location.assign(
         role === 'PROVIDER' ? '/me'
           : role === 'MANAGER' ? '/admin/leads'
-          : role === 'ADS_MANAGER' ? '/owner/marketing'
+          : role === 'ADS_MANAGER' ? '/owner/marketing/google-ppc'
           // OWNER: through `/` rather than straight to `/reports` — its own redirect already
           // checks whether this business's salon_config exists yet (see ownerBusinessConfigured
           // in app/page.tsx) and sends a freshly platform-admin-created business's owner to
