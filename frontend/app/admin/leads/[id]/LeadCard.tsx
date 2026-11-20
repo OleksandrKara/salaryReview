@@ -1,5 +1,6 @@
 'use client';
 
+import LeadMoney from '../../../components/LeadMoney';
 import FlagIcon from '../FlagIcon';
 import Link from 'next/link';
 import { useRef, useState } from 'react';
@@ -411,6 +412,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
             </div>
           ))}
         </dl>
+        <div className="mt-3"><LeadMoney outlook={data.outlook} language={language} /></div>
         <div className="mt-3 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2 sm:flex sm:flex-wrap">
           {chat && <Link href={chat} className={`${link} py-2.5 text-center`}>{t(language, 'leadOpenChat')}</Link>}
           <button className={`${link} py-2.5`} onClick={openNotes}>{t(language, 'crmNoteSave')}</button>

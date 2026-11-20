@@ -36,7 +36,7 @@ public class AdLeadsService {
     public record Card(long id, String name, String phone, String email, String status, String createdAt, String source,
                        String campaign, String searchQuery, String landing, String lostReason, String lostComment,
                        Visit firstVisit, List<Appointment> appointments, List<LeadFollowUpService.Payment> payments,
-                       java.math.BigDecimal totalPaid, List<StatusStep> steps) {}
+                       java.math.BigDecimal totalPaid, List<StatusStep> steps, LeadFollowUpService.Outlook outlook) {}
 
     private final LeadFollowUpService leads;
     private final JdbcTemplate jdbc;
@@ -115,7 +115,7 @@ public class AdLeadsService {
                 .map(e -> new StatusStep(e.createdAt(), e.text())).toList();
         return new Card(lead.id(), d.nameInfo() != null && d.nameInfo().name() != null ? d.nameInfo().name() : lead.name(),
                 lead.phoneNumber(), lead.email(), lead.status(), lead.createdAt(), lead.source(), campaign, query, landing,
-                lead.lostReason(), lead.lostComment(), firstVisit, appointments, d.payments(), total, steps);
+                lead.lostReason(), lead.lostComment(), firstVisit, appointments, d.payments(), total, steps, d.outlook());
     }
 
     private static String termFromUrl(String url) {

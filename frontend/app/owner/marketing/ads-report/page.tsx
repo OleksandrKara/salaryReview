@@ -26,7 +26,8 @@ export default async function MarketingAdsReportPage({
     serverApi.getMarketingAdsReport(selection.period, selection.from, selection.to, undefined, slug),
   ]);
 
-  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
+  if (me?.role === 'ADS_MANAGER') redirect('/owner/marketing/google-ppc');
+  if (me?.role !== 'OWNER') redirect('/reports');
 
   return (
     <main className="mx-auto w-full min-w-0 max-w-6xl p-4 sm:p-8">

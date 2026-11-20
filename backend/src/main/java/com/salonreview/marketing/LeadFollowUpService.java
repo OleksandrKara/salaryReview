@@ -145,7 +145,18 @@ public class LeadFollowUpService {
 
     public record Appointment(String id, String status, String startAt, String services, String technician,
                               Integer minutes, java.math.BigDecimal paid, String consultKind,
-                              String sellerNote, String customerNote) {}
+                              String sellerNote, String customerNote, java.math.BigDecimal price) {}
+
+    /** A booked procedure still ahead of the person: what it is, when, and its catalog price (null when the catalog has none). */
+    public record Upcoming(String services, String startAt, String technician, java.math.BigDecimal price) {}
+
+    /**
+     * Money picture of a lead: what was collected so far and what is still expected for the procedures
+     * booked ahead. {@code prepaid} is the part of that already paid in advance (a deposit), {@code remaining}
+     * what is left to collect, {@code partial} true when a booked service has no catalog price (estimate is then a floor).
+     */
+    public record Outlook(java.math.BigDecimal collected, List<Upcoming> upcoming, java.math.BigDecimal estimate,
+                          java.math.BigDecimal prepaid, java.math.BigDecimal remaining, boolean partial) {}
 
     public record Spend(java.math.BigDecimal total, java.math.BigDecimal tips, int visits, String firstVisit,
                         String lastVisit, String nextAppointment) {}
@@ -162,7 +173,7 @@ public class LeadFollowUpService {
                              List<Appointment> appointments, Spend spend, List<EmailSent> emails,
                              List<Sms> sms, String squareNote, List<Payment> payments, List<Form> forms,
                              Place place, Badges badges, List<Reminder> reminders, Journey journey,
-                             java.util.Map<String, String> firstTouch, NameInfo nameInfo) {}
+                             java.util.Map<String, String> firstTouch, NameInfo nameInfo, Outlook outlook) {}
 
     /** The one name every screen shows, other names seen for this phone, and whether staff can change it (needs a Square profile). */
     public record NameInfo(String name, List<String> alternates, boolean canRename) {}
@@ -469,10 +480,13 @@ public class LeadFollowUpService {
                         + "WHERE lead_id = ? AND business_id = ? ORDER BY created_at DESC",
                 (rs, i) -> new Event(rs.getLong("id"), rs.getString("type"), rs.getString("text"),
                         rs.getString("created_by"), iso(rs.getTimestamp("created_at"))), id, business.id());
-        return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead),
-                sms(lead), squareNote(lead), payments(lead), forms(lead, touches), place(lead), badges(lead),
+        List<Appointment> appointments = appointments(lead);
+        Spend spend = spend(lead);
+        List<Payment> payments = payments(lead);
+        return new LeadDetail(lead, touches, events, origins(lead), appointments, spend, emails(lead),
+                sms(lead), squareNote(lead), payments, forms(lead, touches), place(lead), badges(lead),
                 "NEW".equals(lead.status()) || "CONTACTED".equals(lead.status()) ? reminders(lead.id()) : List.of(),
-                journey(lead), firstTouch, nameInfo(lead));
+                journey(lead), firstTouch, nameInfo(lead), outlook(appointments, spend, payments, Instant.now()));
     }
 
     private NameInfo nameInfo(LeadView lead) {
@@ -890,6 +904,14 @@ public class LeadFollowUpService {
                 log.warn("Lead appointment service names unavailable: {}", e.toString());
             }
         }
+        java.util.Map<String, java.math.BigDecimal> prices = java.util.Map.of();
+        if (!variationIds.isEmpty()) {
+            try {
+                prices = squares.forBusiness(business.id()).catalogPrices(variationIds);
+            } catch (Exception e) {
+                log.warn("Lead appointment prices unavailable: {}", e.toString());
+            }
+        }
         java.util.Map<String, String> techs = new java.util.HashMap<>();
         jdbc.query("SELECT m.square_team_member_id, COALESCE(NULLIF(p.display_name, ''), p.name) FROM provider_square_member m "
                 + "JOIN providers p ON p.id = m.provider_id WHERE p.business_id = ?", rs -> {
@@ -905,6 +927,10 @@ public class LeadFollowUpService {
                     .collect(java.util.stream.Collectors.joining(", "));
             String tech = null;
             Integer minutes = null;
+            java.math.BigDecimal price = null;
+            if (!perRow.get(i).isEmpty() && perRow.get(i).stream().allMatch(prices::containsKey)) {
+                price = perRow.get(i).stream().map(prices::get).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+            }
             try {
                 if (r[3] != null) {
                     int total = 0;
@@ -928,7 +954,7 @@ public class LeadFollowUpService {
             if (!services.isEmpty() && services.toLowerCase().contains("consultation")) {
                 kind = services.toLowerCase().contains("online") ? "ONLINE" : "OFFLINE";
             }
-            out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services, tech, minutes, paid, kind, (String) r[4], (String) r[5]));
+            out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services, tech, minutes, paid, kind, (String) r[4], (String) r[5], price));
         }
         return out;
     }
@@ -975,6 +1001,32 @@ public class LeadFollowUpService {
     }
 
     /** Lifetime money and visits of the linked Square customer, from the payment mirror (tips reported apart). */
+    /**
+     * Procedures still ahead (accepted, in the future, not a consultation) with their catalog prices, and what was
+     * paid in advance toward them: payments outside any visit day (deposits) made after the last visit that already happened.
+     */
+    static Outlook outlook(List<Appointment> appointments, Spend spend, List<Payment> payments, Instant now) {
+        java.math.BigDecimal zero = java.math.BigDecimal.ZERO;
+        Instant lastVisit = appointments.stream().filter(a -> "ACCEPTED".equals(a.status()) && a.startAt() != null)
+                .map(a -> Instant.parse(a.startAt())).filter(t -> !t.isAfter(now)).max(Instant::compareTo).orElse(null);
+        List<Upcoming> upcoming = appointments.stream()
+                .filter(a -> "ACCEPTED".equals(a.status()) && a.consultKind() == null && a.startAt() != null
+                        && Instant.parse(a.startAt()).isAfter(now))
+                .sorted(java.util.Comparator.comparing(Appointment::startAt))
+                .map(a -> new Upcoming(a.services(), a.startAt(), a.technician(), a.price())).toList();
+        java.math.BigDecimal estimate = upcoming.stream().map(Upcoming::price).filter(java.util.Objects::nonNull)
+                .reduce(zero, java.math.BigDecimal::add);
+        boolean partial = upcoming.stream().anyMatch(u -> u.price() == null);
+        java.math.BigDecimal inAdvance = payments.stream()
+                .filter(p -> lastVisit == null || Instant.parse(p.at()).isAfter(lastVisit))
+                .map(Payment::amount).reduce(zero, java.math.BigDecimal::add);
+        java.math.BigDecimal prepaid = upcoming.isEmpty() ? zero : inAdvance.min(estimate.signum() > 0 ? estimate : inAdvance);
+        java.math.BigDecimal remaining = upcoming.isEmpty() ? zero : estimate.subtract(prepaid).max(zero);
+        java.math.BigDecimal collected = (spend == null ? zero : spend.total())
+                .add(payments.stream().map(Payment::amount).reduce(zero, java.math.BigDecimal::add));
+        return new Outlook(collected, upcoming, estimate, prepaid, remaining, partial);
+    }
+
     private Spend spend(LeadView lead) {
         java.math.BigDecimal zero = java.math.BigDecimal.ZERO;
         List<String> customers = customerIds(lead);

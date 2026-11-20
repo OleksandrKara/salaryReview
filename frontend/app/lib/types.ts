@@ -2721,7 +2721,7 @@ export interface AdLeadCard {
   firstVisit: { at: string; landing: string | null; trafficSource: string | null; utm: string | null; adClick: string | null; device: string | null } | null;
   appointments: AdLeadAppointment[];
   payments: { id: string; at: string; amount: number; tip: number | null; description: string | null }[];
-  totalPaid: number; steps: { at: string; text: string | null }[];
+  totalPaid: number; steps: { at: string; text: string | null }[]; outlook: LeadOutlook | null;
 }
 
 // --- Leads CRM (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.
@@ -2779,7 +2779,7 @@ export interface LeadOrigin {
   browser: string | null; ip: string | null; location: string | null; service: string | null;
 }
 export interface LeadEvent { id: number; type: string; text: string | null; createdBy: string | null; createdAt: string }
-export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[]; sms: LeadSms[]; squareNote: string | null; payments: LeadPayment[]; forms: LeadForm[]; place: LeadPlace | null; badges: LeadBadges | null; reminders: LeadReminder[]; journey: LeadJourney | null; firstTouch?: Record<string, string> | null; nameInfo?: LeadNameInfo | null }
+export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[]; sms: LeadSms[]; squareNote: string | null; payments: LeadPayment[]; forms: LeadForm[]; place: LeadPlace | null; badges: LeadBadges | null; reminders: LeadReminder[]; journey: LeadJourney | null; firstTouch?: Record<string, string> | null; nameInfo?: LeadNameInfo | null; outlook?: LeadOutlook | null }
 export interface LeadNameInfo { name: string | null; alternates: string[]; canRename: boolean }
 export interface LeadReminder { id: number; dueAt: string; note: string | null; origin: string; createdBy: string | null; fired: boolean }
 export interface LeadPlace { countryCode: string; country: string | null; city: string | null; region: string | null; flag: string; scope: 'LOCAL' | 'OUT_OF_STATE' | 'INTERNATIONAL' | null }
@@ -2788,7 +2788,11 @@ export interface LeadForm { key: string; kind: string; at: string; fields: Recor
 export interface LeadPayment { id: string; at: string; amount: number; tip: number; description: string | null }
 export interface LeadSmsMedia { url: string; contentType: string }
 export interface LeadSms { id: number; direction: 'INBOUND' | 'OUTBOUND'; body: string; at: string; status: string | null; media: LeadSmsMedia[] }
-export interface LeadAppointment { id: string; status: string; startAt: string | null; services: string | null; technician: string | null; minutes: number | null; paid: number | null; consultKind?: 'ONLINE' | 'OFFLINE' | null; sellerNote?: string | null; customerNote?: string | null }
+export interface LeadAppointment { id: string; status: string; startAt: string | null; services: string | null; technician: string | null; minutes: number | null; paid: number | null; consultKind?: 'ONLINE' | 'OFFLINE' | null; sellerNote?: string | null; customerNote?: string | null; price?: number | null }
+export interface LeadOutlook {
+  collected: number; estimate: number; prepaid: number; remaining: number; partial: boolean;
+  upcoming: { services: string | null; startAt: string; technician: string | null; price: number | null }[];
+}
 export interface LeadSpend { total: number; tips: number; visits: number; firstVisit: string | null; lastVisit: string | null; nextAppointment: string | null }
 export interface LeadEmail { id: number; kind: string; sentAt: string; openedAt: string | null; clickedAt: string | null; hasContent: boolean }
 

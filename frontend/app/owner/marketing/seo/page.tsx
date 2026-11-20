@@ -11,7 +11,8 @@ import SiteSwitch, { resolveSite } from '../SiteSwitch';
 export default async function SeoMonitoringPage({ searchParams }: { searchParams: Promise<{ site?: string }> }) {
   const params = await searchParams;
   const me = await serverApi.getMe();
-  if (me.role !== 'OWNER' && me.role !== 'ADS_MANAGER') redirect('/reports');
+  if (me.role === 'ADS_MANAGER') redirect('/owner/marketing/google-ppc');
+  if (me.role !== 'OWNER') redirect('/reports');
   if (!me.features.seoMonitoringEnabled) redirect('/owner/marketing');
 
   const pages = await serverApi.getMarketingPages().catch(() => []);
