@@ -1022,8 +1022,8 @@ public class LeadFollowUpService {
                 .map(Payment::amount).reduce(zero, java.math.BigDecimal::add);
         java.math.BigDecimal prepaid = upcoming.isEmpty() ? zero : inAdvance.min(estimate.signum() > 0 ? estimate : inAdvance);
         java.math.BigDecimal remaining = upcoming.isEmpty() ? zero : estimate.subtract(prepaid).max(zero);
-        java.math.BigDecimal collected = (spend == null ? zero : spend.total())
-                .add(payments.stream().map(Payment::amount).reduce(zero, java.math.BigDecimal::add));
+        // spend.total is every completed payment (tips apart), deposits included, so nothing is added on top.
+        java.math.BigDecimal collected = spend == null ? zero : spend.total();
         return new Outlook(collected, upcoming, estimate, prepaid, remaining, partial);
     }
 
