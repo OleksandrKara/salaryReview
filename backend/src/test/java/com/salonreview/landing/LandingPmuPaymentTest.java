@@ -264,7 +264,7 @@ class LandingPmuPaymentTest {
         verify(leadIntake).captureFailedBooking(lead.capture(), note.capture());
         assertThat(lead.getValue().businessId()).isEqualTo(2L);
         assertThat(lead.getValue().name()).isEqualTo("Ann Test");
-        assertThat(note.getValue()).contains("CVV_FAILURE").contains("Lip Blush");
+        assertThat(note.getValue()).contains("CVV_FAILURE").contains("$100 deposit");
     }
 
     @Test
