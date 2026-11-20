@@ -164,7 +164,7 @@ class CheckoutReviewTriggerServiceTest {
     void invoiceOrderSkipsBothTriggers() {
         when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
         when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
-        when(square.orderSourceName("order_1")).thenReturn(Optional.of("Invoices"));
+        when(square.isInvoiceOrder("order_1", "cust_1")).thenReturn(Boolean.TRUE);
 
         service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
 
@@ -172,6 +172,45 @@ class CheckoutReviewTriggerServiceTest {
         verify(rebookingTrigger, never()).enqueue(any(), any(), any(), any(), any());
         // Never even resolved a phone/name for an order we're skipping outright.
         verify(square, never()).customerPhone(any());
+    }
+
+    @Test
+    @DisplayName("payment webhook says application_details.square_product = INVOICES → skipped without any Square call")
+    void invoicesApplicationPaymentIsSkippedImmediately() {
+        var p = new SquareWebhookEvent.Payment("pay_inv", "COMPLETED", "order_1", "cust_1", null, null, null, "",
+                new SquareWebhookEvent.ApplicationDetails("INVOICES"));
+        service.handlePaymentUpdated(BUSINESS_ID, p);
+        verifyNoInteractions(square);
+        verify(repository, never()).save(any());
+        verify(rebookingTrigger, never()).enqueue(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("invoice linkage could not be determined (Square lookups failed) → treated as an invoice, nothing sent")
+    void unknownInvoiceLinkageSkipsBothTriggers() {
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.isInvoiceOrder("order_1", "cust_1")).thenReturn(null);
+
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
+
+        verify(repository, never()).save(any());
+        verify(rebookingTrigger, never()).enqueue(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("ordinary POS checkout (not an invoice) still gets the review flow and the rebooking trigger")
+    void posCheckoutStillTriggers() {
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.isInvoiceOrder("order_1", "cust_1")).thenReturn(Boolean.FALSE);
+        when(square.customerPhone("cust_1")).thenReturn(PHONE);
+        when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
+
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
+
+        verify(repository).save(any());
+        verify(rebookingTrigger).enqueue(BUSINESS_ID, "pay_1", "cust_1", PHONE, "Jane");
     }
 
     @Test

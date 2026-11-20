@@ -48,7 +48,21 @@ public record SquareWebhookEvent(String type, String eventId, Data data) {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Payment(String id, String status, String orderId, String customerId, String createdAt,
-                          SquareClient.Money amountMoney, SquareClient.Money tipMoney, String note) {}
+                          SquareClient.Money amountMoney, SquareClient.Money tipMoney, String note,
+                          ApplicationDetails applicationDetails) {
+        public Payment(String id, String status, String orderId, String customerId, String createdAt,
+                       SquareClient.Money amountMoney, SquareClient.Money tipMoney, String note) {
+            this(id, status, orderId, customerId, createdAt, amountMoney, tipMoney, note, null);
+        }
+
+        public boolean isInvoicePayment() {
+            return applicationDetails != null && "INVOICES".equalsIgnoreCase(applicationDetails.squareProduct());
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record ApplicationDetails(String squareProduct) {}
 
     /** The FULL booking object, inline in the webhook payload itself — unlike {@link
      * OrderUpdated}, no follow-up Square call is needed to mirror a booking event. Same field
