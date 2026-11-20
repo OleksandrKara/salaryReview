@@ -90,6 +90,7 @@ import type {
   MarketingDashboardData,
   MarketingConversionsData,
   AdLeadMoney,
+  Margins,
   AdLeadRow,
   GooglePpcData,
   MarketingLandingPage,
@@ -743,6 +744,21 @@ export const api = {
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     return proxyGet<GooglePpcData>(`/api/owner/marketing/google-ppc?${params.toString()}`);
+  },
+
+  getMargins: async (): Promise<Margins | null> => {
+    const res = await fetch('/api/margins');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return ((await res.text()) ? await res.json() : null) as Margins | null;
+  },
+  saveMargins: async (m: Pick<Margins, 'materialPerProcedure' | 'masterPct' | 'squarePct'>): Promise<Margins> => {
+    const res = await fetch('/api/margins', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) });
+    if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
+    return res.json();
+  },
+  clearMargins: async (): Promise<void> => {
+    const res = await fetch('/api/margins', { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
   },
 
   getGooglePpcMoney: (from?: string, to?: string) => {
