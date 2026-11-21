@@ -184,10 +184,22 @@ public class LandingPmuBookingService {
             String source = r.tracking() == null ? null : LandingTracking.classify(r.tracking());
             String name = ((r.givenName() == null ? "" : r.givenName()) + " " + (r.familyName() == null ? "" : r.familyName())).trim();
             leadIntake.capture(new LeadIntakeService.Lead(businessId, "Booking", source, r.phone(), r.email(), name,
-                    "Consultation booking", "booking:" + bookingId, null));
+                    "Consultation booking", "booking:" + bookingId, null, attributionOf(r.tracking())));
         } catch (RuntimeException e) {
             log.warn("Consultation lead capture failed (booking unaffected): {}", e.getMessage());
         }
+    }
+
+    /** The booking visit's own UTMs, click ids and referrer, so the lead keeps its campaign and search keyword (null when unknown). */
+    static String attributionOf(LandingTracking t) {
+        if (t == null) return null;
+        Attribution a = VisitAttribution.current(t.landingUrl(), t.visitReferrer());
+        if (a.utmSource() == null && a.gclid() == null && a.utmCampaign() == null) {
+            // The site did not send the visit's landing URL: fall back to the browser's stored first touch.
+            a = new Attribution(t.utmSource(), t.utmMedium(), t.utmCampaign(), t.utmTerm(), t.utmContent(), t.gclid(),
+                    t.gbraid(), t.wbraid(), t.msclkid(), t.fbclid(), null, t.landingUrl(), t.referrer());
+        }
+        return a.toJson();
     }
 
     private void notifyStaff(long businessId, Request r, String startAt, boolean online, String address, String artist) {
