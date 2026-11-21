@@ -142,10 +142,22 @@ public class AdLeadsService {
         Object[] args = new Object[ids.size() + 1];
         args[0] = business.id();
         for (int i = 0; i < ids.size(); i++) args[i + 1] = ids.get(i);
-        jdbc.query("SELECT l.id, l.attribution->>'utm_campaign' AS campaign, "
+        // The lead row itself first, then the same person's other rows and website submissions (a consultation booking
+        // used to be saved without attribution while the form or booking submission kept the campaign and keyword).
+        String person = "(l.phone_number IS NOT NULL AND l.phone_number <> '' AND %s.phone_number = l.phone_number)";
+        jdbc.query("SELECT l.id, "
+                + "COALESCE(NULLIF(l.attribution->>'utm_campaign', ''), "
+                + "(SELECT x.attribution->>'utm_campaign' FROM lead_intake x WHERE x.business_id = l.business_id AND " + person.formatted("x")
+                + " AND COALESCE(x.attribution->>'utm_campaign', '') <> '' ORDER BY x.created_at LIMIT 1), "
+                + "(SELECT s.utm_campaign FROM marketing.submissions s WHERE s.business_id = l.business_id AND COALESCE(s.utm_campaign, '') <> '' "
+                + "AND (s.customer_phone = l.phone_number OR (COALESCE(l.email, '') <> '' AND lower(s.customer_email) = lower(l.email))) "
+                + "ORDER BY s.occurred_at LIMIT 1)) AS campaign, "
                 + "COALESCE(NULLIF(l.attribution->>'utm_term', ''), (regexp_match(l.attribution->>'landing_url', '[?&]utm_term=([^&]+)'))[1], "
                 + "(SELECT v.utm_term FROM marketing.visits v WHERE v.business_id = l.business_id AND v.visitor_id = l.visitor_id "
-                + "AND COALESCE(v.utm_term, '') <> '' ORDER BY v.occurred_at LIMIT 1)) AS term "
+                + "AND COALESCE(v.utm_term, '') <> '' ORDER BY v.occurred_at LIMIT 1), "
+                + "(SELECT s.utm_term FROM marketing.submissions s WHERE s.business_id = l.business_id AND COALESCE(s.utm_term, '') <> '' "
+                + "AND (s.customer_phone = l.phone_number OR (COALESCE(l.email, '') <> '' AND lower(s.customer_email) = lower(l.email))) "
+                + "ORDER BY s.occurred_at LIMIT 1)) AS term "
                 + "FROM lead_intake l WHERE l.business_id = ? AND l.id IN (" + marks + ")", rs -> {
             out.put(rs.getLong("id"), new String[]{blank(rs.getString("campaign")), term(rs.getString("term"))});
         }, args);
