@@ -53,6 +53,8 @@ class FirstContactAutoReplyServiceTest {
                 .contains("first_contact_autoreply_pmu");
         assertThat(FirstContactAutoReplyService.templateKeyFor("Hi! I have a question about Permanent Eyebrows."))
                 .contains("first_contact_autoreply_pmu");
+        assertThat(FirstContactAutoReplyService.templateKeyFor("Hi! I have a question about the Russian manicure course."))
+                .contains("first_contact_autoreply_nails_course");
         assertThat(FirstContactAutoReplyService.templateKeyFor("Hi! I have a question about the PMU Academy courses."))
                 .contains("first_contact_autoreply_academy");
         assertThat(FirstContactAutoReplyService.templateKeyFor(
