@@ -7,6 +7,7 @@ import type { SmsMessageDirection, SmsMessageDto } from '../../../lib/types';
 
 const AUTOMATION_LABELS: Record<string, string> = {
   four_hand_request: '4-hand request',
+  first_contact_autoreply: 'Instant reply to stock text',
   checkout_review_request: 'Checkout review request',
   first_visit_intake_form: 'Intake form (first visit)',
 };

@@ -65,6 +65,18 @@ public final class SmsAutomationRegistry {
     }
 
     private static final Map<String, AutomationMeta> META = Map.ofEntries(
+            Map.entry("first_contact_autoreply", AutomationMeta.sms(
+                    "first_contact_autoreply",
+                    "Instant reply to the stock website text",
+                    "Someone taps a Text button on a site and sends the prefilled \"Hi! I have a question about "
+                            + "...\" without changing it, and we have never texted that number before. An instant "
+                            + "reply asks which service they want and when, so the first human answer can already "
+                            + "be about booking. Anyone who edited the text or adds a question gets no automatic "
+                            + "reply, only the usual staff alert. One reply per number, never to a blocked number. "
+                            + "Wording is editable per business (Nails, PMU, Academy).",
+                    List.of("first_contact_autoreply_nails", "first_contact_autoreply_pmu",
+                            "first_contact_autoreply_academy"), false, true, false
+            )),
             Map.entry("four_hand_request", AutomationMeta.sms(
                     "four_hand_request",
                     "4-Hand request confirmation",
