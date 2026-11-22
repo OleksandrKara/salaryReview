@@ -49,6 +49,32 @@ public final class SmsMessageTemplateCatalog {
     }
 
     private static final Map<String, TemplateDefault> DEFAULTS = Map.ofEntries(
+            // First-contact auto-reply (owner 2026-11-22): answers the stock website text when sent
+            // untouched. Plain ASCII, no emoji, so each is 2 segments at most; no promise of a
+            // reply time. Signed Jane (owner 2026-11-22: she answers most first-contact texts). One key per business because the wording differs, not one variable.
+            Map.entry("first_contact_autoreply_nails", new TemplateDefault(
+                    "first_contact_autoreply_nails", "first_contact_autoreply", SmsMessageClass.TRANSACTIONAL,
+                    "Nails: answer to the stock website text",
+                    List.of("Hi! Thanks for texting AK.LUX.NAILS. What service are you interested in, and what day "
+                            + "or time works for you? Or just send your question here and we'll reply as soon as we can. - Jane"),
+                    List.of()
+            )),
+            Map.entry("first_contact_autoreply_pmu", new TemplateDefault(
+                    "first_contact_autoreply_pmu", "first_contact_autoreply", SmsMessageClass.TRANSACTIONAL,
+                    "PMU: answer to the stock website text",
+                    List.of("Hi! Thanks for texting Anna Kara's Permanent Makeup Studio. Which service are you "
+                            + "considering, and do you have a day in mind for a consultation? Send any questions "
+                            + "here and we'll reply as soon as we can. - Jane"),
+                    List.of()
+            )),
+            Map.entry("first_contact_autoreply_academy", new TemplateDefault(
+                    "first_contact_autoreply_academy", "first_contact_autoreply", SmsMessageClass.TRANSACTIONAL,
+                    "Academy: answer to the stock website text",
+                    List.of("Hi! Thanks for your interest in Anna Kara's PMU Academy. Which course are you looking "
+                            + "at, and have you worked in permanent makeup before? Ask anything here and we'll "
+                            + "reply as soon as we can. - Jane"),
+                    List.of()
+            )),
             Map.entry("four_hand_request_received", new TemplateDefault(
                     "four_hand_request_received", "four_hand_request", SmsMessageClass.TRANSACTIONAL,
                     "Request confirmation",

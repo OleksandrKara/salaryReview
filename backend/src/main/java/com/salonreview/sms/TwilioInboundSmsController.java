@@ -68,6 +68,7 @@ public class TwilioInboundSmsController {
     private final CurrentBusinessContext currentBusinessContext;
     private final SmsWebsiteLeadService websiteLeadService;
     private final LeadIntakeService leadIntake;
+    private final FirstContactAutoReplyService autoReplyService;
 
     /** Carrier-supplied sender location, kept on the lead touch. */
     private static String smsPayload(Map<String, String> params, boolean tapMatched) {
@@ -92,7 +93,8 @@ public class TwilioInboundSmsController {
                                        SmsReactionService reactionService, BusinessRepository businesses,
                                        TwilioSmsConfigRepository twilioConfigs, CurrentBusinessContext currentBusinessContext,
                                        SmsWebsiteLeadService websiteLeadService,
-                                       LeadIntakeService leadIntake) {
+                                       LeadIntakeService leadIntake,
+                                       FirstContactAutoReplyService autoReplyService) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
@@ -107,6 +109,7 @@ public class TwilioInboundSmsController {
         this.currentBusinessContext = currentBusinessContext;
         this.websiteLeadService = websiteLeadService;
         this.leadIntake = leadIntake;
+        this.autoReplyService = autoReplyService;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -239,6 +242,13 @@ public class TwilioInboundSmsController {
             }
         } else {
             messageLogService.markTelegramAlerted(logged.getId());
+        }
+
+        // The website's stock "I have a question" text, sent untouched by someone we have never
+        // texted: an instant reply asks which service and when (see FirstContactAutoReplyService,
+        // switchable on the automations page). After the staff alert so a failure here costs nothing.
+        if (!isOptOut && pending.isEmpty() && !blockedNumberRepository.existsById(normalizedFrom)) {
+            autoReplyService.maybeReply(businessId, from, body);
         }
 
         // A STOP-style reply isn't a satisfaction-rating reply — the block above already stops

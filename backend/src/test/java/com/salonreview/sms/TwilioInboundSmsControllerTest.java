@@ -58,6 +58,7 @@ class TwilioInboundSmsControllerTest {
     private SmsMediaService mediaService;
     private SmsReactionService reactionService;
     private BusinessRepository businesses;
+    private FirstContactAutoReplyService autoReplyService;
     private TwilioSmsConfigRepository twilioConfigs;
     private CurrentBusinessContext currentBusinessContext;
     private SmsWebsiteLeadService websiteLeadService;
@@ -104,10 +105,11 @@ class TwilioInboundSmsControllerTest {
         // around the resolveCustomerName call below, rather than just compiling.
         currentBusinessContext = new CurrentBusinessContext();
 
+        autoReplyService = mock(FirstContactAutoReplyService.class);
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
                 properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
                 blockedNumberRepository, mediaService, reactionService, businesses, twilioConfigs,
-                currentBusinessContext, websiteLeadService, leadIntake);
+                currentBusinessContext, websiteLeadService, leadIntake, autoReplyService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -488,6 +490,32 @@ class TwilioInboundSmsControllerTest {
         verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), null, null, 0, java.util.List.of());
         verifyNoInteractions(replyService);
         verify(replyFlowRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("a first-contact text is offered to the auto-reply after the staff alert; STOP and a pending rating flow are not")
+    void autoReplyOfferedOnlyForOrdinaryInbound() throws Exception {
+        String stock = "Hi! I have a question about a nail appointment.";
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+        var p = params(PHONE, stock);
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", sign(AUTH_TOKEN, WEBHOOK_URL, p))
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+        var inOrder = org.mockito.Mockito.inOrder(telegramService, autoReplyService);
+        inOrder.verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, stock, null, null, 0, java.util.List.of());
+        inOrder.verify(autoReplyService).maybeReply(BUSINESS_ID, PHONE, stock);
+
+        org.mockito.Mockito.clearInvocations(autoReplyService);
+        var stop = params(PHONE, "STOP");
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", sign(AUTH_TOKEN, WEBHOOK_URL, stop))
+                        .param("From", stop.get("From")).param("Body", stop.get("Body")).param("MessageSid", stop.get("MessageSid")))
+                .andExpect(status().isOk());
+        verifyNoInteractions(autoReplyService);
     }
 
     @Test

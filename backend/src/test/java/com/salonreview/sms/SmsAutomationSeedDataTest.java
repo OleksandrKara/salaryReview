@@ -56,4 +56,11 @@ class SmsAutomationSeedDataTest {
 
         assertThat(seeded.isEnabled()).isFalse();
     }
+
+    @Test
+    void firstContactAutoreplySeedsDisabled() {
+        SmsAutomation seeded = repository.findByBusinessIdAndAutomationKey(BUSINESS_A_ID, "first_contact_autoreply").orElseThrow();
+
+        assertThat(seeded.isEnabled()).isFalse();
+    }
 }

@@ -43,6 +43,7 @@ const AUTOMATION_NOTICE_THRESHOLD: Set<string> = new Set(['provider_schedule_clo
 // rebooking) — none of them reference nails or PMU specifically in their own logic.
 type AutomationCategory = 'nails' | 'pmu' | 'academy' | 'general';
 const AUTOMATION_CATEGORY: Record<string, AutomationCategory> = {
+  first_contact_autoreply: 'general',
   four_hand_request: 'nails',
   consultation_lead_sms: 'pmu',
   touchup_reminder: 'pmu',

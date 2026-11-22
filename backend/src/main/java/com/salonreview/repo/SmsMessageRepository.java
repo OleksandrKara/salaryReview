@@ -15,6 +15,9 @@ import java.util.Optional;
 
 public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
 
+    boolean existsByBusinessIdAndPhoneNumberAndDirectionAndStatus(
+            Long businessId, String phoneNumber, String direction, String status);
+
     boolean existsByBusinessIdAndPhoneNumberAndDirectionAndStatusAndBodyAndCreatedAtAfter(
             Long businessId, String phoneNumber, String direction, String status, String body, Instant after);
 
