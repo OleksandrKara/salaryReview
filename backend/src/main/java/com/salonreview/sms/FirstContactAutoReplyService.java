@@ -79,8 +79,13 @@ public class FirstContactAutoReplyService {
         var m = STOCK_TEXT.matcher(body.trim().replaceAll("\\s+", " "));
         if (!m.matches()) return Optional.empty();
         String subject = m.group(1);
+        // The nails site's own course page (akluxnails.com/russian-manicure-course) texts "...about
+        // the Russian manicure course.": a nails word wins over "course", or it would get the PMU
+        // Academy wording.
+        boolean nails = NAILS.matcher(subject).find();
+        if (nails && ACADEMY.matcher(subject).find()) return Optional.of("first_contact_autoreply_nails_course");
         if (ACADEMY.matcher(subject).find()) return Optional.of("first_contact_autoreply_academy");
-        if (NAILS.matcher(subject).find()) return Optional.of("first_contact_autoreply_nails");
+        if (nails) return Optional.of("first_contact_autoreply_nails");
         if (PMU.matcher(subject).find()) return Optional.of("first_contact_autoreply_pmu");
         return Optional.empty();
     }

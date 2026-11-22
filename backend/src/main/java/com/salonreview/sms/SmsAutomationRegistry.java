@@ -73,8 +73,8 @@ public final class SmsAutomationRegistry {
                             + "reply asks which service they want and when, so the first human answer can already "
                             + "be about booking. Anyone who edited the text or adds a question gets no automatic "
                             + "reply, only the usual staff alert. One reply per number, never to a blocked number. "
-                            + "Wording is editable per business (Nails, PMU, Academy).",
-                    List.of("first_contact_autoreply_nails", "first_contact_autoreply_pmu",
+                            + "Wording is editable per text (Nails, Nails course, PMU, Academy).",
+                    List.of("first_contact_autoreply_nails", "first_contact_autoreply_nails_course", "first_contact_autoreply_pmu",
                             "first_contact_autoreply_academy"), false, true, false
             )),
             Map.entry("four_hand_request", AutomationMeta.sms(

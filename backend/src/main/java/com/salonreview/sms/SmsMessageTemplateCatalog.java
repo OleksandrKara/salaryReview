@@ -59,6 +59,15 @@ public final class SmsMessageTemplateCatalog {
                             + "or time works for you? Or just send your question here and we'll reply as soon as we can. - Jane"),
                     List.of()
             )),
+            // Signed Anastasia, the course curator who handles enrollment (owner 2026-11-22).
+            Map.entry("first_contact_autoreply_nails_course", new TemplateDefault(
+                    "first_contact_autoreply_nails_course", "first_contact_autoreply", SmsMessageClass.TRANSACTIONAL,
+                    "Nails course: answer to the stock website text",
+                    List.of("Hi! Thanks for your interest in the Russian manicure course at AK.LUX.NAILS. Have you done "
+                            + "nails before, and what dates work for you? Ask anything here and we'll reply as soon as "
+                            + "we can. - Anastasia"),
+                    List.of()
+            )),
             Map.entry("first_contact_autoreply_pmu", new TemplateDefault(
                     "first_contact_autoreply_pmu", "first_contact_autoreply", SmsMessageClass.TRANSACTIONAL,
                     "PMU: answer to the stock website text",
