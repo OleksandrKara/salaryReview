@@ -83,19 +83,24 @@ function MoneyCard({ money, loading }: { money: AdLeadMoney; loading: boolean })
     <section aria-label="Money from Google Ads leads" className={`rounded-xl bg-white p-4 ring-1 ring-zinc-200 transition-opacity ${loading ? 'opacity-50' : ''}`}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="min-w-0">
-          <div className="text-xs font-medium text-zinc-500">Left to collect</div>
-          <div className={`mt-1 text-3xl font-semibold tabular-nums ${money.leftToCollect > 0 ? 'text-amber-700' : 'text-zinc-900'}`}>{usd0.format(money.leftToCollect)}</div>
+          <div className="text-xs font-medium text-zinc-500">Left to collect, leads of this period</div>
+          <div className={`mt-1 text-3xl font-semibold tabular-nums ${money.periodLeft > 0 ? 'text-amber-700' : 'text-zinc-900'}`}>{usd0.format(money.periodLeft)}</div>
           <div className="mt-1 text-xs text-zinc-500">
-            {money.leftLeads > 0
-              ? `${num(money.leftLeads)} ${money.leftLeads === 1 ? 'lead has' : 'leads have'} a procedure booked ahead and a balance to pay`
-              : 'No Google Ads lead has a balance to pay on a booked procedure'}
+            {money.periodLeftLeads > 0
+              ? `${num(money.periodLeftLeads)} ${money.periodLeftLeads === 1 ? 'lead has' : 'leads have'} a procedure booked ahead and a balance to pay. This is the sum of the leads listed below.`
+              : 'No lead of this period has a balance to pay on a booked procedure'}
           </div>
+          {money.leftToCollect > money.periodLeft && (
+            <div className="mt-1 text-xs text-zinc-500">
+              Plus {usd0.format(money.leftToCollect - money.periodLeft)} from {num(money.leftLeads - money.periodLeftLeads)} older Google Ads {money.leftLeads - money.periodLeftLeads === 1 ? 'lead' : 'leads'} with a booking ahead ({usd0.format(money.leftToCollect)} in all).
+            </div>
+          )}
           {money.leftEstimate > 0 && (
             <div className="mt-3">
               <div className="h-2 overflow-hidden rounded-full bg-zinc-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Prepaid share of booked procedures">
                 <div className="h-full rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
               </div>
-              <p className="mt-1 text-xs tabular-nums text-zinc-500">Prepaid {usd0.format(money.leftPrepaid)} of {usd0.format(money.leftEstimate)} booked</p>
+              <p className="mt-1 text-xs tabular-nums text-zinc-500">Prepaid {usd0.format(money.leftPrepaid)} of {usd0.format(money.leftEstimate)} booked (all Google Ads leads)</p>
             </div>
           )}
           {money.partial && <p className="mt-2 text-xs text-zinc-500">Some booked services have no price yet, so this may be higher.</p>}
@@ -103,7 +108,7 @@ function MoneyCard({ money, loading }: { money: AdLeadMoney; loading: boolean })
         <div className="min-w-0 sm:border-l sm:border-zinc-100 sm:pl-4">
           <div className="text-xs font-medium text-zinc-500">Collected from leads in this period</div>
           <div className="mt-1 text-3xl font-semibold tabular-nums text-zinc-900">{usd0.format(money.collected)}</div>
-          <div className="mt-1 text-xs text-zinc-500">Payments made since each lead came in, for Google Ads leads created in the selected period. What a client paid before that is not counted. Left to collect covers every Google Ads lead with a booking ahead, whenever it came in.</div>
+          <div className="mt-1 text-xs text-zinc-500">Payments made since each lead came in, for Google Ads leads created in the selected period. What a client paid before that is not counted.</div>
         </div>
       </div>
     </section>
