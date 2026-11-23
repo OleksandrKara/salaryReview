@@ -2718,6 +2718,7 @@ export interface AdLeadCampaignMoney { campaign: string | null; leads: number; c
 export interface AdLeadMoney {
   leftToCollect: number; leftLeads: number; leftEstimate: number; leftPrepaid: number; partial: boolean;
   collected: number; periodLeft: number; periodLeftLeads: number; campaigns: AdLeadCampaignMoney[];
+  periodEstimate: number; periodPrepaid: number;
 }
 export interface AdLeadAppointment { status: string | null; startAt: string | null; services: string | null; technician: string | null; paid: number | null; consultation: boolean }
 export interface AdLeadCard {

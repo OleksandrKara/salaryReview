@@ -49,7 +49,8 @@ public class AdLeadsService {
      */
     public record Money(java.math.BigDecimal leftToCollect, int leftLeads, java.math.BigDecimal leftEstimate,
                         java.math.BigDecimal leftPrepaid, boolean partial, java.math.BigDecimal collected,
-                        java.math.BigDecimal periodLeft, int periodLeftLeads, List<CampaignMoney> campaigns) {}
+                        java.math.BigDecimal periodLeft, int periodLeftLeads, List<CampaignMoney> campaigns,
+                        java.math.BigDecimal periodEstimate, java.math.BigDecimal periodPrepaid) {}
 
     private final LeadFollowUpService leads;
     private final JdbcTemplate jdbc;
@@ -94,7 +95,7 @@ public class AdLeadsService {
                 .collect(java.util.stream.Collectors.toSet());
         Map<Long, String[]> attribution = attributionOf(everyone.stream().map(i -> i.lead().id()).toList());
         java.math.BigDecimal left = zero, estimate = zero, prepaid = zero, collected = zero;
-        java.math.BigDecimal periodLeft = zero;
+        java.math.BigDecimal periodLeft = zero, periodEstimate = zero, periodPrepaid = zero;
         int leftLeads = 0, periodLeftLeads = 0;
         boolean partial = false;
         Map<String, java.math.BigDecimal[]> byCampaign = new java.util.LinkedHashMap<>();
@@ -123,6 +124,8 @@ public class AdLeadsService {
                     n[1]++;
                     sums[1] = sums[1].add(o.remaining());
                     periodLeft = periodLeft.add(o.remaining());
+                    periodEstimate = periodEstimate.add(o.estimate());
+                    periodPrepaid = periodPrepaid.add(o.prepaid());
                     if (o.remaining().signum() > 0) periodLeftLeads++;
                 }
             }
@@ -131,7 +134,7 @@ public class AdLeadsService {
                 .map(e -> new CampaignMoney(e.getKey().isEmpty() ? null : e.getKey(), counts.get(e.getKey())[0],
                         e.getValue()[0], counts.get(e.getKey())[1], e.getValue()[1]))
                 .sorted((x, y) -> y.collected().add(y.remaining()).compareTo(x.collected().add(x.remaining()))).toList();
-        return new Money(left, leftLeads, estimate, prepaid, partial, collected, periodLeft, periodLeftLeads, rows);
+        return new Money(left, leftLeads, estimate, prepaid, partial, collected, periodLeft, periodLeftLeads, rows, periodEstimate, periodPrepaid);
     }
 
     /** utm_campaign and the search query for each lead: the lead's own capture, else its browser's first tagged visit. */
