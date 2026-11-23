@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
-import type { AdLeadCampaignMoney, AdLeadMoney, AdLeadRow, GooglePpcCustomer, GooglePpcData, Margins } from '../../../lib/types';
+import type { AdLeadCampaignMoney, AdLeadMoney, AdLeadRow, GooglePpcData, Margins } from '../../../lib/types';
 import { romiPercent } from './romi';
 import { consultationLabel, statusLabel, statusTone } from '../adLeads';
 import PeriodFilter from '../PeriodFilter';
@@ -66,11 +66,10 @@ export default function GooglePpcView({ initialData, initialLeads, initialMoney,
         </p>
       ) : (
         <div className={`space-y-6 transition-opacity ${loading ? 'opacity-50' : ''}`} aria-busy={loading}>
-          <Kpis data={data} margins={margins} onMargins={setMargins} money={money} />
+          <Kpis data={data} margins={margins} onMargins={setMargins} money={money} leads={leads} />
           <Campaigns data={data} money={money} />
           <Pages data={data} />
           <Leads leads={leads} timeZone={timeZone} />
-          <Customers customers={data.customers} leads={leads} timeZone={timeZone} />
         </div>
       )}
     </div>
@@ -118,16 +117,19 @@ function Kpi({ label, value, sub, className = '' }: { label: string; value: stri
   );
 }
 
-function Kpis({ data, margins, onMargins, money }: { data: GooglePpcData; margins: Margins | null; onMargins: (m: Margins | null) => void; money: AdLeadMoney | null }) {
+function Kpis({ data, margins, onMargins, money, leads }: { data: GooglePpcData; margins: Margins | null; onMargins: (m: Margins | null) => void; money: AdLeadMoney | null; leads: AdLeadRow[] }) {
   const r = data.results;
-  const roi = data.spend > 0 ? ((r.revenue - data.spend) / data.spend) * 100 : null;
-  const roas = data.spend > 0 ? r.revenue / data.spend : null;
-  const romi = margins ? romiPercent(r.revenue, data.spend, r.deposits, margins) : roi;
-  // Same math with the balances still to pay on procedures already booked by this period's leads (one more procedure of materials each).
-  const romiAhead = money && money.periodLeft > 0
-    ? (margins ? romiPercent(r.revenue + money.periodLeft, data.spend, r.deposits + money.periodLeftLeads, margins)
-      : data.spend > 0 ? ((r.revenue + money.periodLeft - data.spend) / data.spend) * 100 : null)
-    : null;
+  // One source of truth for revenue: what this period's Google Ads leads have paid since they came in, the same
+  // number as Collected above. Falls back to the contact-capture figure only when the money block failed to load.
+  const revenue = money ? money.collected : r.revenue;
+  const payers = money ? leads.filter((l) => (l.collected ?? 0) > 0).length : r.payingCustomers;
+  const roi = data.spend > 0 ? ((revenue - data.spend) / data.spend) * 100 : null;
+  const roas = data.spend > 0 ? revenue / data.spend : null;
+  // Collected plus the balances still to pay on procedures these leads already booked (one more procedure of materials each).
+  const left = money ? money.periodLeft : 0;
+  const romiAhead = margins
+    ? romiPercent(revenue + left, data.spend, r.deposits + (money ? money.periodLeftLeads : 0), margins)
+    : data.spend > 0 ? ((revenue + left - data.spend) / data.spend) * 100 : null;
   return (
     <section aria-label="Google Ads results">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
@@ -135,22 +137,19 @@ function Kpis({ data, margins, onMargins, money }: { data: GooglePpcData; margin
         <Kpi label="Cost per click" value={perUnit(data.spend, data.clicks)} sub={`${num(r.visitors)} landing page visitors`} />
         <Kpi label="Cost per consultation" value={perUnit(data.spend, r.consultations)} sub={`${num(r.consultations)} consultations`} />
         <Kpi label="Cost per deposit" value={perUnit(data.spend, r.deposits)} sub={`${num(r.deposits)} deposits, ${num(r.fullPayments)} full payments`} />
-        <Kpi label="Revenue" value={usd0.format(r.revenue)} sub={`${num(r.payingCustomers)} paying customers`} />
+        <Kpi label="Revenue" value={usd0.format(revenue)} sub={`${num(payers)} paying ${payers === 1 ? 'lead' : 'leads'}, same as Collected`} />
         <Kpi label="ROAS" value={roas === null ? dash : `${roas.toFixed(2)}x`} sub="Revenue divided by spend" />
         <Kpi label="ROI" value={roi === null ? dash : `${roi.toFixed(0)}%`} sub="(Revenue - spend) / spend" />
-        {/* Without cost assumptions ROMI is just ROI, so the card appears only once they are set. */}
-        {margins && <Kpi label="ROMI" value={romi === null ? dash : `${romi.toFixed(0)}%`} sub="After materials, master and Square fees (approx.)" />}
         <Kpi
-          className={margins ? 'col-span-2 lg:col-span-1' : 'lg:col-span-2'}
+          className="col-span-2"
           label="ROMI with left to collect"
           value={romiAhead === null ? dash : `${romiAhead.toFixed(0)}%`}
-          sub={money && money.periodLeft > 0 ? `If the ${usd0.format(money.periodLeft)} still to collect from this period's leads is paid` : 'Nothing left to collect from this period\'s leads'}
+          sub={`${usd0.format(revenue)} collected + ${usd0.format(left)} left to collect, minus spend${margins ? ' and costs (materials, master, Square fees; approx.)' : '. Set cost assumptions below to include costs'}`}
         />
       </div>
       <MarginsEditor margins={margins} onChange={onMargins} />
       <p className="mt-2 text-xs text-zinc-500">
-        Revenue is Square payments from customers whose first visit came from Google Ads, counted after their first contact.
-        Bookings are matched via contact-capture data and may slightly undercount.
+        Revenue is everything the Google Ads leads of this period have paid in Square since they came in.
       </p>
     </section>
   );
@@ -435,89 +434,6 @@ function Leads({ leads, timeZone }: { leads: AdLeadRow[]; timeZone?: string }) {
         })}
       </ul>
       {shown.length === 0 && <p className="mt-2 text-xs text-zinc-500">No leads with this status in the period.</p>}
-    </section>
-  );
-}
-
-function Customers({ customers, leads, timeZone }: { customers: GooglePpcCustomer[]; leads: AdLeadRow[]; timeZone?: string }) {
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  if (customers.length === 0) return null;
-  const toggle = (id: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  const allOpen = open.size === customers.length;
-  const leadByCustomer = new Map(leads.filter((l) => l.customerId).map((l) => [l.customerId as string, l.id]));
-  return (
-    <section aria-label="Paying customers">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-zinc-900">Paying customers ({customers.length})</h2>
-        <button
-          type="button"
-          onClick={() => setOpen(allOpen ? new Set() : new Set(customers.map((c) => c.customerId)))}
-          className="rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-700"
-        >
-          {allOpen ? 'Collapse all' : 'Expand all'}
-        </button>
-      </div>
-      <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl bg-white ring-1 ring-zinc-200">
-        {customers.map((c) => {
-          const isOpen = open.has(c.customerId);
-          const stage = c.full ? 'Full payment' : c.deposit ? 'Deposit' : 'Paid';
-          return (
-            <li key={c.customerId}>
-              <button
-                type="button"
-                onClick={() => toggle(c.customerId)}
-                aria-expanded={isOpen}
-                className="flex min-h-[44px] w-full items-center justify-between gap-3 px-3 py-2 text-left"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-zinc-900">{c.name || c.phone || 'Unknown'}</span>
-                  <span className="block truncate text-xs text-zinc-500">{c.service ?? 'No booking matched'} | {stage}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <span className="text-sm font-semibold tabular-nums text-zinc-900">{usd0.format(c.total)}</span>
-                  <span aria-hidden="true" className="text-zinc-400">{isOpen ? '\u25B2' : '\u25BC'}</span>
-                </span>
-              </button>
-              {isOpen && (
-                <div className="space-y-3 bg-zinc-50 px-3 py-3 text-xs">
-                  <dl className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3">
-                    <Cell label="Phone" value={c.phone ?? dash} />
-                    <Cell label="Email" value={c.email ?? dash} />
-                    <Cell label="First contact" value={fmtDate(c.firstContactAt, timeZone)} />
-                    <Cell label="Landing page" value={c.pageSlug ?? dash} />
-                    <Cell label="Campaign (utm)" value={c.campaign ?? dash} />
-                    <Cell label="Service" value={c.service ?? dash} />
-                    <Cell label="Booking status" value={c.bookingStatus ?? dash} />
-                    <Cell label="Appointment" value={fmtDate(c.bookingStartAt, timeZone)} />
-                    <Cell label="Technician" value={c.artist ?? dash} />
-                  </dl>
-                  {leadByCustomer.has(c.customerId) && (
-                    <Link href={`/owner/marketing/leads/${leadByCustomer.get(c.customerId)}`} className="inline-block text-sm font-medium text-zinc-900 underline">
-                      Open lead
-                    </Link>
-                  )}
-                  <div>
-                    <div className="mb-1 text-zinc-500">Payments</div>
-                    <ul className="space-y-1">
-                      {c.payments.map((p, i) => (
-                        <li key={i} className="flex justify-between gap-2 tabular-nums">
-                          <span>{fmtDate(p.at, timeZone)}</span>
-                          <span className="font-medium text-zinc-900">{usd2.format(p.amount)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
     </section>
   );
 }
