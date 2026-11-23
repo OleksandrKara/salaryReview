@@ -80,53 +80,30 @@ export default function GooglePpcView({ initialData, initialLeads, initialMoney,
 function MoneyCard({ money, loading }: { money: AdLeadMoney; loading: boolean }) {
   const older = money.leftToCollect - money.periodLeft;
   const olderLeads = money.leftLeads - money.periodLeftLeads;
-  const booked = money.periodEstimate;
-  const paidPct = booked > 0 ? Math.min(100, Math.round((money.periodPrepaid / booked) * 100)) : 0;
   return (
     <section aria-label="Money from Google Ads leads" className={`rounded-xl bg-white p-4 ring-1 ring-zinc-200 transition-opacity ${loading ? 'opacity-50' : ''}`}>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div className="min-w-0">
-          <div className="text-xs font-medium text-zinc-500">Left to collect, leads of this period</div>
+          <div className="text-xs font-medium text-zinc-500">Collected</div>
+          <div className="mt-1 text-3xl font-semibold tabular-nums text-zinc-900">{usd0.format(money.collected)}</div>
+          <div className="mt-1 text-xs text-zinc-500">Paid so far by the Google Ads leads of this period, deposits included.</div>
+        </div>
+        <div className="min-w-0 sm:border-l sm:border-zinc-100 sm:pl-4">
+          <div className="text-xs font-medium text-zinc-500">Left to collect</div>
           <div className={`mt-1 text-3xl font-semibold tabular-nums ${money.periodLeft > 0 ? 'text-amber-700' : 'text-zinc-900'}`}>{usd0.format(money.periodLeft)}</div>
           <div className="mt-1 text-xs text-zinc-500">
             {money.periodLeftLeads > 0
-              ? `${num(money.periodLeftLeads)} ${money.periodLeftLeads === 1 ? 'lead has' : 'leads have'} a procedure booked ahead and a balance to pay. Same as the sum of the leads listed below.`
-              : 'No lead of this period has a balance to pay on a booked procedure'}
+              ? `Still to pay on procedures these leads already booked (${num(money.periodLeftLeads)} ${money.periodLeftLeads === 1 ? 'lead' : 'leads'}). The procedures cost ${usd0.format(money.periodEstimate)} and ${usd0.format(money.periodPrepaid)} is already paid.`
+              : 'These leads have no booked procedure with a balance to pay.'}
           </div>
-          {booked > 0 && (
-            <div className="mt-3">
-              <div className="flex h-2.5 overflow-hidden rounded-full bg-amber-200" role="img" aria-label={`${usd0.format(money.periodPrepaid)} of ${usd0.format(booked)} booked is already paid`}>
-                <div className="h-full bg-emerald-600" style={{ width: `${paidPct}%` }} />
-              </div>
-              <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                <div>
-                  <dt className="text-zinc-500">Booked ahead</dt>
-                  <dd className="font-medium tabular-nums text-zinc-900">{usd0.format(booked)}</dd>
-                </div>
-                <div>
-                  <dt className="flex items-center gap-1 text-zinc-500"><span className="inline-block h-2 w-2 rounded-full bg-emerald-600" aria-hidden />Already paid</dt>
-                  <dd className="font-medium tabular-nums text-zinc-900">{usd0.format(money.periodPrepaid)}</dd>
-                </div>
-                <div>
-                  <dt className="flex items-center gap-1 text-zinc-500"><span className="inline-block h-2 w-2 rounded-full bg-amber-300" aria-hidden />Left to collect</dt>
-                  <dd className="font-medium tabular-nums text-amber-700">{usd0.format(money.periodLeft)}</dd>
-                </div>
-              </dl>
-            </div>
-          )}
-          {older > 0 && (
-            <div className="mt-3 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 ring-1 ring-zinc-200">
-              Plus {usd0.format(older)} from {num(olderLeads)} older Google Ads {olderLeads === 1 ? 'lead' : 'leads'} with a booking ahead. {usd0.format(money.leftToCollect)} in all.
-            </div>
-          )}
-          {money.partial && <p className="mt-2 text-xs text-zinc-500">Some booked services have no price yet, so this may be higher.</p>}
-        </div>
-        <div className="min-w-0 sm:border-l sm:border-zinc-100 sm:pl-4">
-          <div className="text-xs font-medium text-zinc-500">Collected from leads in this period</div>
-          <div className="mt-1 text-3xl font-semibold tabular-nums text-zinc-900">{usd0.format(money.collected)}</div>
-          <div className="mt-1 text-xs text-zinc-500">Every payment made since each lead came in, for Google Ads leads created in the selected period. Deposits and consultation payments count. What a client paid before that does not.</div>
         </div>
       </div>
+      {(older > 0 || money.partial) && (
+        <p className="mt-4 border-t border-zinc-100 pt-3 text-xs text-zinc-500">
+          {older > 0 && `Not included: ${usd0.format(older)} left to collect on ${num(olderLeads)} Google Ads ${olderLeads === 1 ? 'lead' : 'leads'} from earlier periods. `}
+          {money.partial && 'Some booked services have no price yet, so Left to collect may be higher.'}
+        </p>
+      )}
     </section>
   );
 }
