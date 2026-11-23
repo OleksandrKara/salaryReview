@@ -362,4 +362,69 @@ class LeadAutoBookTest {
         assertThat(known.openedAt()).isEqualTo("2026-11-01T10:00:30Z");
         assertThat(known.clickedAt()).isNull();
     }
+
+    private long bookedLead(String phone, String customer, String bookedAgo) {
+        long id = lead(phone, "BOOKED", customer, "5 days", false);
+        jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by, created_at) VALUES (?, ?, 'STATUS', 'BOOKED', 'Square', now() - ?::interval)",
+                id, b, bookedAgo);
+        return id;
+    }
+
+    private void cancelled(String customer, String status, String variation, String cancelledAgo) {
+        jdbc.update("""
+                INSERT INTO square_booking (business_id, square_booking_id, square_customer_id, status, start_at, created_at, updated_at, appointment_segments_json)
+                VALUES (?, ?, ?, ?, now() + interval '3 days', now() - interval '2 days', now() - ?::interval, ?::jsonb)
+                """, b, "BK" + System.nanoTime(), customer, status, cancelledAgo,
+                "[{\"serviceVariationId\":\"" + variation + "\"}]");
+    }
+
+    @Test
+    void cancelledProcedureClosesBookedLeadAsLostWithoutReasonAndLeavesANote() {
+        long id = bookedLead("+16195550041", "C41", "1 day");
+        cancelled("C41", "CANCELLED_BY_SELLER", "PROC", "1 hour");
+        assertThat(service.autoLostCancelled()).isEqualTo(1);
+        assertThat(status(id)).isEqualTo("LOST");
+        assertThat(jdbc.queryForObject("SELECT lost_reason FROM lead_intake WHERE id = ?", String.class, id)).isNull();
+        assertThat(jdbc.queryForObject("SELECT lost_at IS NOT NULL FROM lead_intake WHERE id = ?", Boolean.class, id)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM lead_events WHERE lead_id = ? AND type = 'STATUS' AND text = 'LOST'", Integer.class, id)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT text FROM lead_events WHERE lead_id = ? AND type = 'NOTE'", String.class, id)).contains("cancelled in Square");
+        assertThat(service.autoLostCancelled()).isZero();
+    }
+
+    @Test
+    void freshCancellationWaitsOutTheGraceWindowSoARescheduleDoesNotFlipTheLead() {
+        long id = bookedLead("+16195550042", "C42", "1 day");
+        cancelled("C42", "CANCELLED_BY_CUSTOMER", "PROC", "5 minutes");
+        assertThat(service.autoLostCancelled()).isZero();
+        assertThat(status(id)).isEqualTo("BOOKED");
+    }
+
+    @Test
+    void leadsWithAnotherActiveOrKeptProcedureOrANewerBookedStatusStayBooked() {
+        long other = bookedLead("+16195550043", "C43", "1 day");
+        cancelled("C43", "CANCELLED_BY_CUSTOMER", "PROC", "2 hours");
+        booking("C43", "ACCEPTED", "PROC", "1 hour", "5 days");
+        long regular = bookedLead("+16195550044", "C44", "1 day");
+        cancelled("C44", "CANCELLED_BY_CUSTOMER", "PROC", "2 hours");
+        booking("C44", "ACCEPTED", "PROC", "40 days", "-30 days");
+        long manual = bookedLead("+16195550045", "C45", "10 minutes");
+        cancelled("C45", "CANCELLED_BY_CUSTOMER", "PROC", "2 hours");
+        long consultCancel = bookedLead("+16195550046", "C46", "1 day");
+        cancelled("C46", "CANCELLED_BY_CUSTOMER", CONSULT, "2 hours");
+        long old = bookedLead("+16195550047", "C47", "40 days");
+        cancelled("C47", "CANCELLED_BY_CUSTOMER", "PROC", "20 days");
+        assertThat(service.autoLostCancelled()).isZero();
+        for (long id : new long[] {other, regular, manual, consultCancel, old}) assertThat(status(id)).isEqualTo("BOOKED");
+    }
+
+    @Test
+    void closedLeadComesBackToBookedWhenTheClientRebooks() {
+        long id = bookedLead("+16195550048", "C48", "1 day");
+        cancelled("C48", "CANCELLED_BY_CUSTOMER", "PROC", "2 hours");
+        service.autoLostCancelled();
+        assertThat(status(id)).isEqualTo("LOST");
+        booking("C48", "ACCEPTED", "PROC", "1 minute", "6 days");
+        service.autoBook();
+        assertThat(status(id)).isEqualTo("BOOKED");
+    }
 }

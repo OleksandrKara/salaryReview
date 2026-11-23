@@ -472,12 +472,15 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
             {lead.lostComment ? `: ${lead.lostComment}` : ''}
           </span>
         )}
+        {lead.status === 'LOST' && !lead.lostReason && !losing && (
+          <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-800">{t(language, 'leadLostPending')}</span>
+        )}
         {lead.status === 'LOST' && !losing && (
           <button
             className={link}
             onClick={() => { setLostReason(lead.lostReason ?? ''); setLostComment(lead.lostComment ?? ''); setLosing(true); }}
           >
-            {t(language, 'leadLostChange')}
+            {t(language, lead.lostReason ? 'leadLostChange' : 'leadLostAdd')}
           </button>
         )}
         {losing && (
