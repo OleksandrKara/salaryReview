@@ -103,7 +103,7 @@ function MoneyCard({ money, loading }: { money: AdLeadMoney; loading: boolean })
         <div className="min-w-0 sm:border-l sm:border-zinc-100 sm:pl-4">
           <div className="text-xs font-medium text-zinc-500">Collected from leads in this period</div>
           <div className="mt-1 text-3xl font-semibold tabular-nums text-zinc-900">{usd0.format(money.collected)}</div>
-          <div className="mt-1 text-xs text-zinc-500">All payments of Google Ads leads created in the selected period. Left to collect covers every Google Ads lead with a booking ahead, whenever it came in.</div>
+          <div className="mt-1 text-xs text-zinc-500">Payments made since each lead came in, for Google Ads leads created in the selected period. What a client paid before that is not counted. Left to collect covers every Google Ads lead with a booking ahead, whenever it came in.</div>
         </div>
       </div>
     </section>
