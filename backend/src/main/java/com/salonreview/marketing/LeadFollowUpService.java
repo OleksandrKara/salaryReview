@@ -1615,6 +1615,69 @@ public class LeadFollowUpService {
         return rows.size();
     }
 
+    /** A cancellation is only acted on once it is this old, so a cancel-and-rebook reschedule never flips the lead. */
+    static final int CANCEL_GRACE_MINUTES = 30;
+    /** Cancellations older than this are left alone (they were handled by hand long ago). */
+    static final int CANCEL_LOOKBACK_DAYS = 14;
+
+    public int autoLostCancelled() {
+        int total = 0;
+        for (long businessId : intake.enabledBusinesses()) total += autoLostCancelled(businessId);
+        return total;
+    }
+
+    /**
+     * BOOKED leads whose procedure was cancelled in Square, with no other procedure booked, pending or ever kept, go to LOST
+     * right away. The reason stays empty: the system cannot know it, so the lead lands in the manager's action list asking for
+     * it (see lostReasonPending in the leads UI). Rebooking later moves the lead back to BOOKED through autoBook.
+     * Regulars with a past visit and clients with another active booking are never touched; neither is a lead whose BOOKED
+     * status was set after the cancellation.
+     */
+    int autoLostCancelled(long businessId) {
+        String consultIds = ConsultationCatalog.isConsultationSql("c", consultations.ids(businessId));
+        String consultOther = ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId));
+        var rows = jdbc.queryForList("""
+                WITH keyed AS (
+                  SELECT l.*, %s AS k FROM lead_intake l WHERE outcome <> 'DUPLICATE' AND business_id = ?
+                ), agg AS (
+                  SELECT k, (array_agg(square_customer_id ORDER BY (square_customer_id IS NULL), created_at))[1] AS customer
+                  FROM keyed GROUP BY k
+                ), f AS (
+                  SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id
+                )
+                UPDATE lead_intake li SET status = 'LOST', callback_at = NULL, lost_reason = NULL, lost_comment = NULL,
+                       lost_at = now(), updated_by = 'Square', updated_at = now()
+                FROM f JOIN agg ON agg.k = f.k
+                WHERE li.id = f.id AND f.status = 'BOOKED' AND agg.customer IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM square_booking c WHERE c.business_id = f.business_id
+                              AND c.square_customer_id = agg.customer
+                              AND c.status IN ('CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER') AND NOT %s
+                              AND c.updated_at < now() - make_interval(mins => ?)
+                              AND c.updated_at > now() - make_interval(days => ?)
+                              AND c.updated_at > COALESCE((SELECT max(le.created_at) FROM lead_events le
+                                                           WHERE le.lead_id = f.id AND le.type = 'STATUS' AND le.text = 'BOOKED'), '-infinity'))
+                  AND NOT EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = f.business_id
+                                  AND b.square_customer_id = agg.customer AND b.status IN ('ACCEPTED', 'PENDING', 'NO_SHOW') AND NOT %s)
+                RETURNING li.id, li.business_id, agg.customer AS customer
+                """.formatted(KEY, consultIds, consultOther), businessId, CANCEL_GRACE_MINUTES, CANCEL_LOOKBACK_DAYS);
+        for (var r : rows) {
+            long id = ((Number) r.get("id")).longValue();
+            jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE lead_id = ? AND done_at IS NULL", id);
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'LOST', 'Square')",
+                    id, businessId);
+            String when = jdbc.query("""
+                    SELECT start_at FROM square_booking WHERE business_id = ? AND square_customer_id = ?
+                      AND status IN ('CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER') ORDER BY updated_at DESC LIMIT 1
+                    """, rs -> rs.next() && rs.getTimestamp(1) != null
+                    ? java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a", java.util.Locale.US)
+                            .format(rs.getTimestamp(1).toInstant().atZone(ZoneId.of(LEAD_TZ))) : null,
+                    businessId, r.get("customer"));
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'NOTE', ?, 'Square')",
+                    id, businessId, "The procedure" + (when == null ? "" : " on " + when) + " was cancelled in Square. Lead closed automatically. Reason not recorded yet: please add it.");
+        }
+        return rows.size();
+    }
+
     private List<Sms> sms(LeadView lead) {
         String digits = lead.phoneNumber() == null ? "" : lead.phoneNumber().replaceAll("\\D", "");
         if (digits.length() < 10) return List.of();

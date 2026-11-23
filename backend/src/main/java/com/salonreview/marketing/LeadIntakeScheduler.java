@@ -20,6 +20,7 @@ public class LeadIntakeScheduler {
     public void callbackReminders() {
         followUp.sendDueReminders();
         followUp.autoBook();
+        followUp.autoLostCancelled();
     }
 
     @Scheduled(cron = "0 7,22,37,52 * * * *", zone = "America/Los_Angeles")

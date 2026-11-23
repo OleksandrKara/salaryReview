@@ -45,8 +45,11 @@ function span(ms: number, lang: Language | null): string {
 
 const activity = (l: Lead) => new Date(l.activityAt ?? l.lastTouchAt).getTime();
 
+/** Closed automatically when a booking was cancelled; the manager still owes the reason. */
+const lostNoReason = (l: Lead) => l.status === 'LOST' && !l.lostReason;
+
 function needsAction(l: Lead, now: number): boolean {
-  return isOverdue(l, now) || l.status === 'NEW';
+  return isOverdue(l, now) || l.status === 'NEW' || lostNoReason(l);
 }
 
 type Section = { key: string; title: string; tone: string; leads: Lead[]; group?: 'todo' | 'inwork' };
@@ -61,7 +64,9 @@ function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | nu
     const rest = leads.filter((l) => !isOverdue(l, now) && l.status === 'NEW');
     const fresh = rest.filter((l) => now - activity(l) <= COLD_AFTER_DAYS * DAY).sort(recent);
     const cold = rest.filter((l) => now - activity(l) > COLD_AFTER_DAYS * DAY).sort(recent);
+    const pending = leads.filter(lostNoReason).sort(recent);
     return [
+      { key: 'lostReason', title: t(lang, 'crmSecLostReason'), tone: 'text-amber-700', leads: pending },
       { key: 'new', title: t(lang, 'crmSecNew'), tone: 'text-blue-700', leads: fresh },
       { key: 'overdue', title: t(lang, 'crmSecOverdue'), tone: 'text-red-700', leads: overdue },
       { key: 'lapsed', title: t(lang, 'crmSecLapsedDue'), tone: 'text-orange-700', leads: lapsed },
@@ -276,7 +281,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const hasLapsed = useMemo(() => leads.some((l) => isLapsed(l, now)), [leads, now]);
 
   const inTab = (l: Lead, x: Tab): boolean =>
-    x === 'ALL' ? l.status !== 'SPAM' : x === 'CONSULT' ? isActive(l) && l.consultState != null : x === 'LAPSED' ? isLapsed(l, now) : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now)) : l.status === x;
+    x === 'ALL' ? l.status !== 'SPAM' : x === 'CONSULT' ? isActive(l) && l.consultState != null : x === 'LAPSED' ? isLapsed(l, now) : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now) || lostNoReason(l)) : l.status === x;
   const counts = useMemo(
     () => Object.fromEntries(TABS.map((x) => [x, base.filter((l) => inTab(l, x) && (x !== 'ACTION' || needsAction(l, now)) && ((x !== 'CONSULT' && x !== 'LAPSED') || lacksNextStep(l, now))).length])) as Record<Tab, number>,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -512,7 +517,8 @@ export default function LeadsManager({ initialLeads, language = null, restricted
               const waiting = l.status === 'NEW' ? span(now - activity(l), language) : null;
               const late = overdue && l.callbackAt ? span(now - new Date(l.callbackAt).getTime(), language) : null;
               const reason: { text: string; cls: string } | null =
-                !isActive(l) ? null
+                lostNoReason(l) ? { text: t(language, 'crmReasonLostPending'), cls: 'text-amber-700' }
+                : !isActive(l) ? null
                 : l.closeReady ? { text: t(language, 'crmReasonClose'), cls: 'text-red-700' }
                 : overdue ? { text: isLapsed(l, now) ? '' : `${l.consultState === 'DONE' || l.consultState === 'NO_SHOW' ? t(language, 'crmReasonConsult') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
                 : l.status === 'NEW' ? { text: `${t(language, 'crmReasonNew')} ${waiting}`, cls: 'text-blue-700' }
