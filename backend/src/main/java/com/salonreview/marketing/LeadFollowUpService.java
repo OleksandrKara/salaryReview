@@ -1029,8 +1029,30 @@ public class LeadFollowUpService {
 
     /** Money picture of one lead without loading its whole card (used for per-campaign totals). */
     Outlook outlookOf(LeadView lead) {
-        if (customerIds(lead).isEmpty()) return null;
-        return outlook(appointments(lead), spend(lead), payments(lead), Instant.now());
+        List<String> customers = customerIds(lead);
+        if (customers.isEmpty()) return null;
+        Outlook o = outlook(appointments(lead), spend(lead), payments(lead), Instant.now());
+        // Money "from this lead": only what was paid from the lead's first day on. A client who came back through an ad
+        // after paying years ago must not bring the old payments with them (the lead card keeps the lifetime total).
+        Instant since = Instant.parse(lead.createdAt()).atZone(java.time.ZoneId.of(LEAD_TZ)).toLocalDate()
+                .atStartOfDay(java.time.ZoneId.of(LEAD_TZ)).toInstant();
+        return new Outlook(collectedSince(customers, since), o.upcoming(), o.estimate(), o.prepaid(), o.remaining(), o.partial());
+    }
+
+    /** Completed payments (tips apart) of the customers from {@code since} on. */
+    java.math.BigDecimal collectedSince(List<String> customers, Instant since) {
+        if (customers.isEmpty()) return java.math.BigDecimal.ZERO;
+        return jdbc.queryForObject("SELECT COALESCE(sum(total_money - COALESCE(tip_money, 0)), 0) FROM square_payment WHERE business_id = ? "
+                + "AND status = 'COMPLETED' AND created_at >= ? AND square_customer_id IN (" + marks(customers.size()) + ")",
+                java.math.BigDecimal.class, withSince(business.id(), customers, since));
+    }
+
+    private Object[] withSince(long businessId, List<String> ids, Instant since) {
+        List<Object> a = new java.util.ArrayList<>();
+        a.add(businessId);
+        a.add(Timestamp.from(since));
+        a.addAll(ids);
+        return a.toArray();
     }
 
     private Spend spend(LeadView lead) {
