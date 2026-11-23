@@ -140,9 +140,10 @@ function Kpis({ data, margins, onMargins, money }: { data: GooglePpcData; margin
         <Kpi label="Revenue" value={usd0.format(r.revenue)} sub={`${num(r.payingCustomers)} paying customers`} />
         <Kpi label="ROAS" value={roas === null ? dash : `${roas.toFixed(2)}x`} sub="Revenue divided by spend" />
         <Kpi label="ROI" value={roi === null ? dash : `${roi.toFixed(0)}%`} sub="(Revenue - spend) / spend" />
-        <Kpi label="ROMI" value={romi === null ? dash : `${romi.toFixed(0)}%`} sub={margins ? 'After materials, master and Square fees (approx.)' : 'Same as ROI until cost assumptions are set'} />
+        {/* Without cost assumptions ROMI is just ROI, so the card appears only once they are set. */}
+        {margins && <Kpi label="ROMI" value={romi === null ? dash : `${romi.toFixed(0)}%`} sub="After materials, master and Square fees (approx.)" />}
         <Kpi
-          className="col-span-2 lg:col-span-1"
+          className={margins ? 'col-span-2 lg:col-span-1' : 'lg:col-span-2'}
           label="ROMI with left to collect"
           value={romiAhead === null ? dash : `${romiAhead.toFixed(0)}%`}
           sub={money && money.periodLeft > 0 ? `If the ${usd0.format(money.periodLeft)} still to collect from this period's leads is paid` : 'Nothing left to collect from this period\'s leads'}
