@@ -968,8 +968,11 @@ public class LeadFollowUpService {
         if (customers.isEmpty()) return List.of();
         java.time.ZoneId la = java.time.ZoneId.of("America/Los_Angeles");
         java.util.Set<java.time.LocalDate> visitDays = new java.util.HashSet<>();
-        jdbc.query("SELECT start_at FROM square_booking WHERE business_id = ? AND status = 'ACCEPTED' AND start_at IS NOT NULL "
-                + "AND square_customer_id IN (" + marks(customers.size()) + ")",
+        // Days of procedures that already happened. A payment on a consultation day (or on the day of a future procedure)
+        // is not payment for a finished visit, so it counts as paid in advance, like any other deposit.
+        jdbc.query("SELECT start_at FROM square_booking b WHERE business_id = ? AND status = 'ACCEPTED' AND start_at IS NOT NULL "
+                + "AND start_at <= now() AND NOT " + ConsultationCatalog.isConsultationSql("b", consultations.ids(business.id()))
+                + " AND square_customer_id IN (" + marks(customers.size()) + ")",
                 rs -> { visitDays.add(rs.getTimestamp(1).toInstant().atZone(la).toLocalDate()); }, args(business.id(), customers));
         List<Payment> out = new java.util.ArrayList<>();
         jdbc.query("""
@@ -1007,7 +1010,7 @@ public class LeadFollowUpService {
      */
     static Outlook outlook(List<Appointment> appointments, Spend spend, List<Payment> payments, Instant now) {
         java.math.BigDecimal zero = java.math.BigDecimal.ZERO;
-        Instant lastVisit = appointments.stream().filter(a -> "ACCEPTED".equals(a.status()) && a.startAt() != null)
+        Instant lastVisit = appointments.stream().filter(a -> "ACCEPTED".equals(a.status()) && a.consultKind() == null && a.startAt() != null)
                 .map(a -> Instant.parse(a.startAt())).filter(t -> !t.isAfter(now)).max(Instant::compareTo).orElse(null);
         List<Upcoming> upcoming = appointments.stream()
                 .filter(a -> "ACCEPTED".equals(a.status()) && a.consultKind() == null && a.startAt() != null
