@@ -150,12 +150,13 @@ function Kpis({ data, margins, onMargins, money, leads }: { data: GooglePpcData;
       </div>
       <div className="mt-3 rounded-xl bg-white p-3 ring-1 ring-zinc-200 sm:p-4">
         <h2 className="text-sm font-semibold text-zinc-900">Conversions</h2>
-        <dl className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <dl className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {[
             { label: 'Consultations booked', n: r.consultations, hint: 'online or in studio, from the site' },
             { label: 'Text taps', n: r.smsTaps, hint: 'taps on the text button' },
             { label: 'Call taps', n: r.callTaps, hint: 'taps on the call button' },
             { label: 'Deposits from the site', n: money ? money.siteDeposits : null, hint: 'Book now, Book a procedure (invoices do not count)' },
+            { label: 'Academy forms', n: r.forms, hint: 'course request form, repeats not counted' },
           ].map((c) => (
             <div key={c.label} className="min-w-0">
               <dt className="text-xs font-medium text-zinc-500">{c.label}</dt>
@@ -254,119 +255,204 @@ function MarginsEditor({ margins, onChange }: { margins: Margins | null; onChang
   );
 }
 
+type ConvParts = { sms: number; calls: number; consultations: number; deposits: number; forms: number };
+const convTotal = (c: ConvParts) => c.sms + c.calls + c.consultations + c.deposits + c.forms;
+/** "3 text taps, 2 call taps, 1 consultation": only the kinds that happened. */
+function convBreakdown(c: ConvParts): string {
+  return [
+    c.sms > 0 ? `${c.sms} text` : null,
+    c.calls > 0 ? `${c.calls} call` : null,
+    c.consultations > 0 ? `${c.consultations} consult.` : null,
+    c.deposits > 0 ? `${c.deposits} ${c.deposits === 1 ? 'deposit' : 'deposits'}` : null,
+    c.forms > 0 ? `${c.forms} ${c.forms === 1 ? 'form' : 'forms'}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+function Conv({ parts }: { parts: ConvParts }) {
+  return (
+    <div className="text-right">
+      <div className="font-semibold tabular-nums text-zinc-900">{num(convTotal(parts))}</div>
+      {convTotal(parts) > 0 && <div className="text-[11px] leading-tight text-zinc-500">{convBreakdown(parts)}</div>}
+    </div>
+  );
+}
+
+/** Every campaign with Google Ads spend: clicks and cost, our conversions (text taps + call taps + consultations booked +
+ * deposits from the site + Academy forms), and the money of its leads. Conversions come from the server already matched to the
+ * campaign id; what could not be tied to a campaign of this period is listed on its own row so the totals still add up. */
 function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null }) {
-  // The money rows are already matched to Google Ads campaigns by id on the server (a lead's campaign text is written
-  // differently from the campaign name). Leads whose campaign has no spend row this period, or no campaign at all,
-  // stay in their own rows so the totals still add up.
   const byId = new Map<number, AdLeadCampaignMoney>((money?.campaigns ?? []).filter((m) => m.campaignId !== null).map((m) => [m.campaignId as number, m]));
   const known = new Set(data.campaigns.map((c) => Number(c.campaignId)));
   const extra = (money?.campaigns ?? []).filter((m) => m.campaignId === null || !known.has(m.campaignId));
-  const rows = data.campaigns;
+  const un = data.unattributed;
+  const unParts: ConvParts = { sms: un.smsTaps, calls: un.callTaps, consultations: un.consultations, deposits: 0, forms: un.forms };
+  const partsOf = (c: (typeof data.campaigns)[number]): ConvParts => ({
+    sms: c.smsTaps, calls: c.callTaps, consultations: c.consultations, deposits: byId.get(Number(c.campaignId))?.siteDeposits ?? 0, forms: c.forms,
+  });
+  const totalParts = data.campaigns.reduce((t, c) => {
+    const x = partsOf(c);
+    return { sms: t.sms + x.sms, calls: t.calls + x.calls, consultations: t.consultations + x.consultations, deposits: t.deposits + x.deposits, forms: t.forms + x.forms };
+  }, { ...unParts, deposits: extra.reduce((t, m) => t + m.siteDeposits, 0) });
+  const hasUn = convTotal(unParts) > 0;
+  const leadsTotal = (money?.campaigns ?? []).reduce((t, m) => t + m.leads, 0);
+  const th = 'px-3 py-2 text-right font-medium';
   return (
     <section aria-label="Campaigns">
-      <h2 className="mb-2 text-sm font-semibold text-zinc-900">Campaigns</h2>
+      <h2 className="text-sm font-semibold text-zinc-900">Campaigns</h2>
+      <p className="mb-2 mt-0.5 text-xs text-zinc-500">
+        Conversions = text taps + call taps + consultations booked + deposits from the site (+ Academy forms). Leads are people created in the period.
+      </p>
       <ul className="space-y-2 sm:hidden">
-        {rows.map((c) => {
+        {data.campaigns.map((c) => {
           const m = byId.get(Number(c.campaignId));
+          const parts = partsOf(c);
+          const n = convTotal(parts);
           return (
             <li key={c.campaignId} className="rounded-xl bg-white p-3 ring-1 ring-zinc-200">
               <div className="flex items-start justify-between gap-2">
                 <span className="min-w-0 break-words text-sm font-medium text-zinc-900">{c.name}</span>
-                <span className="text-sm font-semibold tabular-nums">{usd0.format(c.spend)}</span>
+                <span className="shrink-0 text-sm font-semibold tabular-nums">{usd0.format(c.spend)}</span>
               </div>
+              <div className="mt-2 flex items-baseline justify-between gap-3 rounded-lg bg-zinc-50 px-3 py-2">
+                <div>
+                  <div className="text-xs text-zinc-500">Conversions</div>
+                  <div className="text-lg font-semibold tabular-nums text-zinc-900">{num(n)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-zinc-500">Cost per conversion</div>
+                  <div className="text-lg font-semibold tabular-nums text-zinc-900">{perUnit(c.spend, n)}</div>
+                </div>
+              </div>
+              {n > 0 && <p className="mt-1.5 text-xs text-zinc-500">{convBreakdown(parts)}</p>}
               <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
                 <Cell label="Clicks" value={num(c.clicks)} />
                 <Cell label="CPC" value={perUnit(c.spend, c.clicks)} />
-                <Cell label="Conversions" value={num(Math.round(c.platformConversions))} />
+                <Cell label="Leads" value={m ? num(m.leads) : dash} />
                 <Cell label="Collected" value={m ? usd0.format(m.collected) : dash} />
                 <Cell label="Left to collect" value={m ? usd0.format(m.remaining) : dash} />
-                <Cell label="Leads" value={m ? num(m.leads) : dash} />
               </dl>
             </li>
           );
         })}
         {extra.map((m) => (
           <li key={m.campaign ?? 'none'} className="rounded-xl bg-white p-3 ring-1 ring-zinc-200">
-            <div className="min-w-0 break-words text-sm font-medium text-zinc-900">{m.campaign ?? 'No campaign recorded'}</div>
+            <div className="min-w-0 break-words text-sm font-medium text-zinc-900">
+              {m.campaign ?? 'No campaign recorded'}{m.campaign && <span className="ml-1 text-xs text-zinc-400">(no spend this period)</span>}
+            </div>
             <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+              <Cell label="Site deposits" value={num(m.siteDeposits)} />
+              <Cell label="Leads" value={num(m.leads)} />
               <Cell label="Collected" value={usd0.format(m.collected)} />
               <Cell label="Left to collect" value={usd0.format(m.remaining)} />
-              <Cell label="Leads" value={num(m.leads)} />
             </dl>
           </li>
         ))}
+        {hasUn && (
+          <li className="rounded-xl bg-white p-3 ring-1 ring-zinc-200">
+            <div className="text-sm font-medium text-zinc-900">Not tied to a campaign of this period</div>
+            <p className="mt-1 text-xs text-zinc-500">{num(convTotal(unParts))} conversions: {convBreakdown(unParts)}</p>
+          </li>
+        )}
+        <li className="rounded-xl bg-zinc-50 p-3 ring-1 ring-zinc-300">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-sm font-semibold text-zinc-900">Total</span>
+            <span className="text-sm font-semibold tabular-nums">{usd0.format(data.spend)}</span>
+          </div>
+          <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+            <Cell label="Conversions" value={num(convTotal(totalParts))} />
+            <Cell label="Cost per conversion" value={perUnit(data.spend, convTotal(totalParts))} />
+            <Cell label="Leads" value={money ? num(leadsTotal) : dash} />
+            <Cell label="Clicks" value={num(data.clicks)} />
+            <Cell label="Collected" value={money ? usd0.format(money.collected) : dash} />
+            <Cell label="Left to collect" value={money ? usd0.format(money.periodLeft) : dash} />
+          </dl>
+        </li>
       </ul>
       <div className="hidden overflow-x-auto rounded-xl bg-white ring-1 ring-zinc-200 sm:block">
         <table className="w-full text-left text-sm">
           <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               <th className="px-3 py-2 font-medium">Campaign</th>
-              <th className="px-3 py-2 text-right font-medium">Spend</th>
-              <th className="px-3 py-2 text-right font-medium">Impressions</th>
-              <th className="px-3 py-2 text-right font-medium">Clicks</th>
-              <th className="px-3 py-2 text-right font-medium">CPC</th>
-              <th className="px-3 py-2 text-right font-medium" title="Conversions reported by Google Ads itself">Google conversions</th>
-              <th className="px-3 py-2 text-right font-medium">Cost per conversion</th>
-              <th className="px-3 py-2 text-right font-medium">Leads</th>
-              <th className="px-3 py-2 text-right font-medium" title="Leads of this campaign created in the period who paid a deposit through the site">Site deposits</th>
-              <th className="px-3 py-2 text-right font-medium" title="All payments of this campaign's leads created in the period">Collected</th>
-              <th className="px-3 py-2 text-right font-medium" title="Balance still to pay on procedures booked ahead">Left to collect</th>
+              <th className={th}>Spend</th>
+              <th className={th}>Clicks</th>
+              <th className={th}>CPC</th>
+              <th className={th} title="Text taps + call taps + consultations booked + deposits from the site (+ Academy forms)">Conversions</th>
+              <th className={th}>Cost per conversion</th>
+              <th className={th} title="People created as leads in the period">Leads</th>
+              <th className={th} title="All payments of this campaign's leads created in the period">Collected</th>
+              <th className={th} title="Balance still to pay on procedures booked ahead">Left to collect</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((c) => {
+            {data.campaigns.map((c) => {
               const m = byId.get(Number(c.campaignId));
+              const parts = partsOf(c);
               return (
-                <tr key={c.campaignId} className="border-t border-zinc-100">
+                <tr key={c.campaignId} className="border-t border-zinc-100 align-top">
                   <td className="px-3 py-2 font-medium text-zinc-900">{c.name}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{usd0.format(c.spend)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(c.impressions)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(c.clicks)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{perUnit(c.spend, c.clicks)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(Math.round(c.platformConversions))}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{perUnit(c.spend, c.platformConversions)}</td>
+                  <td className="px-3 py-2"><Conv parts={parts} /></td>
+                  <td className="px-3 py-2 text-right tabular-nums">{perUnit(c.spend, convTotal(parts))}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{m ? num(m.leads) : dash}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{m ? num(m.siteDeposits) : dash}</td>
                   <td className="px-3 py-2 text-right font-medium tabular-nums">{m ? usd0.format(m.collected) : dash}</td>
                   <td className={`px-3 py-2 text-right font-medium tabular-nums ${m && m.remaining > 0 ? 'text-amber-700' : ''}`}>{m ? usd0.format(m.remaining) : dash}</td>
                 </tr>
               );
             })}
             {extra.map((m) => (
-              <tr key={m.campaign ?? 'none'} className="border-t border-zinc-100 text-zinc-600">
+              <tr key={m.campaign ?? 'none'} className="border-t border-zinc-100 align-top text-zinc-600">
                 <td className="px-3 py-2">{m.campaign ?? 'No campaign recorded'}{m.campaign && <span className="ml-1 text-xs text-zinc-400">(no spend this period)</span>}</td>
-                {[0, 1, 2, 3, 4, 5].map((i) => <td key={i} className="px-3 py-2 text-right tabular-nums">{dash}</td>)}
+                <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
+                <td className="px-3 py-2"><Conv parts={{ sms: 0, calls: 0, consultations: 0, deposits: m.siteDeposits, forms: 0 }} /></td>
+                <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{num(m.leads)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(m.siteDeposits)}</td>
                 <td className="px-3 py-2 text-right font-medium tabular-nums">{usd0.format(m.collected)}</td>
                 <td className={`px-3 py-2 text-right font-medium tabular-nums ${m.remaining > 0 ? 'text-amber-700' : ''}`}>{usd0.format(m.remaining)}</td>
               </tr>
             ))}
-          </tbody>
-          {money && (
-            <tfoot className="border-t border-zinc-200 bg-zinc-50 text-zinc-900">
-              <tr className="font-semibold">
-                <td className="px-3 py-2">Total</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd0.format(data.spend)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(data.impressions)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(data.clicks)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, data.clicks)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(Math.round(rows.reduce((t, c) => t + c.platformConversions, 0)))}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, rows.reduce((t, c) => t + c.platformConversions, 0))}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(money.campaigns.reduce((t, c) => t + c.leads, 0))}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(money.siteDeposits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd0.format(money.collected)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-amber-700">{usd0.format(money.periodLeft)}</td>
+            {hasUn && (
+              <tr className="border-t border-zinc-100 align-top text-zinc-600">
+                <td className="px-3 py-2">Not tied to a campaign of this period</td>
+                <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
+                <td className="px-3 py-2"><Conv parts={unParts} /></td>
+                {[0, 1, 2, 3].map((i) => <td key={i} className="px-3 py-2 text-right tabular-nums">{dash}</td>)}
               </tr>
-            </tfoot>
-          )}
+            )}
+          </tbody>
+          <tfoot className="border-t border-zinc-200 bg-zinc-50 text-zinc-900">
+            <tr className="align-top font-semibold">
+              <td className="px-3 py-2">Total</td>
+              <td className="px-3 py-2 text-right tabular-nums">{usd0.format(data.spend)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{num(data.clicks)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, data.clicks)}</td>
+              <td className="px-3 py-2"><Conv parts={totalParts} /></td>
+              <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, convTotal(totalParts))}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{money ? num(leadsTotal) : dash}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{money ? usd0.format(money.collected) : dash}</td>
+              <td className="px-3 py-2 text-right tabular-nums text-amber-700">{money ? usd0.format(money.periodLeft) : dash}</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </section>
   );
 }
 
-type PageRow = { key: string; name: string; visitors: number | null; sms: number; calls: number; consultations: number; deposits: number };
+type PageRow = { key: string; name: string; visitors: number | null; sms: number; calls: number; consultations: number; deposits: number; forms: number };
+
+function RateBar({ value, max }: { value: number; max: number }) {
+  return (
+    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-zinc-100" aria-hidden>
+      <span className="block h-full rounded-full bg-emerald-600" style={{ width: `${Math.round((value / max) * 100)}%` }} />
+    </span>
+  );
+}
 
 /** Every conversion type by landing page. Conversion rate = text taps + call taps + consultations booked + deposits
  * from the site, divided by the visits of the page. Deposits are counted for leads created in the period and
@@ -374,27 +460,23 @@ type PageRow = { key: string; name: string; visitors: number | null; sms: number
 function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null }) {
   const byPage = money?.siteDepositsByPage ?? {};
   const known = new Set(data.pages.map((p) => p.slug));
-  const rows: PageRow[] = data.pages.map((p) => ({ key: p.slug, name: p.name, visitors: p.visitors, sms: p.smsTaps, calls: p.callTaps, consultations: p.consultations, deposits: byPage[p.slug] ?? 0 }));
+  const rows: PageRow[] = data.pages.map((p) => ({ key: p.slug, name: p.name, visitors: p.visitors, sms: p.smsTaps, calls: p.callTaps, consultations: p.consultations, deposits: byPage[p.slug] ?? 0, forms: p.forms }));
   const unplaced = Object.entries(byPage).filter(([slug]) => !known.has(slug)).reduce((t, [, n]) => t + n, 0);
-  if (unplaced > 0) rows.push({ key: 'unplaced', name: 'Page not recorded', visitors: null, sms: 0, calls: 0, consultations: 0, deposits: unplaced });
+  if (unplaced > 0) rows.push({ key: 'unplaced', name: 'Page not recorded', visitors: null, sms: 0, calls: 0, consultations: 0, deposits: unplaced, forms: 0 });
   if (rows.length === 0) return null;
-  const conv = (r: PageRow) => r.sms + r.calls + r.consultations + r.deposits;
+  const conv = (r: PageRow) => r.sms + r.calls + r.consultations + r.deposits + r.forms;
+  const hasForms = rows.some((r) => r.forms > 0);
   const share = (r: PageRow) => (r.visitors && r.visitors > 0 ? conv(r) / r.visitors : 0);
   const rate = (r: PageRow) => (r.visitors && r.visitors > 0 ? `${(share(r) * 100).toFixed(1)}%` : dash);
   rows.sort((x, y) => conv(y) - conv(x) || (y.visitors ?? 0) - (x.visitors ?? 0));
   const maxShare = Math.max(0.0001, ...rows.map(share));
-  const total: PageRow = rows.reduce((t, r) => ({ ...t, visitors: (t.visitors ?? 0) + (r.visitors ?? 0), sms: t.sms + r.sms, calls: t.calls + r.calls, consultations: t.consultations + r.consultations, deposits: t.deposits + r.deposits }),
-    { key: 'all', name: 'All pages', visitors: 0, sms: 0, calls: 0, consultations: 0, deposits: 0 });
-  const Bar = ({ r }: { r: PageRow }) => (
-    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-zinc-100" aria-hidden>
-      <span className="block h-full rounded-full bg-emerald-600" style={{ width: `${Math.round((share(r) / maxShare) * 100)}%` }} />
-    </span>
-  );
+  const total: PageRow = rows.reduce((t, r) => ({ ...t, visitors: (t.visitors ?? 0) + (r.visitors ?? 0), sms: t.sms + r.sms, calls: t.calls + r.calls, consultations: t.consultations + r.consultations, deposits: t.deposits + r.deposits, forms: t.forms + r.forms }),
+    { key: 'all', name: 'All pages', visitors: 0, sms: 0, calls: 0, consultations: 0, deposits: 0, forms: 0 });
   return (
     <section aria-label="Results by landing page">
       <h2 className="text-sm font-semibold text-zinc-900">Results by landing page</h2>
       <p className="mb-2 mt-0.5 text-xs text-zinc-500">
-        Conversion rate = text taps + call taps + consultations booked + deposits from the site, divided by visits of the page.
+        Conversion rate = text taps + call taps + consultations booked + deposits from the site (+ Academy forms on the Academy page), divided by visits of the page.
       </p>
       <ul className="space-y-2 sm:hidden">
         {[...rows, total].map((r) => (
@@ -403,13 +485,14 @@ function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null
               <span className="min-w-0 break-words text-sm font-medium text-zinc-900">{r.name}</span>
               <span className="shrink-0 text-lg font-semibold tabular-nums text-zinc-900">{rate(r)}</span>
             </div>
-            {r.key !== 'all' && <div className="mt-1.5"><Bar r={r} /></div>}
+            {r.key !== 'all' && <div className="mt-1.5"><RateBar value={share(r)} max={maxShare} /></div>}
             <dl className="mt-2 grid grid-cols-3 gap-x-2 gap-y-2 text-xs">
               <Cell label="Visits" value={r.visitors === null ? dash : num(r.visitors)} />
               <Cell label="Text taps" value={num(r.sms)} />
               <Cell label="Call taps" value={num(r.calls)} />
               <Cell label="Consultations" value={num(r.consultations)} />
               <Cell label="Site deposits" value={num(r.deposits)} />
+              {hasForms && <Cell label="Forms" value={r.key === 'academy' || r.forms > 0 || r.key === 'all' ? num(r.forms) : dash} />}
               <Cell label="Conversions" value={num(conv(r))} />
             </dl>
           </li>
@@ -425,6 +508,7 @@ function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null
               <th className="px-3 py-2 text-right font-medium">Call taps</th>
               <th className="px-3 py-2 text-right font-medium">Consultations</th>
               <th className="px-3 py-2 text-right font-medium" title="Deposits paid through Book now, Book a procedure; invoices do not count">Site deposits</th>
+              {hasForms && <th className="px-3 py-2 text-right font-medium" title="Academy course request form (Academy page only)">Forms</th>}
               <th className="px-3 py-2 text-right font-medium">Conversions</th>
               <th className="px-3 py-2 font-medium lg:w-48">Conversion rate</th>
             </tr>
@@ -438,10 +522,11 @@ function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null
                 <td className="px-3 py-2 text-right tabular-nums">{num(r.calls)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{num(r.consultations)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{num(r.deposits)}</td>
+                {hasForms && <td className="px-3 py-2 text-right tabular-nums">{r.key === 'academy' || r.forms > 0 ? num(r.forms) : dash}</td>}
                 <td className="px-3 py-2 text-right font-medium tabular-nums">{num(conv(r))}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="hidden min-w-0 flex-1 lg:block"><Bar r={r} /></span>
+                    <span className="hidden min-w-0 flex-1 lg:block"><RateBar value={share(r)} max={maxShare} /></span>
                     <span className="w-12 shrink-0 text-right font-medium tabular-nums text-zinc-900">{rate(r)}</span>
                   </div>
                 </td>
@@ -456,6 +541,7 @@ function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null
               <td className="px-3 py-2 text-right tabular-nums">{num(total.calls)}</td>
               <td className="px-3 py-2 text-right tabular-nums">{num(total.consultations)}</td>
               <td className="px-3 py-2 text-right tabular-nums">{num(total.deposits)}</td>
+              {hasForms && <td className="px-3 py-2 text-right tabular-nums">{num(total.forms)}</td>}
               <td className="px-3 py-2 text-right tabular-nums">{num(conv(total))}</td>
               <td className="px-3 py-2 text-right tabular-nums">{rate(total)}</td>
             </tr>
