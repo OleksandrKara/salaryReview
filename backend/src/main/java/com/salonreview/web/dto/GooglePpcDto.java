@@ -14,16 +14,21 @@ public record GooglePpcDto(
         Results results,
         List<Campaign> campaigns,
         List<PageResults> pages,
-        List<PayingCustomer> customers
+        List<PayingCustomer> customers,
+        Counts unattributed
 ) {
     public record Results(long visitors, long smsTaps, long callTaps, long consultations, long deposits,
-                          long fullPayments, long payingCustomers, BigDecimal revenue) {}
+                          long fullPayments, long payingCustomers, BigDecimal revenue, long forms) {}
+
+    /** Conversions that could not be tied to one of this period's campaigns (older campaign, no campaign recorded). */
+    public record Counts(long smsTaps, long callTaps, long consultations, long forms) {}
 
     public record Campaign(long campaignId, String name, String status, BigDecimal spend, long impressions,
-                           long clicks, double platformConversions) {}
+                           long clicks, double platformConversions, long smsTaps, long callTaps, long consultations,
+                           long forms) {}
 
     public record PageResults(String slug, String name, long visitors, long smsTaps, long callTaps,
-                              long consultations, long deposits, long fullPayments, BigDecimal revenue) {}
+                              long consultations, long deposits, long fullPayments, BigDecimal revenue, long forms) {}
 
     public record Payment(java.time.Instant at, BigDecimal amount) {}
 

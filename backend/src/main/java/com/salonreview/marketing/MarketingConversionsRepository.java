@@ -105,6 +105,50 @@ public class MarketingConversionsRepository {
                 args);
     }
 
+    /**
+     * Text and call taps of Google Ads visitors on one page, per campaign: the campaign id the click carried in the
+     * landing URL (hsa_cam or utm_id, the Google Ads id), else its utm_campaign text. Keys are "id:123" or "name:text";
+     * values are distinct sessions {sms, call}. Same session, window and bot rules as {@link #countVisitorsByChannel}.
+     */
+    public Map<String, long[]> googleTapsByCampaign(UUID landingPageId, Instant from, Instant to) {
+        String sql = "SELECT COALESCE('id:' || fv.cid, 'name:' || fv.cname, '') AS camp, "
+                + " CASE WHEN e.metadata->>'target' = 'sms' THEN 'sms' ELSE 'call' END AS kind, COUNT(DISTINCT e.session_id) AS n"
+                + " FROM marketing.events e CROSS JOIN LATERAL ("
+                + "  SELECT " + TrafficSourceSql.visitChannelCase("vi") + " AS ch,"
+                + "   substring(vi.landing_url from '(?:hsa_cam|utm_id)=([0-9]+)') AS cid, NULLIF(vi.utm_campaign, '') AS cname"
+                + "  FROM marketing.visits vi WHERE vi.visitor_id = e.session_id ORDER BY vi.occurred_at LIMIT 1) fv"
+                + " WHERE e.landing_page_id = ? AND e.event_type = 'click' AND e.metadata->>'target' IN ('sms','phone')"
+                + " AND (?::timestamptz IS NULL OR e.created_at >= ?) AND (?::timestamptz IS NULL OR e.created_at < ?)"
+                + " AND " + TrafficSourceSql.notAutomated("e.session_id") + " AND fv.ch = 'google_ads' GROUP BY 1, 2";
+        Timestamp f = from == null ? null : Timestamp.from(from);
+        Timestamp t = to == null ? null : Timestamp.from(to);
+        Map<String, long[]> out = new HashMap<>();
+        jdbc.query(sql, rs -> {
+            long[] v = out.computeIfAbsent(rs.getString("camp"), k -> new long[2]);
+            v["sms".equals(rs.getString("kind")) ? 0 : 1] = rs.getLong("n");
+        }, landingPageId, f, f, t, t);
+        return out;
+    }
+
+    /**
+     * Academy course requests that came from a Google ad (a Google click id, or utm_source google with medium cpc) and are
+     * not repeats, with the utm_campaign text of each. This is the Academy form conversion.
+     */
+    public List<String> googleAcademyForms(Long businessId, Instant from, Instant to) {
+        Timestamp f = from == null ? null : Timestamp.from(from);
+        Timestamp t = to == null ? null : Timestamp.from(to);
+        return jdbc.query("SELECT COALESCE(utm_campaign, '') AS camp FROM academy_lead WHERE business_id = ? AND status <> 'duplicate' "
+                        + "AND (COALESCE(gclid, '') <> '' OR (utm_source = 'google' AND utm_medium = 'cpc')) "
+                        + "AND (?::timestamptz IS NULL OR created_at >= ?) AND (?::timestamptz IS NULL OR created_at < ?)",
+                (rs, i) -> rs.getString("camp"), businessId, f, f, t, t);
+    }
+
+    /** Every (campaign id, name) pair the Google Ads sync has stored, so lead and form texts can be matched to a campaign. */
+    public List<Map.Entry<Long, String>> googleAdsCampaignNames(Long businessId) {
+        return jdbc.query("SELECT DISTINCT campaign_id, campaign_name FROM google_ads_daily WHERE business_id = ?",
+                (rs, i) -> Map.entry(rs.getLong(1), rs.getString(2)), businessId);
+    }
+
     public record AdsCampaignRow(long campaignId, String name, String status, long costMicros, long impressions, long clicks, double conversions) {}
 
     /** Google Ads spend per campaign from the daily sync, for the window (inclusive dates). */

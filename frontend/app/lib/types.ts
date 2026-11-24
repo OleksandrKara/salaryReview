@@ -2654,6 +2654,10 @@ export interface GooglePpcCampaign {
   impressions: number;
   clicks: number;
   platformConversions: number;
+  smsTaps: number;
+  callTaps: number;
+  consultations: number;
+  forms: number;
 }
 
 export interface GooglePpcPage {
@@ -2666,6 +2670,7 @@ export interface GooglePpcPage {
   deposits: number;
   fullPayments: number;
   revenue: number;
+  forms: number;
 }
 
 export interface GooglePpcData {
@@ -2683,10 +2688,12 @@ export interface GooglePpcData {
     fullPayments: number;
     payingCustomers: number;
     revenue: number;
+    forms: number;
   };
   campaigns: GooglePpcCampaign[];
   pages: GooglePpcPage[];
   customers: GooglePpcCustomer[];
+  unattributed: { smsTaps: number; callTaps: number; consultations: number; forms: number };
 }
 
 export interface GooglePpcCustomer {
