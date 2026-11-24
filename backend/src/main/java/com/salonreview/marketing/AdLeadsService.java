@@ -52,7 +52,7 @@ public class AdLeadsService {
                         java.math.BigDecimal leftPrepaid, boolean partial, java.math.BigDecimal collected,
                         java.math.BigDecimal periodLeft, int periodLeftLeads, List<CampaignMoney> campaigns,
                         java.math.BigDecimal periodEstimate, java.math.BigDecimal periodPrepaid,
-                        int siteDeposits) {}
+                        int siteDeposits, Map<String, Integer> siteDepositsByPage) {}
 
     private final LeadFollowUpService leads;
     private final JdbcTemplate jdbc;
@@ -99,6 +99,7 @@ public class AdLeadsService {
         java.math.BigDecimal left = zero, estimate = zero, prepaid = zero, collected = zero;
         java.math.BigDecimal periodLeft = zero, periodEstimate = zero, periodPrepaid = zero;
         int leftLeads = 0, periodLeftLeads = 0, siteDeposits = 0;
+        List<Long> siteDepositLeads = new java.util.ArrayList<>();
         boolean partial = false;
         Map<String, java.math.BigDecimal[]> byCampaign = new java.util.LinkedHashMap<>();
         Map<String, int[]> counts = new HashMap<>();
@@ -122,6 +123,7 @@ public class AdLeadsService {
             if (l.squareCustomerId() != null && leads.siteDeposit(l)) {
                 n[2]++;
                 siteDeposits++;
+                siteDepositLeads.add(l.id());
             }
             if (o != null) {
                 sums[0] = sums[0].add(o.collected());
@@ -153,7 +155,34 @@ public class AdLeadsService {
         List<CampaignMoney> rows = merged.values().stream()
                 .map(a -> new CampaignMoney(a.name, a.leads, a.collected, a.withUpcoming, a.remaining, a.id, a.siteDeposits))
                 .sorted((x, y) -> y.collected().add(y.remaining()).compareTo(x.collected().add(x.remaining()))).toList();
-        return new Money(left, leftLeads, estimate, prepaid, partial, collected, periodLeft, periodLeftLeads, rows, periodEstimate, periodPrepaid, siteDeposits);
+        return new Money(left, leftLeads, estimate, prepaid, partial, collected, periodLeft, periodLeftLeads, rows, periodEstimate, periodPrepaid, siteDeposits,
+                siteDepositsByPage(siteDepositLeads));
+    }
+
+    /** Landing page slugs of the tracked pages, as stored in marketing.landing_pages. */
+    static final String PAGE_BOOK = "pmu-book", PAGE_ACADEMY = "academy", PAGE_SITE = "pmu-website";
+
+    /** The tracked page a first-landing path belongs to; "" when the path was never recorded. */
+    static String pageSlug(String landing) {
+        if (landing == null || landing.isBlank()) return "";
+        String path = landing.replaceFirst("^https?://[^/]+", "").toLowerCase(java.util.Locale.ROOT);
+        if (path.startsWith("/book")) return PAGE_BOOK;
+        if (path.startsWith("/academy")) return PAGE_ACADEMY;
+        return PAGE_SITE;
+    }
+
+    /** Site deposits per landing page: the page the lead first landed on, "" when that was not recorded. */
+    private Map<String, Integer> siteDepositsByPage(List<Long> leadIds) {
+        Map<String, Integer> out = new HashMap<>();
+        if (leadIds.isEmpty()) return out;
+        String marks = String.join(",", java.util.Collections.nCopies(leadIds.size(), "?"));
+        Object[] args = new Object[leadIds.size() + 1];
+        args[0] = business.id();
+        for (int i = 0; i < leadIds.size(); i++) args[i + 1] = leadIds.get(i);
+        jdbc.query("SELECT COALESCE(NULLIF(attribution->>'ad_first_landing', ''), NULLIF(attribution->>'landing_url', '')) AS landing "
+                + "FROM lead_intake WHERE business_id = ? AND id IN (" + marks + ")",
+                rs -> { out.merge(pageSlug(rs.getString("landing")), 1, Integer::sum); }, args);
+        return out;
     }
 
     private static final class CampaignAgg {

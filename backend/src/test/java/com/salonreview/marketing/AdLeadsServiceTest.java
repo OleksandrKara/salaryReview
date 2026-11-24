@@ -38,4 +38,15 @@ class AdLeadsServiceTest {
         assertNull(got.get("Inweb / Pmax / Permanent / макс конв / 22.01"));
         assertNull(got.get("Other_Campaign"));
     }
+
+    @Test
+    void firstLandingPathMapsToATrackedPage() {
+        assertEquals("pmu-book", AdLeadsService.pageSlug("/book/"));
+        assertEquals("pmu-book", AdLeadsService.pageSlug("https://pmu-annakara.com/book/?utm_term=x"));
+        assertEquals("academy", AdLeadsService.pageSlug("/academy/courses/"));
+        assertEquals("pmu-website", AdLeadsService.pageSlug("/"));
+        assertEquals("pmu-website", AdLeadsService.pageSlug("/microblading-san-diego/"));
+        assertEquals("", AdLeadsService.pageSlug(null));
+        assertEquals("", AdLeadsService.pageSlug("  "));
+    }
 }
