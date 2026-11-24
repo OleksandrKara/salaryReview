@@ -236,17 +236,19 @@ function MarginsEditor({ margins, onChange }: { margins: Margins | null; onChang
 }
 
 function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null }) {
-  const byName = new Map<string, AdLeadCampaignMoney>((money?.campaigns ?? []).filter((m) => m.campaign).map((m) => [m.campaign as string, m]));
-  const known = new Set(data.campaigns.map((c) => c.name));
-  // Leads whose campaign has no spend row this period (or no campaign at all) still count toward the totals.
-  const extra = (money?.campaigns ?? []).filter((m) => !m.campaign || !known.has(m.campaign));
+  // The money rows are already matched to Google Ads campaigns by id on the server (a lead's campaign text is written
+  // differently from the campaign name). Leads whose campaign has no spend row this period, or no campaign at all,
+  // stay in their own rows so the totals still add up.
+  const byId = new Map<number, AdLeadCampaignMoney>((money?.campaigns ?? []).filter((m) => m.campaignId !== null).map((m) => [m.campaignId as number, m]));
+  const known = new Set(data.campaigns.map((c) => Number(c.campaignId)));
+  const extra = (money?.campaigns ?? []).filter((m) => m.campaignId === null || !known.has(m.campaignId));
   const rows = data.campaigns;
   return (
     <section aria-label="Campaigns">
       <h2 className="mb-2 text-sm font-semibold text-zinc-900">Campaigns</h2>
       <ul className="space-y-2 sm:hidden">
         {rows.map((c) => {
-          const m = byName.get(c.name);
+          const m = byId.get(Number(c.campaignId));
           return (
             <li key={c.campaignId} className="rounded-xl bg-white p-3 ring-1 ring-zinc-200">
               <div className="flex items-start justify-between gap-2">
@@ -293,7 +295,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
           </thead>
           <tbody>
             {rows.map((c) => {
-              const m = byName.get(c.name);
+              const m = byId.get(Number(c.campaignId));
               return (
                 <tr key={c.campaignId} className="border-t border-zinc-100">
                   <td className="px-3 py-2 font-medium text-zinc-900">{c.name}</td>

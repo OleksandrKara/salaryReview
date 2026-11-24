@@ -41,7 +41,7 @@ public class AdLeadsService {
 
     /** One campaign's leads (created in the period): money collected so far and still to collect for procedures booked ahead. */
     public record CampaignMoney(String campaign, int leads, java.math.BigDecimal collected, int withUpcoming,
-                                java.math.BigDecimal remaining) {}
+                                java.math.BigDecimal remaining, Long campaignId) {}
 
     /**
      * {@code left*} covers every Google Ads lead with a procedure booked ahead, whenever the lead was created;
@@ -130,11 +130,66 @@ public class AdLeadsService {
                 }
             }
         }
-        List<CampaignMoney> rows = byCampaign.entrySet().stream()
-                .map(e -> new CampaignMoney(e.getKey().isEmpty() ? null : e.getKey(), counts.get(e.getKey())[0],
-                        e.getValue()[0], counts.get(e.getKey())[1], e.getValue()[1]))
+        // A lead carries its utm_campaign text, which is written differently from the campaign's name in Google Ads
+        // ("Inweb_Search_Academy" vs "Inweb / Search / Academy / макс конв"), so rows are merged by the resolved campaign id.
+        Map<String, Long> ids = campaignIds(byCampaign.keySet());
+        Map<String, CampaignAgg> merged = new java.util.LinkedHashMap<>();
+        for (var e : byCampaign.entrySet()) {
+            Long id = ids.get(e.getKey());
+            CampaignAgg agg = merged.computeIfAbsent(id != null ? "id:" + id : "raw:" + e.getKey(),
+                    k -> new CampaignAgg(e.getKey().isEmpty() ? null : e.getKey(), id));
+            agg.leads += counts.get(e.getKey())[0];
+            agg.withUpcoming += counts.get(e.getKey())[1];
+            agg.collected = agg.collected.add(e.getValue()[0]);
+            agg.remaining = agg.remaining.add(e.getValue()[1]);
+        }
+        List<CampaignMoney> rows = merged.values().stream()
+                .map(a -> new CampaignMoney(a.name, a.leads, a.collected, a.withUpcoming, a.remaining, a.id))
                 .sorted((x, y) -> y.collected().add(y.remaining()).compareTo(x.collected().add(x.remaining()))).toList();
         return new Money(left, leftLeads, estimate, prepaid, partial, collected, periodLeft, periodLeftLeads, rows, periodEstimate, periodPrepaid);
+    }
+
+    private static final class CampaignAgg {
+        final String name;
+        final Long id;
+        int leads, withUpcoming;
+        java.math.BigDecimal collected = java.math.BigDecimal.ZERO, remaining = java.math.BigDecimal.ZERO;
+        CampaignAgg(String name, Long id) { this.name = name; this.id = id; }
+    }
+
+    private Map<String, Long> campaignIds(java.util.Collection<String> raw) {
+        List<Map.Entry<Long, String>> ads = jdbc.query("SELECT DISTINCT campaign_id, campaign_name FROM google_ads_daily WHERE business_id = ?",
+                (rs, i) -> Map.entry(rs.getLong(1), rs.getString(2)), business.id());
+        return resolveCampaignIds(raw, ads);
+    }
+
+    /** Words of a campaign label: lower case, accents dropped, split on anything that is not a letter or digit. */
+    static List<String> words(String label) {
+        String plain = java.text.Normalizer.normalize(label == null ? "" : label, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+        return java.util.Arrays.stream(plain.toLowerCase(java.util.Locale.ROOT).split("[^\\p{L}\\p{Nd}]+")).filter(w -> !w.isEmpty()).toList();
+    }
+
+    /**
+     * Maps each lead campaign text to a Google Ads campaign id: the words of one label must start the other's (any name the
+     * campaign had), with at least three shared words; the longest match wins and a tie between two campaigns stays unmatched.
+     */
+    static Map<String, Long> resolveCampaignIds(java.util.Collection<String> raw, List<Map.Entry<Long, String>> ads) {
+        Map<String, Long> out = new HashMap<>();
+        for (String r : raw) {
+            List<String> u = words(r);
+            int best = 0;
+            java.util.Set<Long> bestIds = new java.util.HashSet<>();
+            for (var ad : ads) {
+                List<String> n = words(ad.getValue());
+                int c = 0;
+                while (c < u.size() && c < n.size() && u.get(c).equals(n.get(c))) c++;
+                if (c < 3 || c != Math.min(u.size(), n.size())) continue;
+                if (c > best) { best = c; bestIds.clear(); }
+                if (c == best) bestIds.add(ad.getKey());
+            }
+            if (bestIds.size() == 1) out.put(r, bestIds.iterator().next());
+        }
+        return out;
     }
 
     /** utm_campaign and the search query for each lead: the lead's own capture, else its browser's first tagged visit. */
