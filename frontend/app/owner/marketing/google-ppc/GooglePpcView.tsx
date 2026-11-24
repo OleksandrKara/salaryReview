@@ -2,13 +2,12 @@
 
 import { useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
 import type { AdLeadCampaignMoney, AdLeadMoney, AdLeadRow, GooglePpcData, Margins } from '../../../lib/types';
 import { romiPercent } from './romi';
 import { consultationLabel, statusLabel, statusTone } from '../adLeads';
 import PeriodFilter from '../PeriodFilter';
-import { parsePeriodParams, periodToBounds } from '../period';
+import { periodToBounds, periodToCookie, PPC_PERIOD_COOKIE } from '../period';
 import type { PeriodSelection } from '../period';
 
 const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -18,8 +17,7 @@ const dash = '-';
 
 const perUnit = (spend: number, n: number) => (n > 0 ? usd2.format(spend / n) : dash);
 
-export default function GooglePpcView({ initialData, initialLeads, initialMoney, initialMargins, timeZone }: { initialData: GooglePpcData | null; initialLeads: AdLeadRow[]; initialMoney: AdLeadMoney | null; initialMargins: Margins | null; timeZone?: string }) {
-  const searchParams = useSearchParams();
+export default function GooglePpcView({ initialSelection, initialData, initialLeads, initialMoney, initialMargins, timeZone }: { initialSelection: PeriodSelection; initialData: GooglePpcData | null; initialLeads: AdLeadRow[]; initialMoney: AdLeadMoney | null; initialMargins: Margins | null; timeZone?: string }) {
   const [data, setData] = useState(initialData);
   const [leads, setLeads] = useState(initialLeads);
   const [money, setMoney] = useState(initialMoney);
@@ -27,10 +25,15 @@ export default function GooglePpcView({ initialData, initialLeads, initialMoney,
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(initialData === null);
   const requestId = useRef(0);
-  const [selection, setSelection] = useState<PeriodSelection>(() => parsePeriodParams(searchParams));
+  const [selection, setSelection] = useState<PeriodSelection>(initialSelection);
 
   async function changePeriod(next: PeriodSelection) {
     setSelection(next);
+    try {
+      document.cookie = `${PPC_PERIOD_COOKIE}=${periodToCookie(next)}; path=/; max-age=31536000; samesite=lax`;
+    } catch {
+      // cookies blocked: the tab simply opens on its default period next time
+    }
     const bounds = periodToBounds(next, timeZone);
     const id = ++requestId.current;
     setLoading(true);
@@ -135,8 +138,6 @@ function Kpis({ data, margins, onMargins, money, leads }: { data: GooglePpcData;
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Kpi label="Spend" value={usd0.format(data.spend)} sub={`${num(data.clicks)} clicks, ${num(data.impressions)} impressions`} />
         <Kpi label="Cost per click" value={perUnit(data.spend, data.clicks)} sub={`${num(r.visitors)} landing page visitors`} />
-        <Kpi label="Cost per consultation" value={perUnit(data.spend, r.consultations)} sub={`${num(r.consultations)} consultations`} />
-        <Kpi label="Cost per deposit" value={perUnit(data.spend, r.deposits)} sub={`${num(r.deposits)} deposits, ${num(r.fullPayments)} full payments`} />
         <Kpi label="Revenue" value={usd0.format(revenue)} sub={`${num(payers)} paying ${payers === 1 ? 'lead' : 'leads'}, same as Collected`} />
         <Kpi label="ROAS" value={roas === null ? dash : `${roas.toFixed(2)}x`} sub="Revenue divided by spend" />
         <Kpi label="ROI" value={roi === null ? dash : `${roi.toFixed(0)}%`} sub="(Revenue - spend) / spend" />
@@ -146,6 +147,24 @@ function Kpis({ data, margins, onMargins, money, leads }: { data: GooglePpcData;
           value={romiAhead === null ? dash : `${romiAhead.toFixed(0)}%`}
           sub={`${usd0.format(revenue)} collected + ${usd0.format(left)} left to collect, minus spend${margins ? ' and costs (materials, master, Square fees; approx.)' : '. Set cost assumptions below to include costs'}`}
         />
+      </div>
+      <div className="mt-3 rounded-xl bg-white p-3 ring-1 ring-zinc-200 sm:p-4">
+        <h2 className="text-sm font-semibold text-zinc-900">Conversions</h2>
+        <dl className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            { label: 'Consultations booked', n: r.consultations, hint: 'online or in studio, from the site' },
+            { label: 'Text taps', n: r.smsTaps, hint: 'taps on the text button' },
+            { label: 'Call taps', n: r.callTaps, hint: 'taps on the call button' },
+            { label: 'Deposits from the site', n: money ? money.siteDeposits : null, hint: 'Book now, Book a procedure (invoices do not count)' },
+          ].map((c) => (
+            <div key={c.label} className="min-w-0">
+              <dt className="text-xs font-medium text-zinc-500">{c.label}</dt>
+              <dd className="mt-0.5 text-xl font-semibold tabular-nums text-zinc-900">{c.n === null ? dash : num(c.n)}</dd>
+              <dd className="text-xs text-zinc-500">{c.n === null ? 'Not loaded' : `${perUnit(data.spend, c.n)} each`}</dd>
+              <dd className="text-[11px] leading-snug text-zinc-400">{c.hint}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
       <MarginsEditor margins={margins} onChange={onMargins} />
       <p className="mt-2 text-xs text-zinc-500">
@@ -289,6 +308,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
               <th className="px-3 py-2 text-right font-medium" title="Conversions reported by Google Ads itself">Google conversions</th>
               <th className="px-3 py-2 text-right font-medium">Cost per conversion</th>
               <th className="px-3 py-2 text-right font-medium">Leads</th>
+              <th className="px-3 py-2 text-right font-medium" title="Leads of this campaign created in the period who paid a deposit through the site">Site deposits</th>
               <th className="px-3 py-2 text-right font-medium" title="All payments of this campaign's leads created in the period">Collected</th>
               <th className="px-3 py-2 text-right font-medium" title="Balance still to pay on procedures booked ahead">Left to collect</th>
             </tr>
@@ -306,6 +326,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
                   <td className="px-3 py-2 text-right tabular-nums">{num(Math.round(c.platformConversions))}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{perUnit(c.spend, c.platformConversions)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{m ? num(m.leads) : dash}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{m ? num(m.siteDeposits) : dash}</td>
                   <td className="px-3 py-2 text-right font-medium tabular-nums">{m ? usd0.format(m.collected) : dash}</td>
                   <td className={`px-3 py-2 text-right font-medium tabular-nums ${m && m.remaining > 0 ? 'text-amber-700' : ''}`}>{m ? usd0.format(m.remaining) : dash}</td>
                 </tr>
@@ -316,6 +337,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
                 <td className="px-3 py-2">{m.campaign ?? 'No campaign recorded'}{m.campaign && <span className="ml-1 text-xs text-zinc-400">(no spend this period)</span>}</td>
                 {[0, 1, 2, 3, 4, 5].map((i) => <td key={i} className="px-3 py-2 text-right tabular-nums">{dash}</td>)}
                 <td className="px-3 py-2 text-right tabular-nums">{num(m.leads)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(m.siteDeposits)}</td>
                 <td className="px-3 py-2 text-right font-medium tabular-nums">{usd0.format(m.collected)}</td>
                 <td className={`px-3 py-2 text-right font-medium tabular-nums ${m.remaining > 0 ? 'text-amber-700' : ''}`}>{usd0.format(m.remaining)}</td>
               </tr>
@@ -332,6 +354,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
                 <td className="px-3 py-2 text-right tabular-nums">{num(Math.round(rows.reduce((t, c) => t + c.platformConversions, 0)))}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, rows.reduce((t, c) => t + c.platformConversions, 0))}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{num(money.campaigns.reduce((t, c) => t + c.leads, 0))}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(money.siteDeposits)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{usd0.format(money.collected)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-amber-700">{usd0.format(money.periodLeft)}</td>
               </tr>

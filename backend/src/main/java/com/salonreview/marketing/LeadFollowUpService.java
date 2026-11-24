@@ -1042,6 +1042,25 @@ public class LeadFollowUpService {
         return new Outlook(collectedSince(customers, since), o.upcoming(), o.estimate(), o.prepaid(), o.remaining(), o.partial());
     }
 
+    /** The site's deposit flow (Book now, Book a procedure) writes this policy note on the booking it reserves. */
+    static final String SITE_DEPOSIT_NOTE = "Deposit policy accepted online%";
+
+    /** True when one of the customers reserved a procedure through the site's deposit flow from {@code since} on. */
+    boolean siteDepositSince(List<String> customers, Instant since) {
+        if (customers.isEmpty()) return false;
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM square_booking WHERE business_id = ? "
+                + "AND created_at >= ? AND seller_note LIKE '" + SITE_DEPOSIT_NOTE + "' AND square_customer_id IN (" + marks(customers.size()) + "))",
+                Boolean.class, withSince(business.id(), customers, since)));
+    }
+
+    /** Did the lead pay a deposit through the site (not by invoice) since its first day? */
+    boolean siteDeposit(LeadView lead) {
+        List<String> customers = customerIds(lead);
+        Instant since = Instant.parse(lead.createdAt()).atZone(java.time.ZoneId.of(LEAD_TZ)).toLocalDate()
+                .atStartOfDay(java.time.ZoneId.of(LEAD_TZ)).toInstant();
+        return siteDepositSince(customers, since);
+    }
+
     /** Completed payments (tips apart) of the customers from {@code since} on. */
     java.math.BigDecimal collectedSince(List<String> customers, Instant since) {
         if (customers.isEmpty()) return java.math.BigDecimal.ZERO;
