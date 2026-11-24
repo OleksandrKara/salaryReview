@@ -313,7 +313,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
             })}
             {extra.map((m) => (
               <tr key={m.campaign ?? 'none'} className="border-t border-zinc-100 text-zinc-600">
-                <td className="px-3 py-2">{m.campaign ?? 'No campaign recorded'}</td>
+                <td className="px-3 py-2">{m.campaign ?? 'No campaign recorded'}{m.campaign && <span className="ml-1 text-xs text-zinc-400">(no spend this period)</span>}</td>
                 {[0, 1, 2, 3, 4, 5].map((i) => <td key={i} className="px-3 py-2 text-right tabular-nums">{dash}</td>)}
                 <td className="px-3 py-2 text-right tabular-nums">{num(m.leads)}</td>
                 <td className="px-3 py-2 text-right font-medium tabular-nums">{usd0.format(m.collected)}</td>
@@ -321,6 +321,22 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
               </tr>
             ))}
           </tbody>
+          {money && (
+            <tfoot className="border-t border-zinc-200 bg-zinc-50 text-zinc-900">
+              <tr className="font-semibold">
+                <td className="px-3 py-2">Total</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd0.format(data.spend)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(data.impressions)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(data.clicks)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, data.clicks)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(Math.round(rows.reduce((t, c) => t + c.platformConversions, 0)))}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, rows.reduce((t, c) => t + c.platformConversions, 0))}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(money.campaigns.reduce((t, c) => t + c.leads, 0))}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd0.format(money.collected)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-amber-700">{usd0.format(money.periodLeft)}</td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </section>
