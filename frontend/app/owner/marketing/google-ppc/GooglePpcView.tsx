@@ -236,17 +236,19 @@ function MarginsEditor({ margins, onChange }: { margins: Margins | null; onChang
 }
 
 function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null }) {
-  const byName = new Map<string, AdLeadCampaignMoney>((money?.campaigns ?? []).filter((m) => m.campaign).map((m) => [m.campaign as string, m]));
-  const known = new Set(data.campaigns.map((c) => c.name));
-  // Leads whose campaign has no spend row this period (or no campaign at all) still count toward the totals.
-  const extra = (money?.campaigns ?? []).filter((m) => !m.campaign || !known.has(m.campaign));
+  // The money rows are already matched to Google Ads campaigns by id on the server (a lead's campaign text is written
+  // differently from the campaign name). Leads whose campaign has no spend row this period, or no campaign at all,
+  // stay in their own rows so the totals still add up.
+  const byId = new Map<number, AdLeadCampaignMoney>((money?.campaigns ?? []).filter((m) => m.campaignId !== null).map((m) => [m.campaignId as number, m]));
+  const known = new Set(data.campaigns.map((c) => Number(c.campaignId)));
+  const extra = (money?.campaigns ?? []).filter((m) => m.campaignId === null || !known.has(m.campaignId));
   const rows = data.campaigns;
   return (
     <section aria-label="Campaigns">
       <h2 className="mb-2 text-sm font-semibold text-zinc-900">Campaigns</h2>
       <ul className="space-y-2 sm:hidden">
         {rows.map((c) => {
-          const m = byName.get(c.name);
+          const m = byId.get(Number(c.campaignId));
           return (
             <li key={c.campaignId} className="rounded-xl bg-white p-3 ring-1 ring-zinc-200">
               <div className="flex items-start justify-between gap-2">
@@ -293,7 +295,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
           </thead>
           <tbody>
             {rows.map((c) => {
-              const m = byName.get(c.name);
+              const m = byId.get(Number(c.campaignId));
               return (
                 <tr key={c.campaignId} className="border-t border-zinc-100">
                   <td className="px-3 py-2 font-medium text-zinc-900">{c.name}</td>
@@ -311,7 +313,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
             })}
             {extra.map((m) => (
               <tr key={m.campaign ?? 'none'} className="border-t border-zinc-100 text-zinc-600">
-                <td className="px-3 py-2">{m.campaign ?? 'No campaign recorded'}</td>
+                <td className="px-3 py-2">{m.campaign ?? 'No campaign recorded'}{m.campaign && <span className="ml-1 text-xs text-zinc-400">(no spend this period)</span>}</td>
                 {[0, 1, 2, 3, 4, 5].map((i) => <td key={i} className="px-3 py-2 text-right tabular-nums">{dash}</td>)}
                 <td className="px-3 py-2 text-right tabular-nums">{num(m.leads)}</td>
                 <td className="px-3 py-2 text-right font-medium tabular-nums">{usd0.format(m.collected)}</td>
@@ -319,6 +321,22 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
               </tr>
             ))}
           </tbody>
+          {money && (
+            <tfoot className="border-t border-zinc-200 bg-zinc-50 text-zinc-900">
+              <tr className="font-semibold">
+                <td className="px-3 py-2">Total</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd0.format(data.spend)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(data.impressions)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(data.clicks)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, data.clicks)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(Math.round(rows.reduce((t, c) => t + c.platformConversions, 0)))}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, rows.reduce((t, c) => t + c.platformConversions, 0))}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{num(money.campaigns.reduce((t, c) => t + c.leads, 0))}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd0.format(money.collected)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-amber-700">{usd0.format(money.periodLeft)}</td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </section>

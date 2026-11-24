@@ -2714,7 +2714,7 @@ export interface AdLeadRow {
   customerId: string | null; collected: number | null; remaining: number | null; nextProcedureAt: string | null;
 }
 export interface Margins { materialPerProcedure: number; masterPct: number; squarePct: number; updatedBy: string | null; updatedAt: string }
-export interface AdLeadCampaignMoney { campaign: string | null; leads: number; collected: number; withUpcoming: number; remaining: number }
+export interface AdLeadCampaignMoney { campaign: string | null; campaignId: number | null; leads: number; collected: number; withUpcoming: number; remaining: number }
 export interface AdLeadMoney {
   leftToCollect: number; leftLeads: number; leftEstimate: number; leftPrepaid: number; partial: boolean;
   collected: number; periodLeft: number; periodLeftLeads: number; campaigns: AdLeadCampaignMoney[];
