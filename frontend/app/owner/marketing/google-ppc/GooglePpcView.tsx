@@ -366,37 +366,66 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
   );
 }
 
+/** Conversion rate by landing page: text taps + call taps + consultations booked, divided by the visits of that page. */
 function Pages({ data }: { data: GooglePpcData }) {
   if (data.pages.length === 0) return null;
+  const conv = (p: GooglePpcData['pages'][number]) => p.smsTaps + p.callTaps + p.consultations;
+  const rate = (c: number, v: number) => (v > 0 ? `${((c / v) * 100).toFixed(1)}%` : dash);
+  const rows = [...data.pages].sort((x, y) => conv(y) - conv(x) || y.visitors - x.visitors);
+  const maxRate = Math.max(0.0001, ...rows.map((p) => (p.visitors > 0 ? conv(p) / p.visitors : 0)));
+  const tot = rows.reduce((t, p) => ({ v: t.v + p.visitors, s: t.s + p.smsTaps, c: t.c + p.callTaps, k: t.k + p.consultations }), { v: 0, s: 0, c: 0, k: 0 });
   return (
-    <section aria-label="Results by landing page">
-      <h2 className="mb-2 text-sm font-semibold text-zinc-900">Results by landing page</h2>
+    <section aria-label="Conversions by landing page">
+      <h2 className="text-sm font-semibold text-zinc-900">Conversions by landing page</h2>
+      <p className="mb-2 mt-0.5 text-xs text-zinc-500">Conversion rate = text taps + call taps + consultations booked, divided by visits of the page.</p>
       <div className="overflow-x-auto rounded-xl bg-white ring-1 ring-zinc-200">
-        <table className="w-full min-w-[34rem] text-left text-sm">
+        <table className="w-full min-w-[40rem] text-left text-sm">
           <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               <th className="px-3 py-2 font-medium">Page</th>
-              <th className="px-3 py-2 text-right font-medium">Visitors</th>
-              <th className="px-3 py-2 text-right font-medium">Taps</th>
+              <th className="px-3 py-2 text-right font-medium">Visits</th>
+              <th className="px-3 py-2 text-right font-medium">Text taps</th>
+              <th className="px-3 py-2 text-right font-medium">Call taps</th>
               <th className="px-3 py-2 text-right font-medium">Consultations</th>
-              <th className="px-3 py-2 text-right font-medium">Deposits</th>
-              <th className="px-3 py-2 text-right font-medium">Full payments</th>
-              <th className="px-3 py-2 text-right font-medium">Revenue</th>
+              <th className="px-3 py-2 text-right font-medium">Conversions</th>
+              <th className="px-3 py-2 text-right font-medium">Conversion rate</th>
             </tr>
           </thead>
           <tbody>
-            {data.pages.map((p) => (
-              <tr key={p.slug} className="border-t border-zinc-100">
-                <td className="px-3 py-2 font-medium text-zinc-900">{p.name}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(p.visitors)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(p.smsTaps + p.callTaps)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(p.consultations)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(p.deposits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{num(p.fullPayments)}</td>
-                <td className="px-3 py-2 text-right font-medium tabular-nums">{usd0.format(p.revenue)}</td>
-              </tr>
-            ))}
+            {rows.map((p) => {
+              const c = conv(p);
+              const share = p.visitors > 0 ? c / p.visitors : 0;
+              return (
+                <tr key={p.slug} className="border-t border-zinc-100">
+                  <td className="px-3 py-2 font-medium text-zinc-900">{p.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(p.visitors)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(p.smsTaps)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(p.callTaps)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{num(p.consultations)}</td>
+                  <td className="px-3 py-2 text-right font-medium tabular-nums">{num(c)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-zinc-100 sm:block" aria-hidden>
+                        <span className="block h-full rounded-full bg-emerald-600" style={{ width: `${Math.round((share / maxRate) * 100)}%` }} />
+                      </span>
+                      <span className="w-12 font-medium tabular-nums text-zinc-900">{rate(c, p.visitors)}</span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
+          <tfoot className="border-t border-zinc-200 bg-zinc-50 font-semibold text-zinc-900">
+            <tr>
+              <td className="px-3 py-2">All pages</td>
+              <td className="px-3 py-2 text-right tabular-nums">{num(tot.v)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{num(tot.s)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{num(tot.c)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{num(tot.k)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{num(tot.s + tot.c + tot.k)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{rate(tot.s + tot.c + tot.k, tot.v)}</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </section>
