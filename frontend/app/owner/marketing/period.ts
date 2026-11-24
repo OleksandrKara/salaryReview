@@ -157,3 +157,19 @@ export function withPeriodParams(current: URLSearchParams, selection: PeriodSele
   }
   return next;
 }
+
+/** The Google PPC tab remembers the last period in this cookie so reopening the tab does not reset it. */
+export const PPC_PERIOD_COOKIE = 'ppc_period';
+
+export function periodToCookie(selection: PeriodSelection): string {
+  return selection.period === 'custom' && selection.from && selection.to
+    ? `custom:${selection.from}:${selection.to}` : selection.period;
+}
+
+/** Cookie text back to the same shape the URL carries ({period, from, to}), or null when it is not valid. */
+export function cookieToParams(value: string | undefined): Record<string, string> | null {
+  if (!value) return null;
+  const [period, from, to] = value.split(':');
+  if (period === 'custom') return from && to && /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) ? { period, from, to } : null;
+  return period === 'all' || period === 'week' || period === 'month' || period === 'mtd' ? { period } : null;
+}

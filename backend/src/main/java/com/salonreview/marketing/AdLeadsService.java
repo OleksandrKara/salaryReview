@@ -37,11 +37,12 @@ public class AdLeadsService {
     public record Card(long id, String name, String phone, String email, String status, String createdAt, String source,
                        String campaign, String searchQuery, String landing, String lostReason, String lostComment,
                        Visit firstVisit, List<Appointment> appointments, List<LeadFollowUpService.Payment> payments,
-                       java.math.BigDecimal totalPaid, List<StatusStep> steps, LeadFollowUpService.Outlook outlook) {}
+                       java.math.BigDecimal totalPaid, List<StatusStep> steps, LeadFollowUpService.Outlook outlook,
+                       Map<String, String> firstTouch) {}
 
     /** One campaign's leads (created in the period): money collected so far and still to collect for procedures booked ahead. */
     public record CampaignMoney(String campaign, int leads, java.math.BigDecimal collected, int withUpcoming,
-                                java.math.BigDecimal remaining, Long campaignId) {}
+                                java.math.BigDecimal remaining, Long campaignId, int siteDeposits) {}
 
     /**
      * {@code left*} covers every Google Ads lead with a procedure booked ahead, whenever the lead was created;
@@ -50,7 +51,8 @@ public class AdLeadsService {
     public record Money(java.math.BigDecimal leftToCollect, int leftLeads, java.math.BigDecimal leftEstimate,
                         java.math.BigDecimal leftPrepaid, boolean partial, java.math.BigDecimal collected,
                         java.math.BigDecimal periodLeft, int periodLeftLeads, List<CampaignMoney> campaigns,
-                        java.math.BigDecimal periodEstimate, java.math.BigDecimal periodPrepaid) {}
+                        java.math.BigDecimal periodEstimate, java.math.BigDecimal periodPrepaid,
+                        int siteDeposits) {}
 
     private final LeadFollowUpService leads;
     private final JdbcTemplate jdbc;
@@ -96,7 +98,7 @@ public class AdLeadsService {
         Map<Long, String[]> attribution = attributionOf(everyone.stream().map(i -> i.lead().id()).toList());
         java.math.BigDecimal left = zero, estimate = zero, prepaid = zero, collected = zero;
         java.math.BigDecimal periodLeft = zero, periodEstimate = zero, periodPrepaid = zero;
-        int leftLeads = 0, periodLeftLeads = 0;
+        int leftLeads = 0, periodLeftLeads = 0, siteDeposits = 0;
         boolean partial = false;
         Map<String, java.math.BigDecimal[]> byCampaign = new java.util.LinkedHashMap<>();
         Map<String, int[]> counts = new HashMap<>();
@@ -115,8 +117,12 @@ public class AdLeadsService {
             String a = attribution.getOrDefault(l.id(), new String[2])[0];
             String key = a == null ? "" : a;
             var sums = byCampaign.computeIfAbsent(key, k -> new java.math.BigDecimal[]{zero, zero});
-            int[] n = counts.computeIfAbsent(key, k -> new int[2]);
+            int[] n = counts.computeIfAbsent(key, k -> new int[3]);
             n[0]++;
+            if (l.squareCustomerId() != null && leads.siteDeposit(l)) {
+                n[2]++;
+                siteDeposits++;
+            }
             if (o != null) {
                 sums[0] = sums[0].add(o.collected());
                 collected = collected.add(o.collected());
@@ -140,19 +146,20 @@ public class AdLeadsService {
                     k -> new CampaignAgg(e.getKey().isEmpty() ? null : e.getKey(), id));
             agg.leads += counts.get(e.getKey())[0];
             agg.withUpcoming += counts.get(e.getKey())[1];
+            agg.siteDeposits += counts.get(e.getKey())[2];
             agg.collected = agg.collected.add(e.getValue()[0]);
             agg.remaining = agg.remaining.add(e.getValue()[1]);
         }
         List<CampaignMoney> rows = merged.values().stream()
-                .map(a -> new CampaignMoney(a.name, a.leads, a.collected, a.withUpcoming, a.remaining, a.id))
+                .map(a -> new CampaignMoney(a.name, a.leads, a.collected, a.withUpcoming, a.remaining, a.id, a.siteDeposits))
                 .sorted((x, y) -> y.collected().add(y.remaining()).compareTo(x.collected().add(x.remaining()))).toList();
-        return new Money(left, leftLeads, estimate, prepaid, partial, collected, periodLeft, periodLeftLeads, rows, periodEstimate, periodPrepaid);
+        return new Money(left, leftLeads, estimate, prepaid, partial, collected, periodLeft, periodLeftLeads, rows, periodEstimate, periodPrepaid, siteDeposits);
     }
 
     private static final class CampaignAgg {
         final String name;
         final Long id;
-        int leads, withUpcoming;
+        int leads, withUpcoming, siteDeposits;
         java.math.BigDecimal collected = java.math.BigDecimal.ZERO, remaining = java.math.BigDecimal.ZERO;
         CampaignAgg(String name, Long id) { this.name = name; this.id = id; }
     }
@@ -251,7 +258,8 @@ public class AdLeadsService {
                 .map(e -> new StatusStep(e.createdAt(), e.text())).toList();
         return new Card(lead.id(), d.nameInfo() != null && d.nameInfo().name() != null ? d.nameInfo().name() : lead.name(),
                 lead.phoneNumber(), lead.email(), lead.status(), lead.createdAt(), lead.source(), campaign, query, landing,
-                lead.lostReason(), lead.lostComment(), firstVisit, appointments, d.payments(), total, steps, d.outlook());
+                lead.lostReason(), lead.lostComment(), firstVisit, appointments, d.payments(), total, steps, d.outlook(),
+                ft == null ? Map.of() : ft);
     }
 
     private static String termFromUrl(String url) {

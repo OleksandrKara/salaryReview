@@ -2714,11 +2714,11 @@ export interface AdLeadRow {
   customerId: string | null; collected: number | null; remaining: number | null; nextProcedureAt: string | null;
 }
 export interface Margins { materialPerProcedure: number; masterPct: number; squarePct: number; updatedBy: string | null; updatedAt: string }
-export interface AdLeadCampaignMoney { campaign: string | null; campaignId: number | null; leads: number; collected: number; withUpcoming: number; remaining: number }
+export interface AdLeadCampaignMoney { campaign: string | null; campaignId: number | null; leads: number; collected: number; withUpcoming: number; remaining: number; siteDeposits: number }
 export interface AdLeadMoney {
   leftToCollect: number; leftLeads: number; leftEstimate: number; leftPrepaid: number; partial: boolean;
   collected: number; periodLeft: number; periodLeftLeads: number; campaigns: AdLeadCampaignMoney[];
-  periodEstimate: number; periodPrepaid: number;
+  periodEstimate: number; periodPrepaid: number; siteDeposits: number;
 }
 export interface AdLeadAppointment { status: string | null; startAt: string | null; services: string | null; technician: string | null; paid: number | null; consultation: boolean }
 export interface AdLeadCard {
@@ -2729,6 +2729,7 @@ export interface AdLeadCard {
   appointments: AdLeadAppointment[];
   payments: { id: string; at: string; amount: number; tip: number | null; description: string | null }[];
   totalPaid: number; steps: { at: string; text: string | null }[]; outlook: LeadOutlook | null;
+  firstTouch: Record<string, string>;
 }
 
 // --- Leads CRM (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.

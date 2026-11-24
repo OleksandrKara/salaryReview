@@ -47,4 +47,26 @@ class LeadCollectedSinceTest {
         assertThat(service.collectedSince(List.of("OLD"), now.minus(1000, ChronoUnit.DAYS))).isEqualByComparingTo(new BigDecimal("900"));
         assertThat(service.collectedSince(List.of(), leadDay)).isEqualByComparingTo(BigDecimal.ZERO);
     }
+
+    @Test
+    void siteDepositIsRecognisedByTheDepositPolicyNoteOnABookingAfterTheLeadCameIn() {
+        long b = businesses.save(Business.builder().name("SiteDeposit").shortCode("sd-" + System.nanoTime()).timezone("UTC").active(true).build()).getId();
+        CurrentBusinessContext ctx = mock(CurrentBusinessContext.class);
+        Mockito.when(ctx.id()).thenReturn(b);
+        var service = new LeadFollowUpService(jdbc, ctx, null, null, null, null, null, null, null, null, null, null, "https://x");
+        Instant now = Instant.now();
+        booking(b, "SITE", "Deposit policy accepted online Nov 21, 2026 09:40 AM PT: the $100 deposit goes toward the procedure", now.minus(1, ChronoUnit.HOURS));
+        booking(b, "INVOICE", "Paid by invoice", now.minus(1, ChronoUnit.HOURS));
+        booking(b, "OLD", "Deposit policy accepted online Oct 1, 2026 09:40 AM PT: the $100 deposit", now.minus(60, ChronoUnit.DAYS));
+        Instant since = now.minus(2, ChronoUnit.DAYS);
+        assertThat(service.siteDepositSince(List.of("SITE"), since)).isTrue();
+        assertThat(service.siteDepositSince(List.of("INVOICE"), since)).isFalse();
+        assertThat(service.siteDepositSince(List.of("OLD"), since)).isFalse();
+        assertThat(service.siteDepositSince(List.of(), since)).isFalse();
+    }
+
+    private void booking(long b, String customer, String note, Instant createdAt) {
+        jdbc.update("INSERT INTO square_booking (business_id, square_booking_id, square_customer_id, status, start_at, created_at, seller_note) VALUES (?, ?, ?, 'ACCEPTED', now() + interval '3 days', ?, ?)",
+                b, "BK" + System.nanoTime(), customer, java.sql.Timestamp.from(createdAt), note);
+    }
 }

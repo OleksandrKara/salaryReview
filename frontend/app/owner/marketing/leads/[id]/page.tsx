@@ -70,6 +70,7 @@ export default async function AdLeadPage({ params }: { params: Promise<{ id: str
             Performance Max and some Google clicks do not pass the search words to the site, so the query stays empty for them.
           </p>
         )}
+        <FirstTouch touch={lead.firstTouch} />
       </Section>
 
       <Section title="Consultation and procedure">
@@ -151,5 +152,26 @@ function Fact({ label, value, empty = '-', strong }: { label: string; value: str
       <dt className="text-xs text-zinc-500">{label}</dt>
       <dd className={`break-words text-sm ${value ? (strong ? 'font-semibold text-zinc-900' : 'text-zinc-800') : 'text-zinc-400'}`}>{value || empty}</dd>
     </div>
+  );
+}
+
+const TOUCH_ORDER = ['traffic_source', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'msclkid', 'fbclid', 'ttclid', 'landing_url', 'referrer', 'ad_first_source', 'ad_first_campaign', 'ad_first_medium', 'ad_first_click_id', 'ad_first_at', 'ad_first_landing'];
+
+/** First touch: every campaign field the site captured when this person first arrived (the same list the staff lead card shows). */
+function FirstTouch({ touch }: { touch: Record<string, string> | null | undefined }) {
+  const entries = TOUCH_ORDER.filter((k) => touch?.[k]).map((k) => [k, (touch as Record<string, string>)[k]] as [string, string]);
+  if (entries.length === 0) return null;
+  return (
+    <details open className="mt-4 rounded-lg bg-emerald-50 p-3 text-xs text-zinc-700 ring-1 ring-emerald-200">
+      <summary className="cursor-pointer text-sm font-medium text-zinc-900">First touch: campaign details</summary>
+      <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+        {entries.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-zinc-500">{k}</dt>
+            <dd className="break-all text-zinc-900">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }
