@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FUNNEL_TONE } from './FunnelPanel';
 import LeadActions from './LeadActions';
-import { DAY, LAPSED_AFTER_DAYS, hasNextStep, isActive, isLapsed, isOverdue, lacksNextStep } from './leadActions';
+import { DAY, LAPSED_AFTER_DAYS, hasNextStep, isActive, isLapsed, isOverdue, lacksNextStep, leftDetailsOnly } from './leadActions';
 import LeadFilterBar from './LeadFilterBar';
 import { EMPTY_FILTERS, filtersToApiParams, filtersToUrlParams, isDefault, parseFilters, type LeadFilters } from './leadFilters';
 import LeadIcons from './LeadIcons';
@@ -521,6 +521,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                 : !isActive(l) ? null
                 : l.closeReady ? { text: t(language, 'crmReasonClose'), cls: 'text-red-700' }
                 : overdue ? { text: isLapsed(l, now) ? '' : `${l.consultState === 'DONE' || l.consultState === 'NO_SHOW' ? t(language, 'crmReasonConsult') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
+                : l.status === 'NEW' && leftDetailsOnly(l) ? { text: `${t(language, 'crmReasonNoBooking')} ${waiting}`, cls: 'text-amber-700' }
                 : l.status === 'NEW' ? { text: `${t(language, 'crmReasonNew')} ${waiting}`, cls: 'text-blue-700' }
                 : null;
               const nextStepSet = hasNextStep(l, now);
@@ -530,6 +531,9 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="max-w-full break-words font-medium">{l.name ?? l.phoneNumber ?? l.email}</span>
                       <LeadIcons b={badges[l.id]} language={language} />
+                      {leftDetailsOnly(l) && (
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900">{t(language, 'crmBadgeNoBooking')}</span>
+                      )}
                       {!(overdue && l.status === 'CONTACTED') && (
                         <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_STYLE[l.status]}`}>{t(language, `leadStatus${l.status}` as 'leadStatusNEW')}</span>
                       )}

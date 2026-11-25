@@ -40,3 +40,13 @@ export function actionPlan(l: Pick<Lead, 'status' | 'callbackAt' | 'closeReady' 
     spam: active,
   };
 }
+
+/**
+ * A person who left their details on a booking or request form but never booked: salaryReview creates these leads with the
+ * detail "Website contact, no booking yet" (the 2026-11-05 backfill used "Imported from website contacts (no booking)").
+ * Shown while the lead is still open and no consultation is booked, so staff know to help them finish the booking.
+ */
+export function leftDetailsOnly(l: { detail: string | null; status: string; consultState: string | null }): boolean {
+  return (l.status === 'NEW' || l.status === 'CONTACTED') && l.consultState == null
+    && !!l.detail && (l.detail.startsWith('Website contact, no booking yet') || l.detail.startsWith('Imported from website contacts (no booking)'));
+}
