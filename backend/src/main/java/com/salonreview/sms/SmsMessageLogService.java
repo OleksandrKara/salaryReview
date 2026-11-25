@@ -445,6 +445,19 @@ public class SmsMessageLogService {
         }
     }
 
+    /** A rating reply such as "5" or "5, thanks!" that the review flow already answered with the Google review ask needs no
+     * person: it is marked read so the conversation does not sit in the inbox as unread. Anything longer than
+     * {@link #AUTO_READ_MAX_LENGTH} characters stays unread, and so does every negative rating (staff must act on those). */
+    static final int AUTO_READ_MAX_LENGTH = 30;
+
+    @Transactional
+    public void markFlowReplyRead(Long flowId, String phoneNumber) {
+        if (flowId == null) return;
+        if (repository.markFlowRepliesRead(flowId, Instant.now(), AUTO_READ_MAX_LENGTH) > 0) {
+            events.broadcast(PhoneNumbers.normalize(phoneNumber));
+        }
+    }
+
     /** "Mark as unread" — a manual reminder flag on a conversation, same convention as every
      * mainstream messaging client (Gmail, iMessage, WhatsApp): un-reads just the most recent
      * inbound message, not the whole read history, so the conversation shows as needing attention

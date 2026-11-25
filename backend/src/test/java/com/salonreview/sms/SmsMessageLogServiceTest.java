@@ -322,4 +322,17 @@ class SmsMessageLogServiceTest {
         assertThat(service.phoneNumbersFlaggedAsSpam(BUSINESS_ID, phones)).containsExactly("+15559876543");
         verify(repository).findPhoneNumbersWithDeliveryErrorCode(BUSINESS_ID, phones, java.util.Set.of("30007", "21610"));
     }
+
+    @Test
+    @DisplayName("markFlowReplyRead marks the flow's short replies read and broadcasts only when something changed")
+    void markFlowReplyReadDelegatesAndBroadcastsOnlyWhenItMarkedSomething() {
+        when(repository.markFlowRepliesRead(eq(7L), any(Instant.class), eq(SmsMessageLogService.AUTO_READ_MAX_LENGTH))).thenReturn(1).thenReturn(0);
+
+        service.markFlowReplyRead(7L, "(555) 123-4567");
+        service.markFlowReplyRead(7L, "(555) 123-4567");
+        service.markFlowReplyRead(null, "(555) 123-4567");
+
+        verify(events, times(1)).broadcast("+15551234567");
+        verify(repository, times(2)).markFlowRepliesRead(eq(7L), any(Instant.class), eq(SmsMessageLogService.AUTO_READ_MAX_LENGTH));
+    }
 }
