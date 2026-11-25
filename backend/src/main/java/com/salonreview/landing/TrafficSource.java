@@ -189,6 +189,22 @@ public final class TrafficSource {
         return DIRECT;
     }
 
+    private static final Set<String> ORGANIC_SOCIAL_MEDIUMS = Set.of("social", "organic", "bio", "referral");
+
+    /**
+     * Older site code labelled every tap that carried an fbclid "Meta Ads (utm_source / utm_medium / ...)", but the Instagram
+     * and Facebook apps add fbclid to organic link taps. A label whose medium is social, organic, bio or referral is an
+     * organic visit, so it becomes "Instagram (organic)" or "Facebook (organic)"; paid placements and campaign ids stay as they are.
+     */
+    public static String normalizeLegacy(String label) {
+        if (!has(label)) return label;
+        String t = label.trim();
+        if (!t.regionMatches(true, 0, "Meta Ads (", 0, 10) || !t.endsWith(")")) return label;
+        String[] parts = t.substring(10, t.length() - 1).split("\\s*/\\s*");
+        if (parts.length < 2 || !isMetaSource(parts[0]) || !ORGANIC_SOCIAL_MEDIUMS.contains(lc(parts[1]))) return label;
+        return Set.of("ig", "instagram", "insta").contains(lc(parts[0])) ? INSTAGRAM_ORGANIC : FACEBOOK_ORGANIC;
+    }
+
     /** True for a paid label (Google Ads, Meta Ads, "Paid: x" ...). */
     public static boolean isPaid(String label) {
         if (!has(label)) return false;

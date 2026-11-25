@@ -114,7 +114,7 @@ public class LeadIntakeService {
 
     /** Short source label used for the group and the attribute, from a traffic-source string. */
     static String sourceLabel(String trafficSource) {
-        return com.salonreview.landing.TrafficSource.crmLabel(trafficSource);
+        return com.salonreview.landing.TrafficSource.crmLabel(com.salonreview.landing.TrafficSource.normalizeLegacy(trafficSource));
     }
 
     static String[] splitName(String name) {
@@ -288,7 +288,7 @@ public class LeadIntakeService {
                 String label = sourceLabel(ts);
                 if ("Unknown".equals(label)) continue;
                 n += jdbc.update("UPDATE lead_intake SET source = ?, traffic_source = ? WHERE id = ? AND source = 'Unknown' AND NOT source_manual",
-                        label, ts, ((Number) r.get("id")).longValue());
+                        label, com.salonreview.landing.TrafficSource.normalizeLegacy(ts), ((Number) r.get("id")).longValue());
             }
         }
         return n;
@@ -375,7 +375,7 @@ public class LeadIntakeService {
                     square_customer_id = COALESCE(marketing.contacts.square_customer_id, EXCLUDED.square_customer_id),
                     updated_at = now()
                 """, lead.businessId(), phone, splitName(lead.name())[0], email,
-                lead.trafficSource(), lead.trafficSource(), customerId);
+                com.salonreview.landing.TrafficSource.normalizeLegacy(lead.trafficSource()), com.salonreview.landing.TrafficSource.normalizeLegacy(lead.trafficSource()), customerId);
     }
 
     /** Non-US numbers cannot go to Square, but the lead keeps them so one person's Academy and site rows share a key. */
@@ -393,7 +393,7 @@ public class LeadIntakeService {
                     external_id, square_customer_id, outcome, marked, error, payload, attribution)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
                 ON CONFLICT DO NOTHING
-                """, lead.businessId(), lead.channel(), label, lead.trafficSource(), phone, email, lead.name(), lead.detail(),
+                """, lead.businessId(), lead.channel(), label, com.salonreview.landing.TrafficSource.normalizeLegacy(lead.trafficSource()), phone, email, lead.name(), lead.detail(),
                 lead.externalId(), customerId, outcome, marked, error, lead.payload(), lead.attribution());
         if (inserted > 0 && !"Square".equals(lead.channel()) && !"SKIPPED_NO_CONTACT".equals(outcome)) {
             reopen(lead.businessId(), phone, email);

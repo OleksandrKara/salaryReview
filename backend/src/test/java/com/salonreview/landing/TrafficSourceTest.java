@@ -70,4 +70,22 @@ class TrafficSourceTest {
         assertThat(TrafficSource.crmLabel("Direct / No referrer")).isEqualTo("Direct");
         assertThat(TrafficSource.crmLabel(null)).isEqualTo("Unknown");
     }
+
+    @Test
+    void legacyMetaAdsLabelWithAnOrganicMediumBecomesOrganic() {
+        assertThat(TrafficSource.normalizeLegacy("Meta Ads (ig / social)")).isEqualTo("Instagram (organic)");
+        assertThat(TrafficSource.normalizeLegacy("Meta Ads (instagram / Social / bio)")).isEqualTo("Instagram (organic)");
+        assertThat(TrafficSource.normalizeLegacy("Meta Ads (fb / organic)")).isEqualTo("Facebook (organic)");
+        assertThat(TrafficSource.crmLabel(TrafficSource.normalizeLegacy("Meta Ads (ig / social)"))).isEqualTo("Instagram (organic)");
+    }
+
+    @Test
+    void realMetaAdsLabelsAreKeptAsTheyAre() {
+        assertThat(TrafficSource.normalizeLegacy("Meta Ads (ig / paid / 120249454958800235)")).isEqualTo("Meta Ads (ig / paid / 120249454958800235)");
+        assertThat(TrafficSource.normalizeLegacy("Meta Ads (ig / Instagram_Reels / Ad 1)")).isEqualTo("Meta Ads (ig / Instagram_Reels / Ad 1)");
+        assertThat(TrafficSource.normalizeLegacy("Meta Ads (click)")).isEqualTo("Meta Ads (click)");
+        assertThat(TrafficSource.normalizeLegacy("Meta Ads (ig)")).isEqualTo("Meta Ads (ig)");
+        assertThat(TrafficSource.normalizeLegacy("Google Ads (google / cpc)")).isEqualTo("Google Ads (google / cpc)");
+        assertThat(TrafficSource.normalizeLegacy(null)).isNull();
+    }
 }
