@@ -210,6 +210,9 @@ public class CheckoutReviewRatingController {
         inbound.setRating(rating);
         if (rating <= 4) {
             inbound.setNegativeFeedbackAt(Instant.now());
+        } else {
+            // A 5 out of 5 given by email needs no one to read it; low ratings stay unread for staff.
+            inbound.setReadAt(Instant.now());
         }
         messageLogService.save(inbound);
 

@@ -134,6 +134,10 @@ public class CheckoutReviewReplyService {
         try {
             String twilioMessageSid = client.send(config, flow.getPhoneNumber(), body);
             updateReserved(reserved, body, true, null, twilioMessageSid);
+            // The positive branch answered the rating on its own, so the client's short reply needs no person to read it.
+            if (reserved.getTemplateKey() != null && reserved.getTemplateKey().startsWith("checkout_review_positive")) {
+                messageLogService.markFlowReplyRead(flow.getId(), flow.getPhoneNumber());
+            }
         } catch (Exception e) {
             log.warn("Checkout-review branch reply send failed (caller unaffected): {}", e.getMessage());
             messageLogService.recordSendFailure(reserved, e);

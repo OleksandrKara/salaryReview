@@ -312,6 +312,13 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     int markThreadRead(@Param("businessId") Long businessId, @Param("phoneNumber") String phoneNumber,
                         @Param("now") Instant now);
 
+    /** Marks the short inbound reply(ies) of one review flow read, for the automation that has already answered them
+     * (see SmsMessageLogService#markFlowReplyRead). Replies longer than {@code maxLength} are left unread so a person reads them. */
+    @Modifying
+    @Query("UPDATE SmsMessage m SET m.readAt = :now WHERE m.replyFlowId = :flowId AND m.direction = 'INBOUND' "
+            + "AND m.readAt IS NULL AND LENGTH(m.body) <= :maxLength")
+    int markFlowRepliesRead(@Param("flowId") Long flowId, @Param("now") Instant now, @Param("maxLength") int maxLength);
+
     /** "Mark as unread", for one business (see SmsMessageLogService#markThreadUnread) — un-reads
      * only the most recent inbound message in the thread. Native, not JPQL: HQL doesn't support a
      * correlated ORDER BY ... LIMIT 1 subquery, which Postgres does. */
