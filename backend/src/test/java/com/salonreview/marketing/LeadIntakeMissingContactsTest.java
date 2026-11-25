@@ -42,6 +42,6 @@ class LeadIntakeMissingContactsTest {
 
         var phones = service.contactsMissingFromCrm(b).stream().map(r -> (String) r.get("phone_number")).collect(Collectors.toList());
 
-        assertThat(phones).containsExactly("+13854182471", "+16199939588");
+        assertThat(phones).containsExactly("+16199939588", "+13854182471"); // oldest first
     }
 }
