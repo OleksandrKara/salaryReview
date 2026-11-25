@@ -232,33 +232,55 @@ public class LeadIntakeService {
         return true;
     }
 
+    /**
+     * Website contacts of the last three days that have no lead yet: people who left their details on a booking or
+     * request form (a visitor who stops at the card step has no Square customer and no booking). Matched to leads by Square
+     * customer, phone or email. Academy contacts follow their own request flow and fictional 555 test numbers are skipped.
+     */
+    List<java.util.Map<String, Object>> contactsMissingFromCrm(long businessId) {
+        return jdbc.queryForList("""
+                SELECT c.phone_number, c.email_address, c.given_name, c.square_customer_id,
+                       COALESCE(c.original_traffic_source, c.marketing_traffic_source) AS ts,
+                       c.utm_source, c.utm_medium, c.utm_campaign, c.referrer
+                FROM marketing.contacts c
+                WHERE c.business_id = ? AND c.created_at > now() - interval '3 days'
+                  AND COALESCE(c.landing_page_slug, '') <> 'academy'
+                  AND COALESCE(c.phone_number, '') !~ '^\\+1[0-9]{3}555[0-9]{4}$'
+                  AND NOT EXISTS (SELECT 1 FROM lead_intake l WHERE l.business_id = c.business_id AND l.outcome <> 'DUPLICATE'
+                      AND ((c.square_customer_id IS NOT NULL AND l.square_customer_id = c.square_customer_id)
+                        OR (regexp_replace(COALESCE(c.phone_number, ''), '\\D', '', 'g') <> ''
+                            AND right(regexp_replace(COALESCE(l.phone_number, ''), '\\D', '', 'g'), 10) = right(regexp_replace(c.phone_number, '\\D', '', 'g'), 10))
+                        OR (COALESCE(c.email_address, '') <> '' AND lower(l.email) = lower(c.email_address))))
+                ORDER BY c.created_at
+                LIMIT 50
+                """, businessId);
+    }
+
     /** Marks profiles that website forms and bookings created (via marketing.contacts) and retries failures. */
     public int reconcile() {
         int n = 0;
         for (long b : enabled) {
-            List<java.util.Map<String, Object>> rows = jdbc.queryForList("""
-                    SELECT c.phone_number, c.email_address, c.given_name, c.square_customer_id,
-                           COALESCE(c.original_traffic_source, c.marketing_traffic_source) AS ts,
-                           c.utm_source, c.utm_medium, c.utm_campaign, c.referrer
-                    FROM marketing.contacts c
-                    WHERE c.business_id = ? AND c.square_customer_id IS NOT NULL AND c.created_at > now() - interval '3 days'
-                      AND NOT EXISTS (SELECT 1 FROM lead_intake l WHERE l.business_id = c.business_id AND l.square_customer_id = c.square_customer_id)
-                    LIMIT 50
-                    """, b);
-            for (var r : rows) {
+            for (var r : contactsMissingFromCrm(b)) {
                 try {
-                    SquareClient sq = squares.forBusiness(b);
                     String id = (String) r.get("square_customer_id");
+                    String attribution = com.salonreview.landing.Attribution.of(k -> k.startsWith("utm_") || k.equals("referrer") ? (String) r.get(k) : null).toJson();
+                    if (id == null) {
+                        // No booking yet, so no Square customer either: the lead is created like a call or text, which also creates the profile.
+                        capture(new Lead(b, "Form", (String) r.get("ts"), (String) r.get("phone_number"), (String) r.get("email_address"),
+                                (String) r.get("given_name"), "Website contact, no booking yet", null, null, attribution));
+                        n++;
+                        continue;
+                    }
+                    SquareClient sq = squares.forBusiness(b);
                     SquareClient.Customer cust = new SquareClient.Customer(id, null, null, Instant.now().toString(), null, null, null);
                     Lead l = new Lead(b, "Form", (String) r.get("ts"), (String) r.get("phone_number"), (String) r.get("email_address"),
-                            (String) r.get("given_name"), "reconciled from website contact", null, null,
-                            com.salonreview.landing.Attribution.of(k -> k.startsWith("utm_") || k.equals("referrer") ? (String) r.get(k) : null).toJson());
+                            (String) r.get("given_name"), "reconciled from website contact", null, null, attribution);
                     String label = sourceLabel(l.trafficSource());
                     boolean marked = markIfFirstTouch(sq, b, cust, label, "Form", false);
                     record(l, label, validPhone(l.phone()), l.email(), "MATCHED", id, marked, null);
                     n++;
                 } catch (Exception e) {
-                    log.warn("Lead reconcile failed for {}: {}", r.get("square_customer_id"), e.toString());
+                    log.warn("Lead reconcile failed for {}: {}", r.get("phone_number"), e.toString());
                 }
             }
         }
