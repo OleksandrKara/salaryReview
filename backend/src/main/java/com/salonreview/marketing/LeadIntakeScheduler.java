@@ -21,6 +21,7 @@ public class LeadIntakeScheduler {
         followUp.sendDueReminders();
         followUp.autoBook();
         followUp.autoLostCancelled();
+        followUp.ensureNextSteps();
     }
 
     @Scheduled(cron = "0 7,22,37,52 * * * *", zone = "America/Los_Angeles")

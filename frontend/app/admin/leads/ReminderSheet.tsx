@@ -136,6 +136,7 @@ function Sheet({ title, subtitle, language, onClose, onSubmit, onLost }: {
                   </button>
                 ))}
               </div>
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">{t(language, 'remSkipSafety')}</p>
               <button type="button" onClick={() => { setNone(false); setError(''); }} className="inline-flex min-h-11 items-center text-sm text-zinc-800 underline underline-offset-2">{t(language, 'remSheetNoneUndo')}</button>
               {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
             </div>

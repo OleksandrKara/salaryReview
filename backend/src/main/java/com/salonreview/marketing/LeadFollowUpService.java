@@ -194,6 +194,13 @@ public class LeadFollowUpService {
     public record ReachedOutRequest(Integer days, String date, String time, String note, Boolean none, String skipReason) {}
 
     static final Set<String> SKIP_REASONS = Set.of("CLIENT_WILL_WRITE", "ARRANGED", "NOT_NEEDED");
+    /** "No follow-up" is still checked on after this many days. */
+    static final int SKIP_CHECK_DAYS = 7;
+    static final String SKIP_CHECK_NOTE = "Marked as no follow-up needed: ";
+    /** Local hour (Pacific) of the reminder that is set automatically for an In progress lead that has no next step. */
+    static final int AUTO_NEXT_STEP_HOUR = 10;
+    static final String AUTO_NEXT_STEP_NOTE = "Reminder set automatically: this lead was In progress without a next step. "
+            + "/ Напоминание поставлено автоматически: у лида в работе не было следующего шага.";
 
     /** A completed Square payment that is not part of a booked visit day (invoice, deposit, course payment). */
     public record Payment(String id, String at, java.math.BigDecimal amount, java.math.BigDecimal tip, String description) {}
@@ -1403,6 +1410,9 @@ public class LeadFollowUpService {
         }
         boolean clear = Boolean.TRUE.equals(req.clearCallback());
         LeadView current = find(id);
+        if (clear && "CONTACTED".equals(req.status() != null ? req.status() : current.status())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "An In progress lead needs a next step: set a new reminder instead of clearing it");
+        }
         if ("CONTACTED".equals(req.status()) && callback == null && !clear
                 && (current.callbackAt() == null || Instant.parse(current.callbackAt()).isBefore(Instant.now()))) {
             callback = Timestamp.from(Instant.now().plus(java.time.Duration.ofDays(FOLLOW_UP_DAYS)));
@@ -1552,6 +1562,9 @@ public class LeadFollowUpService {
 
     public void deleteReminder(long id, long reminderId, String by) {
         LeadView lead = find(id);
+        if ("CONTACTED".equals(lead.status()) && reminders(lead.id()).size() <= 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "An In progress lead needs a next step: set another reminder first, or change the status");
+        }
         int n = jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE id = ? AND lead_id = ? AND business_id = ? AND done_at IS NULL",
                 reminderId, lead.id(), business.id());
         if (n == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such reminder");
@@ -1574,9 +1587,13 @@ public class LeadFollowUpService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "skipReason is required without a follow-up");
         }
         Instant now = Instant.now();
-        Instant due = null;
-        String note = null;
-        if (!none) {
+        Instant due;
+        String note;
+        if (none) {
+            // An In progress lead always has a next step: "no follow-up" still leaves a check-in reminder, so it is never forgotten.
+            due = reminderDue(SKIP_CHECK_DAYS, null, null, now);
+            note = SKIP_CHECK_NOTE + skipReason + ". Check whether the client wrote or booked.";
+        } else {
             boolean picked = req != null && (req.days() != null || (req.date() != null && !req.date().isBlank()));
             due = reminderDue(picked ? req.days() : Integer.valueOf(FOLLOW_UP_DAYS), picked ? req.date() : null, req == null ? null : req.time(), now);
             note = req == null ? null : cleanNote(req.note());
@@ -1585,12 +1602,47 @@ public class LeadFollowUpService {
                 by, lead.id(), business.id());
         jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE lead_id = ? AND business_id = ? AND done_at IS NULL AND due_at <= now()",
                 lead.id(), business.id());
-        if (due != null) addReminder(lead.id(), due, note, "REACHED_OUT", by, false);
-        else syncCallback(lead.id());
+        addReminder(lead.id(), due, note, none ? "SKIP_CHECK" : "REACHED_OUT", by, false);
         if ("NEW".equals(lead.status())) addEvent(lead.id(), "STATUS", "CONTACTED", by);
-        addEvent(lead.id(), "REACHED_OUT", due == null ? "none:" + skipReason : String.valueOf(java.time.temporal.ChronoUnit.DAYS.between(now.atZone(PT).toLocalDate(), due.atZone(PT).toLocalDate())), by);
-        if (due != null) addEvent(lead.id(), "CALLBACK", due.toString(), by);
+        addEvent(lead.id(), "REACHED_OUT", none ? "none:" + skipReason : String.valueOf(java.time.temporal.ChronoUnit.DAYS.between(now.atZone(PT).toLocalDate(), due.atZone(PT).toLocalDate())), by);
+        addEvent(lead.id(), "CALLBACK", due.toString(), by);
         noteEvent(lead.id(), note, by);
+    }
+
+    /** Today 10:00 Pacific when that is still ahead, otherwise tomorrow 10:00. */
+    static Instant nextAutoNextStepTime(Instant now) {
+        java.time.ZonedDateTime today = now.atZone(PT).toLocalDate().atTime(AUTO_NEXT_STEP_HOUR, 0).atZone(PT);
+        return today.toInstant().isAfter(now) ? today.toInstant() : today.plusDays(1).toInstant();
+    }
+
+    /**
+     * Every In progress (CONTACTED) lead must have a next step, a reminder that is still open. The app refuses to remove it,
+     * and this check, run every few minutes, puts one on any lead that slipped through (older data, any other path): a reminder
+     * at 10:00 with a note saying why it was set.
+     */
+    public int ensureNextSteps() {
+        int total = 0;
+        for (long businessId : intake.enabledBusinesses()) total += ensureNextSteps(businessId);
+        return total;
+    }
+
+    int ensureNextSteps(long businessId) {
+        List<Long> ids = jdbc.queryForList("""
+                SELECT l.id FROM lead_intake l
+                WHERE l.business_id = ? AND l.status = 'CONTACTED' AND l.outcome <> 'DUPLICATE'
+                  AND NOT EXISTS (SELECT 1 FROM lead_reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL)
+                """, Long.class, businessId);
+        if (ids.isEmpty()) return 0;
+        Instant due = nextAutoNextStepTime(Instant.now());
+        for (long id : ids) {
+            jdbc.update("INSERT INTO lead_reminders (business_id, lead_id, due_at, note, origin, created_by) VALUES (?, ?, ?, ?, 'AUTO_NEXT_STEP', 'System')",
+                    businessId, id, Timestamp.from(due), AUTO_NEXT_STEP_NOTE);
+            jdbc.update("UPDATE lead_intake SET callback_at = ?, callback_reminded = FALSE WHERE id = ? AND business_id = ?", Timestamp.from(due), id, businessId);
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'CALLBACK', ?, 'System')", id, businessId, due.toString());
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'NOTE', ?, 'System')", id, businessId, AUTO_NEXT_STEP_NOTE);
+        }
+        log.info("Set an automatic next step on {} In progress leads of business {}", ids.size(), businessId);
+        return ids.size();
     }
 
     static final Set<String> ATTEMPT_CHANNELS = Set.of("CALL", "SMS", "MESSAGE");
