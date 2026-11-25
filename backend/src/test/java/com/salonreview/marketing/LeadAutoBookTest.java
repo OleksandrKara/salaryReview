@@ -227,8 +227,13 @@ class LeadAutoBookTest {
         long q = lead("+16195550054", "NEW", null, "3 days", false);
         service.reachedOut(q, new LeadFollowUpService.ReachedOutRequest(null, null, null, null, true, "CLIENT_WILL_WRITE"), "tester");
         assertThat(status(q)).isEqualTo("CONTACTED");
-        assertThat(open(q)).isZero();
-        assertThat(service.find(q).callbackAt()).isNull();
+        // No follow-up still leaves a check-in reminder: an In progress lead always has a next step.
+        assertThat(open(q)).isEqualTo(1);
+        var check = service.reminders(q).get(0);
+        assertThat(check.origin()).isEqualTo("SKIP_CHECK");
+        assertThat(check.note()).contains("CLIENT_WILL_WRITE");
+        assertThat(java.time.Instant.parse(check.dueAt()).atZone(PT).toLocalDate()).isEqualTo(java.time.LocalDate.now(PT).plusDays(7));
+        assertThat(service.find(q).callbackAt()).isNotNull();
 
         long lost = lead("+16195550052", "LOST", null, "3 days", false);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.reachedOut(lost, null, "tester"))
@@ -262,6 +267,11 @@ class LeadAutoBookTest {
         assertThat(service.reminders(l).stream().filter(x -> x.id() == far.id()).findFirst().get().note()).isNull();
 
         service.deleteReminder(l, far.id(), "tester");
+        // The last reminder of an In progress lead cannot be removed.
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.deleteReminder(l, near.id(), "tester"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(service.reminders(l)).hasSize(1);
+        jdbc.update("UPDATE lead_intake SET status = 'NEW' WHERE id = ?", l);
         service.deleteReminder(l, near.id(), "tester");
         assertThat(service.reminders(l)).isEmpty();
         assertThat(service.find(l).callbackAt()).isNull();
@@ -426,5 +436,44 @@ class LeadAutoBookTest {
         booking("C48", "ACCEPTED", "PROC", "1 minute", "6 days");
         service.autoBook();
         assertThat(status(id)).isEqualTo("BOOKED");
+    }
+
+    @Test
+    void inProgressLeadsWithoutANextStepGetAReminderAtTenAndTheOthersAreLeftAlone() {
+        long bare = lead("+16195550061", "CONTACTED", null, "3 days", false);
+        long covered = lead("+16195550062", "CONTACTED", null, "3 days", false);
+        long fresh = lead("+16195550063", "NEW", null, "3 days", false);
+        service.addReminder(covered, new LeadFollowUpService.ReminderRequest(null, null, 3, "kept"), "tester");
+
+        assertThat(service.ensureNextSteps(b)).isEqualTo(1);
+
+        var r = service.reminders(bare);
+        assertThat(r).hasSize(1);
+        assertThat(r.get(0).origin()).isEqualTo("AUTO_NEXT_STEP");
+        assertThat(r.get(0).createdBy()).isEqualTo("System");
+        assertThat(r.get(0).note()).contains("without a next step");
+        assertThat(java.time.Instant.parse(r.get(0).dueAt()).atZone(PT).toLocalTime()).isEqualTo(java.time.LocalTime.of(10, 0));
+        assertThat(service.find(bare).callbackAt()).isEqualTo(r.get(0).dueAt());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM lead_events WHERE lead_id = ? AND type = 'NOTE' AND created_by = 'System'", Integer.class, bare)).isEqualTo(1);
+        assertThat(service.reminders(covered)).hasSize(1);
+        assertThat(service.reminders(fresh)).isEmpty();
+        assertThat(service.ensureNextSteps(b)).isZero();
+    }
+
+    @Test
+    void theAutomaticNextStepIsTodayAtTenWhenThatIsAheadAndTomorrowOtherwise() {
+        var morning = java.time.LocalDate.of(2026, 11, 25).atTime(8, 15).atZone(PT).toInstant();
+        var afternoon = java.time.LocalDate.of(2026, 11, 25).atTime(15, 0).atZone(PT).toInstant();
+        assertThat(LeadFollowUpService.nextAutoNextStepTime(morning).atZone(PT).toLocalDateTime()).isEqualTo(java.time.LocalDate.of(2026, 11, 25).atTime(10, 0));
+        assertThat(LeadFollowUpService.nextAutoNextStepTime(afternoon).atZone(PT).toLocalDateTime()).isEqualTo(java.time.LocalDate.of(2026, 11, 26).atTime(10, 0));
+    }
+
+    @Test
+    void clearingTheCallbackOfAnInProgressLeadIsRefused() {
+        long l = lead("+16195550064", "CONTACTED", null, "3 days", false);
+        service.addReminder(l, new LeadFollowUpService.ReminderRequest(null, null, 3, null), "tester");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.update(l, new LeadFollowUpService.UpdateRequest(null, null, true, null, null, null), "tester"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(service.reminders(l)).hasSize(1);
     }
 }

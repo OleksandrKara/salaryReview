@@ -815,6 +815,7 @@ const STRINGS = {
   remLostReasonRequired: { EN: 'Pick a reason (a comment is required for Other).', RU: 'Выберите причину (для «Другое» нужен комментарий).' },
   remSkipWhy: { EN: 'Why is no follow-up needed?', RU: 'Почему напоминание не нужно?' },
   remSkipReasonRequired: { EN: 'Pick a reason or set a follow-up.', RU: 'Выберите причину или поставьте напоминание.' },
+  remSkipSafety: { EN: 'A lead in progress always has a next step, so a check-in reminder is still set in 7 days.', RU: 'У лида в работе всегда есть следующий шаг, поэтому напоминание проверить его всё равно ставится через 7 дней.' },
   remSkip_CLIENT_WILL_WRITE: { EN: 'Client will contact us', RU: 'Клиент сам напишет или позвонит' },
   remSkip_ARRANGED: { EN: 'Already arranged', RU: 'Обо всём договорились' },
   remSkip_NOT_NEEDED: { EN: 'Nothing more to discuss', RU: 'Обсуждать больше нечего' },
