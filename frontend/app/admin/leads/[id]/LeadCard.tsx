@@ -17,7 +17,7 @@ import ImageViewer, { type ViewerImage } from './ImageViewer';
 import LeadActions from '../LeadActions';
 import RemindersPanel from '../RemindersPanel';
 import ReminderSheet, { type ReachedOutBody } from '../ReminderSheet';
-import { isActive } from '../leadActions';
+import { isActive, leftDetailsOnly } from '../leadActions';
 import CopyButton from '../CopyButton';
 import LeadOwnerPanel from '../LeadOwnerPanel';
 import { ownerChangeSentence, parseOwnerChange } from '../../../lib/ownerEvent';
@@ -463,6 +463,9 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           {lead.status === 'OUTDATED' && <option value="OUTDATED" disabled>{t(language, 'leadStatusOUTDATED')}</option>}
           {STATUSES.map((s) => <option key={s} value={s}>{lead.status === 'OUTDATED' && s === 'NEW' ? t(language, 'outdatedMoveOut') : t(language, `leadStatus${s}` as 'leadStatusNEW')}</option>)}
         </select>
+        {leftDetailsOnly(lead) && (
+          <p className="basis-full rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 ring-1 ring-amber-200">{t(language, 'leadNoBookingBanner')}</p>
+        )}
         {lead.status === 'OUTDATED' && (
           <p className="basis-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">{t(language, 'outdatedCardBanner')}</p>
         )}
