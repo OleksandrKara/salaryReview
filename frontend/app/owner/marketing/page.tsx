@@ -49,10 +49,11 @@ export default async function MarketingDashboardPage({
     );
   }
 
-  const [data, abuseBlocks, conversions] = await Promise.all([
+  const [data, abuseBlocks, conversions, cac] = await Promise.all([
     serverApi.getMarketingDashboard(slug, undefined, bounds.from, bounds.to),
     serverApi.getAbuseBlocks(),
     serverApi.getMarketingConversions(slug, bounds.from, bounds.to).catch(() => null),
+    serverApi.getMarketingCac(bounds.from, bounds.to).catch(() => null),
   ]);
 
   return (
@@ -81,6 +82,7 @@ export default async function MarketingDashboardPage({
               slug={data.landingPageSlug}
               initialVariants={data.variants}
               initialConversions={conversions}
+              initialCac={cac}
               readOnly={me.role !== 'OWNER'}
               timeZone={timeZone}
             />

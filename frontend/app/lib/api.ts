@@ -90,6 +90,7 @@ import type {
   MarketingDashboardData,
   MarketingConversionsData,
   AdLeadMoney,
+  MarketingCac,
   Margins,
   AdLeadRow,
   GooglePpcData,
@@ -759,6 +760,13 @@ export const api = {
   clearMargins: async (): Promise<void> => {
     const res = await fetch('/api/margins', { method: 'DELETE' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  },
+
+  getMarketingCac: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return proxyGet<MarketingCac>(`/api/owner/marketing/cac?${params.toString()}`);
   },
 
   getGooglePpcMoney: (from?: string, to?: string) => {

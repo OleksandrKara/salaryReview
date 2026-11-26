@@ -23,9 +23,20 @@ public class MarketingAdLeadsController {
     private final AdLeadsService ads;
     private final LeadFollowUpService leads;
 
-    public MarketingAdLeadsController(AdLeadsService ads, LeadFollowUpService leads) {
+    private final com.salonreview.marketing.MarketingCacService cac;
+
+    public MarketingAdLeadsController(AdLeadsService ads, LeadFollowUpService leads, com.salonreview.marketing.MarketingCacService cac) {
         this.ads = ads;
         this.leads = leads;
+        this.cac = cac;
+    }
+
+    /** Customer acquisition cost by paid channel for the Marketing Overview (owner only: not in the ads manager's allow list). */
+    @GetMapping("/cac")
+    public com.salonreview.marketing.MarketingCacService.Cac cac(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return cac.cac(from, to);
     }
 
     /** Google Ads leads created in the period, for the Google PPC tab. */

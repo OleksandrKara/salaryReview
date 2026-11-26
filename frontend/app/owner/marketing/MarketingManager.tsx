@@ -3,24 +3,27 @@
 import { useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../lib/api';
-import type { MarketingConversionsData, MarketingVariantStat, TrafficSourceKey } from '../../lib/types';
+import type { MarketingCac, MarketingConversionsData, MarketingVariantStat, TrafficSourceKey } from '../../lib/types';
 import TrafficSourceFilter, { ADS_ONLY_SOURCES } from './TrafficSourceFilter';
 import PeriodFilter from './PeriodFilter';
 import { parsePeriodParams, periodToBounds } from './period';
 import type { PeriodSelection } from './period';
 import VariantTable from './VariantTable';
 import OverviewSummary from './OverviewSummary';
+import CacSummary from './CacSummary';
 
 export default function MarketingManager({
   slug,
   initialVariants,
   initialConversions,
+  initialCac = null,
   readOnly = false,
   timeZone,
 }: {
   slug: string;
   initialVariants: MarketingVariantStat[];
   initialConversions: MarketingConversionsData | null;
+  initialCac?: MarketingCac | null;
   readOnly?: boolean;
   // Phase 6.3: the business's real configured timezone, from BusinessSettingsDto — see page.tsx.
   timeZone?: string;
@@ -28,6 +31,7 @@ export default function MarketingManager({
   const searchParams = useSearchParams();
   const [variants, setVariants] = useState(initialVariants);
   const [conversions, setConversions] = useState(initialConversions);
+  const [cac, setCac] = useState(initialCac);
   const [loading, setLoading] = useState(false);
   const requestId = useRef(0);
   const [error, setError] = useState('');
@@ -44,13 +48,15 @@ export default function MarketingManager({
     const id = ++requestId.current;
     setLoading(true);
     try {
-      const [data, conv] = await Promise.all([
+      const [data, conv, cacData] = await Promise.all([
         api.getMarketingDashboard(slug, nextSources, bounds.from, bounds.to),
         api.getMarketingConversions(slug, bounds.from, bounds.to).catch(() => null),
+        api.getMarketingCac(bounds.from, bounds.to).catch(() => null),
       ]);
       if (id !== requestId.current) return;
       setVariants(data.variants);
       setConversions(conv);
+      setCac(cacData);
     } finally {
       if (id === requestId.current) setLoading(false);
     }
@@ -116,6 +122,8 @@ export default function MarketingManager({
       <div className="space-y-3">
         <PeriodFilter value={selection} onChange={changePeriod} timeZone={timeZone} disabled={loading} />
       </div>
+
+      {cac && <CacSummary data={cac} loading={loading} />}
 
       {conversions?.available && <OverviewSummary data={conversions} loading={loading} />}
 
