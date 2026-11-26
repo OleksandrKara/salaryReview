@@ -190,6 +190,44 @@ public class AdLeadsService {
         return out;
     }
 
+    /** One Google Ads campaign to filter the lost-leads report by; active means it spent in the last 14 days. */
+    public record CampaignOption(long campaignId, String name, boolean active) {}
+
+    /** Campaigns that spent in the last 120 days, running ones first, under the latest name each one had. */
+    public List<CampaignOption> lostCampaignOptions() {
+        return jdbc.query("SELECT campaign_id, (array_agg(campaign_name ORDER BY day DESC))[1] AS name, "
+                + "bool_or(day >= current_date - 14 AND cost_micros > 0) AS active "
+                + "FROM google_ads_daily WHERE business_id = ? AND day >= current_date - 120 AND (cost_micros > 0 OR clicks > 0) "
+                + "GROUP BY campaign_id ORDER BY active DESC, max(day) DESC, campaign_id",
+                (rs, i) -> new CampaignOption(rs.getLong("campaign_id"), rs.getString("name"), rs.getBoolean("active")), business.id());
+    }
+
+    /** The lost-leads report limited to leads of the chosen Google Ads campaigns (the lead's campaign text matched to the campaign id). */
+    public LeadFollowUpService.LostReport lostReport(int days, LocalDate from, LocalDate to, java.util.Set<Long> campaignIds) {
+        var report = leads.lostReport(days, from, to);
+        if (campaignIds == null || campaignIds.isEmpty()) return report;
+        Map<Long, String[]> attribution = attributionOf(report.leads().stream().map(LeadFollowUpService.LostLead::id).toList());
+        List<Map.Entry<Long, String>> names = jdbc.query("SELECT DISTINCT campaign_id, campaign_name FROM google_ads_daily WHERE business_id = ?",
+                (rs, i) -> Map.entry(rs.getLong(1), rs.getString(2)), business.id());
+        Map<String, Long> idOf = resolveCampaignIds(attribution.values().stream().map(a -> a[0]).filter(java.util.Objects::nonNull).distinct().toList(), names);
+        List<LeadFollowUpService.LostLead> kept = report.leads().stream().filter(l -> {
+            String text = attribution.getOrDefault(l.id(), new String[2])[0];
+            Long id = text == null ? null : idOf.get(text);
+            return id != null && campaignIds.contains(id);
+        }).toList();
+        Map<String, Integer> byReason = new java.util.LinkedHashMap<>();
+        Map<String, Integer> bySource = new java.util.LinkedHashMap<>();
+        for (var l : kept) {
+            byReason.merge(l.reason(), 1, Integer::sum);
+            bySource.merge(l.reason() + "\u0000" + l.source(), 1, Integer::sum);
+        }
+        List<LeadFollowUpService.LostRow> reasonRows = byReason.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue())
+                .map(e -> new LeadFollowUpService.LostRow(e.getKey(), null, e.getValue())).toList();
+        List<LeadFollowUpService.LostRow> sourceRows = bySource.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue())
+                .map(e -> { String[] k = e.getKey().split("\u0000", -1); return new LeadFollowUpService.LostRow(k[0], "null".equals(k[1]) ? null : k[1], e.getValue()); }).toList();
+        return new LeadFollowUpService.LostReport(report.days(), kept.size(), reasonRows, sourceRows, kept);
+    }
+
     /** Leads of one source created in the period: how many there are, how many paid, and what they paid since their first day. */
     public record Cohort(int leads, int payers, java.math.BigDecimal collected) {}
 

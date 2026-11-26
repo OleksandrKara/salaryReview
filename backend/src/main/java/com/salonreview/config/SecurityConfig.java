@@ -146,7 +146,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/owner/marketing/google-ppc",
                                 "/api/owner/marketing/google-ppc/leads", "/api/owner/marketing/google-ppc/money",
                                 "/api/owner/marketing/leads/*",
-                                "/api/owner/marketing/lost-report")
+                                "/api/owner/marketing/lost-report", "/api/owner/marketing/lost-report/campaigns")
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
                         // SMS automations hub: MANAGER gets read/reply access to the activity/
                         // conversation view (openspec/changes/lead-followup-and-manager-inbox

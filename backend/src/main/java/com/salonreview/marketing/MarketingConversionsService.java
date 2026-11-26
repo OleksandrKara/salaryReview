@@ -111,7 +111,7 @@ public class MarketingConversionsService {
             deposit.addAll(r.googleDeposit());
             r.googleDrafts().forEach((c, d) -> drafts.merge(c, d, (a, b) -> b.total().compareTo(a.total()) > 0 ? b : a));
             r.campaignCounts().forEach((k, v) -> {
-                long[] c = perCampaign.computeIfAbsent(k, x -> new long[4]);
+                long[] c = perCampaign.computeIfAbsent(k, x -> new long[5]);
                 for (int i = 0; i < 3; i++) c[i] += v[i];
             });
             if (g.views > 0 || g.consultations > 0 || g.revenue.signum() > 0) {
@@ -129,7 +129,9 @@ public class MarketingConversionsService {
         Instant formsFrom = periodFrom == null ? null : periodFrom.atStartOfDay(zone).toInstant();
         Instant formsTo = periodTo == null ? null : periodTo.plusDays(1).atStartOfDay(zone).toInstant();
         List<String> formTexts = repository.googleAcademyForms(businessId, formsFrom, formsTo);
-        for (String text : formTexts) perCampaign.computeIfAbsent(text == null || text.isBlank() ? "" : "name:" + text, x -> new long[4])[3]++;
+        for (String text : formTexts) perCampaign.computeIfAbsent(text == null || text.isBlank() ? "" : "name:" + text, x -> new long[5])[3]++;
+        List<String> callTexts = repository.googleRingostatCalls(businessId, formsFrom, formsTo);
+        for (String text : callTexts) perCampaign.computeIfAbsent(text == null || text.isBlank() ? "" : "name:" + text, x -> new long[5])[4]++;
         if (!formTexts.isEmpty()) {
             int at = -1;
             for (int i = 0; i < pages.size(); i++) if (AdLeadsService.PAGE_ACADEMY.equals(pages.get(i).slug())) at = i;
@@ -143,10 +145,19 @@ public class MarketingConversionsService {
             }
         }
         var results = new GooglePpcDto.Results(total.views, total.sms, total.calls, total.consultations,
-                deposit.size(), full, paid.size(), revenue, formTexts.size());
+                deposit.size(), full, paid.size(), revenue, formTexts.size(), callTexts.size());
 
         LocalDate from = periodFrom;
         var campaigns = repository.findGoogleAdsCampaigns(businessId, from, periodTo);
+        // What Google Ads itself counts per GA4 event ("AnnaKara GA4 (web) sms_click" is shown as sms_click) so every number on the
+        // page can be checked against the Ads or Analytics screens.
+        Map<Long, Map<String, Double>> googleByCampaign = new HashMap<>();
+        Map<String, Double> googleTotals = new java.util.TreeMap<>();
+        for (var row : repository.googleConversionsByAction(businessId, periodFrom, periodTo)) {
+            String event = row.actionName().replaceFirst("^.*\\(web\\)\\s*", "");
+            googleByCampaign.computeIfAbsent(row.campaignId(), x -> new java.util.TreeMap<>()).merge(event, row.conversions(), Double::sum);
+            googleTotals.merge(event, row.conversions(), Double::sum);
+        }
         long cost = 0, imps = 0, clicks = 0;
         double conv = 0;
         List<GooglePpcDto.Campaign> out = new ArrayList<>();
@@ -157,17 +168,17 @@ public class MarketingConversionsService {
         Map<String, Long> idOfText = AdLeadsService.resolveCampaignIds(perCampaign.keySet().stream()
                 .filter(k -> k.startsWith("name:")).map(k -> k.substring(5)).toList(), repository.googleAdsCampaignNames(businessId));
         Map<Long, long[]> byId = new HashMap<>();
-        long[] unattributed = new long[4];
+        long[] unattributed = new long[5];
         perCampaign.forEach((key, v) -> {
             Long id = key.startsWith("id:") ? Long.valueOf(key.substring(3)) : key.startsWith("name:") ? idOfText.get(key.substring(5)) : null;
-            long[] into = id != null && inPeriod.contains(id) ? byId.computeIfAbsent(id, x -> new long[4]) : unattributed;
-            for (int i = 0; i < 4; i++) into[i] += v[i];
+            long[] into = id != null && inPeriod.contains(id) ? byId.computeIfAbsent(id, x -> new long[5]) : unattributed;
+            for (int i = 0; i < 5; i++) into[i] += v[i];
         });
         for (var c : campaigns) {
             cost += c.costMicros(); imps += c.impressions(); clicks += c.clicks(); conv += c.conversions();
-            long[] k = byId.getOrDefault(c.campaignId(), new long[4]);
+            long[] k = byId.getOrDefault(c.campaignId(), new long[5]);
             out.add(new GooglePpcDto.Campaign(c.campaignId(), c.name(), c.status(), micros(c.costMicros()),
-                    c.impressions(), c.clicks(), c.conversions(), k[0], k[1], k[2], k[3]));
+                    c.impressions(), c.clicks(), c.conversions(), k[0], k[1], k[2], k[3], k[4], googleByCampaign.getOrDefault(c.campaignId(), Map.of())));
         }
         var names = new HashMap<String, MarketingConversionsRepository.CustomerRow>();
         repository.findCustomers(businessId, drafts.keySet()).forEach(c -> names.put(c.customerId(), c));
@@ -188,7 +199,7 @@ public class MarketingConversionsService {
         });
         customers.sort((x, y) -> y.total().compareTo(x.total()));
         return new GooglePpcDto(!campaigns.isEmpty(), micros(cost), imps, clicks, conv, results, out, pages, customers,
-                new GooglePpcDto.Counts(unattributed[0], unattributed[1], unattributed[2], unattributed[3]));
+                new GooglePpcDto.Counts(unattributed[0], unattributed[1], unattributed[2], unattributed[3], unattributed[4]), googleTotals);
     }
 
     private PageResult compute(Long businessId, String slug, UUID pageId, LocalDate periodFrom, LocalDate periodTo, ZoneId zone) {

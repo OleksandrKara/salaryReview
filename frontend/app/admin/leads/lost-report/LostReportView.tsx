@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { t } from '../../../lib/i18n';
 import type { Language } from '../../../lib/types';
-import type { LostReport } from '../../../lib/types';
+import type { LostCampaignOption, LostReport } from '../../../lib/types';
 import {
   LOST_PERIODS, filterLeads, lostHref, reasonCounts, sourceSummaries, toggleSource, type LostFilters,
 } from '../../../lib/lostReport';
@@ -11,8 +11,10 @@ const chipOn = 'bg-zinc-900 text-white! ring-zinc-900';
 const chipOff = 'text-zinc-700 ring-zinc-300 hover:bg-zinc-50';
 
 /** The lost-leads report body, shared by the CRM page and the Ads Manager's read-only copy (own base path and lead links). */
-export default function LostReportView({ f, report, lang, basePath, leadHref }: {
+export default function LostReportView({ f, report, lang, basePath, leadHref, campaigns }: {
   f: LostFilters; report: LostReport; lang: Language | null; basePath: string; leadHref: (id: number) => string;
+  /** Google Ads campaigns to filter by (Ads Manager copy only). */
+  campaigns?: LostCampaignOption[];
 }) {
   const label = (r: string) => {
     const key = `leadLost_${r}`;
@@ -25,7 +27,7 @@ export default function LostReportView({ f, report, lang, basePath, leadHref }: 
   const shown = filterLeads(all, f);
   const summaries = sourceSummaries(all, f);
   const reasons = reasonCounts(all.filter((l) => f.sources.length === 0 || f.sources.includes(l.source ?? '')));
-  const filtered = f.sources.length > 0 || f.reason !== null;
+  const filtered = f.sources.length > 0 || f.reason !== null || f.campaigns.length > 0;
   const hrefFor = (x: LostFilters) => lostHref(x, basePath);
   const withDays = (days: number): LostFilters => ({ ...f, days, from: null, to: null });
 
@@ -46,6 +48,7 @@ export default function LostReportView({ f, report, lang, basePath, leadHref }: 
           <form method="get" action={basePath} className="mt-2 flex flex-wrap items-end gap-2">
             {f.sources.map((s) => <input key={s} type="hidden" name="source" value={s} />)}
             {f.reason && <input type="hidden" name="reason" value={f.reason} />}
+            {f.campaigns.map((c) => <input key={c} type="hidden" name="campaign" value={c} />)}
             <label className="flex flex-col text-xs text-zinc-500">{t(lang, 'leadLostReportFrom')}
               <input type="date" name="from" required defaultValue={f.from ?? ''} className="rounded border border-zinc-300 px-2 py-1.5 text-base text-zinc-900 sm:text-sm" />
             </label>
@@ -55,6 +58,25 @@ export default function LostReportView({ f, report, lang, basePath, leadHref }: 
             <button type="submit" className="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white">{t(lang, 'leadLostReportApply')}</button>
           </form>
         </div>
+        {campaigns && campaigns.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">Ad campaign</p>
+            <div className="flex flex-wrap gap-2">
+              <Link href={hrefFor({ ...f, campaigns: [] })} className={`${chip} ${f.campaigns.length === 0 ? chipOn : chipOff}`}>All campaigns</Link>
+              {campaigns.map((c) => {
+                const on = f.campaigns.includes(c.campaignId);
+                const next = on ? f.campaigns.filter((x) => x !== c.campaignId) : [...f.campaigns, c.campaignId];
+                return (
+                  <Link key={c.campaignId} href={hrefFor({ ...f, campaigns: next })} aria-pressed={on} className={`${chip} ${on ? chipOn : chipOff}`}>
+                    <span className="min-w-0 break-all">{c.name}</span>
+                    {!c.active && <span className="text-[11px] opacity-60">paused</span>}
+                  </Link>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-400">Pick one or several. Only leads that came from the chosen campaigns are shown.</p>
+          </div>
+        )}
         {all.length > 0 ? (
           <>
             <div>
@@ -84,7 +106,7 @@ export default function LostReportView({ f, report, lang, basePath, leadHref }: 
               </div>
             </div>
             {filtered ? (
-              <Link href={hrefFor({ days: f.days, from: f.from, to: f.to, sources: [], reason: null })} className="self-start text-sm text-zinc-600 underline">{t(lang, 'leadLostReportReset')}</Link>
+              <Link href={hrefFor({ days: f.days, from: f.from, to: f.to, sources: [], reason: null, campaigns: [] })} className="self-start text-sm text-zinc-600 underline">{t(lang, 'leadLostReportReset')}</Link>
             ) : null}
           </>
         ) : null}

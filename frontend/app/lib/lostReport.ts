@@ -2,7 +2,7 @@ import type { LostLead } from './types';
 
 export const LOST_PERIODS = [30, 90, 180, 365];
 
-export interface LostFilters { days: number; from: string | null; to: string | null; sources: string[]; reason: string | null }
+export interface LostFilters { days: number; from: string | null; to: string | null; sources: string[]; reason: string | null; campaigns: number[] }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -10,14 +10,16 @@ export interface SourceSummary { source: string; count: number; share: number; t
 
 const UNKNOWN = '';
 
-export function parseLostFilters(q: { days?: string; from?: string; to?: string; source?: string | string[]; reason?: string }): LostFilters {
+export function parseLostFilters(q: { days?: string; from?: string; to?: string; source?: string | string[]; reason?: string; campaign?: string | string[] }): LostFilters {
   const days = LOST_PERIODS.includes(Number(q.days)) ? Number(q.days) : 90;
   const raw = q.source === undefined ? [] : Array.isArray(q.source) ? q.source : [q.source];
   const sources = [...new Set(raw.filter((s) => s !== ''))];
   const reason = q.reason && /^[A-Z_]{2,40}$/.test(q.reason) ? q.reason : null;
   const from = q.from && DATE_RE.test(q.from) ? q.from : null;
   const to = from && q.to && DATE_RE.test(q.to) && q.to >= from ? q.to : null;
-  return { days, from, to, sources, reason };
+  const rawC = q.campaign === undefined ? [] : Array.isArray(q.campaign) ? q.campaign : [q.campaign];
+  const campaigns = [...new Set(rawC.filter((c) => /^\d{1,20}$/.test(c)).map(Number))];
+  return { days, from, to, sources, reason, campaigns };
 }
 
 export function lostHref(f: LostFilters, base = '/admin/leads/lost-report'): string {
@@ -28,6 +30,7 @@ export function lostHref(f: LostFilters, base = '/admin/leads/lost-report'): str
   } else if (f.days !== 90) p.set('days', String(f.days));
   f.sources.forEach((s) => p.append('source', s));
   if (f.reason) p.set('reason', f.reason);
+  (f.campaigns ?? []).forEach((c) => p.append('campaign', String(c)));
   const qs = p.toString();
   return `${base}${qs ? `?${qs}` : ''}`;
 }

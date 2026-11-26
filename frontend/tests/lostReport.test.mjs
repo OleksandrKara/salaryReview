@@ -8,12 +8,18 @@ const L = (id, source, reason) => ({ id, name: 'N', phoneLast4: '1111', channel:
 const leads = [L(1, 'Yelp', 'PRICE'), L(2, 'Yelp', 'PRICE'), L(3, 'Yelp', 'TIMING'), L(4, 'Google Ads', 'PRICE'), L(5, null, 'OTHER')];
 
 test('filters parse from the URL with safe defaults', () => {
-  assert.deepEqual(parseLostFilters({}), { days: 90, from: null, to: null, sources: [], reason: null });
-  assert.deepEqual(parseLostFilters({ days: '30', source: ['Yelp', 'Yelp', 'Google Ads'], reason: 'PRICE' }), { days: 30, from: null, to: null, sources: ['Yelp', 'Google Ads'], reason: 'PRICE' });
-  assert.deepEqual(parseLostFilters({ days: '7', source: 'Yelp', reason: 'drop table' }), { days: 90, from: null, to: null, sources: ['Yelp'], reason: null });
-  assert.deepEqual(parseLostFilters({ from: '2026-10-01', to: '2026-10-31' }), { days: 90, from: '2026-10-01', to: '2026-10-31', sources: [], reason: null });
+  assert.deepEqual(parseLostFilters({}), { days: 90, from: null, to: null, sources: [], reason: null, campaigns: [] });
+  assert.deepEqual(parseLostFilters({ days: '30', source: ['Yelp', 'Yelp', 'Google Ads'], reason: 'PRICE' }), { days: 30, from: null, to: null, sources: ['Yelp', 'Google Ads'], reason: 'PRICE', campaigns: [] });
+  assert.deepEqual(parseLostFilters({ days: '7', source: 'Yelp', reason: 'drop table' }), { days: 90, from: null, to: null, sources: ['Yelp'], reason: null, campaigns: [] });
+  assert.deepEqual(parseLostFilters({ from: '2026-10-01', to: '2026-10-31' }), { days: 90, from: '2026-10-01', to: '2026-10-31', sources: [], reason: null, campaigns: [] });
   assert.deepEqual(parseLostFilters({ from: '2026-10-31', to: '2026-10-01' }).to, null);
   assert.equal(parseLostFilters({ from: 'x', to: '2026-10-01' }).from, null);
+});
+
+test('campaign filter takes several numeric ids and ignores junk', () => {
+  assert.deepEqual(parseLostFilters({ campaign: ['24450764145', '24455781515', '24450764145', 'x', '1; drop'] }).campaigns, [24450764145, 24455781515]);
+  assert.deepEqual(parseLostFilters({ campaign: '5' }).campaigns, [5]);
+  assert.equal(lostHref({ days: 90, from: null, to: null, sources: [], reason: null, campaigns: [5, 7] }), '/admin/leads/lost-report?campaign=5&campaign=7');
 });
 
 test('href round-trips and omits defaults', () => {

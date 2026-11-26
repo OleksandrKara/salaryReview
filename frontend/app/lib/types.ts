@@ -2664,6 +2664,8 @@ export interface GooglePpcCampaign {
   callTaps: number;
   consultations: number;
   forms: number;
+  ringostatCalls: number;
+  googleByEvent: Record<string, number>;
 }
 
 export interface GooglePpcPage {
@@ -2695,11 +2697,13 @@ export interface GooglePpcData {
     payingCustomers: number;
     revenue: number;
     forms: number;
+    ringostatCalls: number;
   };
   campaigns: GooglePpcCampaign[];
   pages: GooglePpcPage[];
   customers: GooglePpcCustomer[];
-  unattributed: { smsTaps: number; callTaps: number; consultations: number; forms: number };
+  unattributed: { smsTaps: number; callTaps: number; consultations: number; forms: number; ringostatCalls: number };
+  googleByEvent: Record<string, number>;
 }
 
 export interface GooglePpcCustomer {
@@ -2970,3 +2974,5 @@ export interface NeedsReplyQueue { count: number; oldestSeconds: number | null; 
 
 export type LeadSearchPage = { total: number; items: { lead: Lead; lastActivityAt: string | null }[] };
 export type LeadFilterOptions = { sources: { source: string; count: number }[]; statuses: Record<string, number> };
+
+export interface LostCampaignOption { campaignId: number; name: string; active: boolean }
