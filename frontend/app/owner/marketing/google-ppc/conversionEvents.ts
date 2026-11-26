@@ -19,7 +19,7 @@ export interface ConversionEvent {
 export const CONVERSION_EVENTS: ConversionEvent[] = [
   { key: 'sms', label: 'Texts received', event: 'sms_sent', what: 'A text from a site visitor reached us (Twilio) after they tapped Text us on the site. This is the primary text conversion' },
   { key: 'smsTaps', label: 'Text taps', event: 'sms_click', what: 'Tap on a Text us button. Secondary: the visitor may never send the text', secondary: true },
-  { key: 'calls', label: 'Call taps', event: 'phoneNumber_click', what: 'Tap on a phone number on the site' },
+  { key: 'calls', label: 'Call taps', event: 'phoneNumber_click', what: 'Tap on a phone number on the site. Secondary: the visitor may never call', secondary: true },
   { key: 'ringostat', label: 'Phone calls', event: 'Ringostat_calls', what: 'A real call from a Google ad, received by the call tracker (Ringostat)' },
   { key: 'consultations', label: 'Consultations booked', event: 'consultation_booked', what: 'A consultation booked on the site' },
   { key: 'deposits', label: 'Deposits from the site', event: 'procedure_booked', what: 'A deposit paid on the site (Book now, Book a procedure). Invoices do not count' },
