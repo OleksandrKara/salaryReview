@@ -317,7 +317,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
     <section aria-label="Campaigns">
       <h2 className="text-sm font-semibold text-zinc-900">Campaigns</h2>
       <p className="mb-2 mt-0.5 text-xs text-zinc-500">
-        Conversions = text taps + call taps + consultations booked + deposits from the site (+ Academy forms). Leads are people created in the period.
+        Conversions = texts received + phone calls + consultations booked + deposits from the site (+ Academy forms). Leads are people created in the period.
       </p>
       <ul className="space-y-2 sm:hidden">
         {data.campaigns.map((c) => {
@@ -499,7 +499,7 @@ function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null
     <section aria-label="Results by landing page">
       <h2 className="text-sm font-semibold text-zinc-900">Results by landing page</h2>
       <p className="mb-2 mt-0.5 text-xs text-zinc-500">
-        Conversion rate = text taps + call taps + consultations booked + deposits from the site (+ Academy forms on the Academy page), divided by visits of the page.
+        Conversion rate = texts received + phone calls + consultations booked + deposits from the site (+ Academy forms on the Academy page), divided by visits of the page.
       </p>
       <ul className="space-y-2 sm:hidden">
         {[...rows, total].map((r) => (
