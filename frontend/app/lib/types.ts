@@ -2634,6 +2634,12 @@ export interface MarketingConversionsData {
   bySource: MarketingSourceRow[];
 }
 
+export interface CacChannel {
+  key: string; label: string; spend: number; spendEstimated: boolean; leads: number; payers: number;
+  collected: number; cac: number | null; cpl: number | null; roas: number | null;
+}
+export interface MarketingCac { channels: CacChannel[]; total: CacChannel }
+
 export interface MarketingSourceRow {
   key: string;
   visitors: number;
@@ -2721,11 +2727,11 @@ export interface AdLeadRow {
   customerId: string | null; collected: number | null; remaining: number | null; nextProcedureAt: string | null;
 }
 export interface Margins { materialPerProcedure: number; masterPct: number; squarePct: number; updatedBy: string | null; updatedAt: string }
-export interface AdLeadCampaignMoney { campaign: string | null; campaignId: number | null; leads: number; collected: number; withUpcoming: number; remaining: number; siteDeposits: number }
+export interface AdLeadCampaignMoney { campaign: string | null; campaignId: number | null; leads: number; collected: number; withUpcoming: number; remaining: number; siteDeposits: number; payers: number }
 export interface AdLeadMoney {
   leftToCollect: number; leftLeads: number; leftEstimate: number; leftPrepaid: number; partial: boolean;
   collected: number; periodLeft: number; periodLeftLeads: number; campaigns: AdLeadCampaignMoney[];
-  periodEstimate: number; periodPrepaid: number; siteDeposits: number; siteDepositsByPage: Record<string, number>;
+  periodEstimate: number; periodPrepaid: number; siteDeposits: number; siteDepositsByPage: Record<string, number>; payers: number;
 }
 export interface AdLeadAppointment { status: string | null; startAt: string | null; services: string | null; technician: string | null; paid: number | null; consultation: boolean }
 export interface AdLeadCard {

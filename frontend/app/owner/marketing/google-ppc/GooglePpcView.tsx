@@ -126,6 +126,7 @@ function Kpis({ data, margins, onMargins, money, leads }: { data: GooglePpcData;
   // number as Collected above. Falls back to the contact-capture figure only when the money block failed to load.
   const revenue = money ? money.collected : r.revenue;
   const payers = money ? leads.filter((l) => (l.collected ?? 0) > 0).length : r.payingCustomers;
+  const leadsCount = (money?.campaigns ?? []).reduce((t, m) => t + m.leads, 0);
   const roi = data.spend > 0 ? ((revenue - data.spend) / data.spend) * 100 : null;
   const roas = data.spend > 0 ? revenue / data.spend : null;
   // Collected plus the balances still to pay on procedures these leads already booked (one more procedure of materials each).
@@ -137,12 +138,15 @@ function Kpis({ data, margins, onMargins, money, leads }: { data: GooglePpcData;
     <section aria-label="Google Ads results">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Kpi label="Spend" value={usd0.format(data.spend)} sub={`${num(data.clicks)} clicks, ${num(data.impressions)} impressions`} />
+        <Kpi label="CAC" value={money ? perUnit(data.spend, money.payers) : dash} sub={money ? (money.payers > 0 ? `Spend per new paying customer, ${num(money.payers)} ${money.payers === 1 ? 'customer' : 'customers'}` : 'No paying customers among this period\'s leads yet') : 'Not loaded'} />
+        <Kpi label="Cost per lead" value={money ? perUnit(data.spend, leadsCount) : dash} sub={money ? `${num(leadsCount)} ${leadsCount === 1 ? 'lead' : 'leads'} created in the period` : 'Not loaded'} />
+        <Kpi label="Paying customers" value={money ? num(money.payers) : dash} sub={money && leadsCount > 0 ? `${((money.payers / leadsCount) * 100).toFixed(0)}% of the leads paid` : 'Leads that paid since they came in'} />
         <Kpi label="Cost per click" value={perUnit(data.spend, data.clicks)} sub={`${num(r.visitors)} landing page visitors`} />
         <Kpi label="Revenue" value={usd0.format(revenue)} sub={`${num(payers)} paying ${payers === 1 ? 'lead' : 'leads'}, same as Collected`} />
         <Kpi label="ROAS" value={roas === null ? dash : `${roas.toFixed(2)}x`} sub="Revenue divided by spend" />
         <Kpi label="ROI" value={roi === null ? dash : `${roi.toFixed(0)}%`} sub="(Revenue - spend) / spend" />
         <Kpi
-          className="col-span-2"
+          className="col-span-2 lg:col-span-1"
           label="ROMI with left to collect"
           value={romiAhead === null ? dash : `${romiAhead.toFixed(0)}%`}
           sub={`${usd0.format(revenue)} collected + ${usd0.format(left)} left to collect, minus spend${margins ? ' and costs (materials, master, Square fees; approx.)' : '. Set cost assumptions below to include costs'}`}
@@ -328,6 +332,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
                 <Cell label="Clicks" value={num(c.clicks)} />
                 <Cell label="CPC" value={perUnit(c.spend, c.clicks)} />
                 <Cell label="Leads" value={m ? num(m.leads) : dash} />
+                <Cell label="CAC" value={m ? perUnit(c.spend, m.payers) : dash} />
                 <Cell label="Collected" value={m ? usd0.format(m.collected) : dash} />
                 <Cell label="Left to collect" value={m ? usd0.format(m.remaining) : dash} />
               </dl>
@@ -362,6 +367,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
             <Cell label="Conversions" value={num(convTotal(totalParts))} />
             <Cell label="Cost per conversion" value={perUnit(data.spend, convTotal(totalParts))} />
             <Cell label="Leads" value={money ? num(leadsTotal) : dash} />
+            <Cell label="CAC" value={money ? perUnit(data.spend, money.payers) : dash} />
             <Cell label="Clicks" value={num(data.clicks)} />
             <Cell label="Collected" value={money ? usd0.format(money.collected) : dash} />
             <Cell label="Left to collect" value={money ? usd0.format(money.periodLeft) : dash} />
@@ -379,6 +385,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
               <th className={th} title="Text taps + call taps + consultations booked + deposits from the site (+ Academy forms)">Conversions</th>
               <th className={th}>Cost per conversion</th>
               <th className={th} title="People created as leads in the period">Leads</th>
+              <th className={th} title="Spend divided by the leads of this campaign that paid since they came in">CAC</th>
               <th className={th} title="All payments of this campaign's leads created in the period">Collected</th>
               <th className={th} title="Balance still to pay on procedures booked ahead">Left to collect</th>
             </tr>
@@ -396,6 +403,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
                   <td className="px-3 py-2"><Conv parts={parts} /></td>
                   <td className="px-3 py-2 text-right tabular-nums">{perUnit(c.spend, convTotal(parts))}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{m ? num(m.leads) : dash}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{m ? perUnit(c.spend, m.payers) : dash}</td>
                   <td className="px-3 py-2 text-right font-medium tabular-nums">{m ? usd0.format(m.collected) : dash}</td>
                   <td className={`px-3 py-2 text-right font-medium tabular-nums ${m && m.remaining > 0 ? 'text-amber-700' : ''}`}>{m ? usd0.format(m.remaining) : dash}</td>
                 </tr>
@@ -410,6 +418,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
                 <td className="px-3 py-2"><Conv parts={{ sms: 0, calls: 0, consultations: 0, deposits: m.siteDeposits, forms: 0 }} /></td>
                 <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{num(m.leads)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
                 <td className="px-3 py-2 text-right font-medium tabular-nums">{usd0.format(m.collected)}</td>
                 <td className={`px-3 py-2 text-right font-medium tabular-nums ${m.remaining > 0 ? 'text-amber-700' : ''}`}>{usd0.format(m.remaining)}</td>
               </tr>
@@ -421,7 +430,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
                 <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
                 <td className="px-3 py-2"><Conv parts={unParts} /></td>
-                {[0, 1, 2, 3].map((i) => <td key={i} className="px-3 py-2 text-right tabular-nums">{dash}</td>)}
+                {[0, 1, 2, 3, 4].map((i) => <td key={i} className="px-3 py-2 text-right tabular-nums">{dash}</td>)}
               </tr>
             )}
           </tbody>
@@ -434,6 +443,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
               <td className="px-3 py-2"><Conv parts={totalParts} /></td>
               <td className="px-3 py-2 text-right tabular-nums">{perUnit(data.spend, convTotal(totalParts))}</td>
               <td className="px-3 py-2 text-right tabular-nums">{money ? num(leadsTotal) : dash}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{money ? perUnit(data.spend, money.payers) : dash}</td>
               <td className="px-3 py-2 text-right tabular-nums">{money ? usd0.format(money.collected) : dash}</td>
               <td className="px-3 py-2 text-right tabular-nums text-amber-700">{money ? usd0.format(money.periodLeft) : dash}</td>
             </tr>

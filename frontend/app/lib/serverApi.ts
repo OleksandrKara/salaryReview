@@ -35,6 +35,7 @@ import type {
   MarketingConversionsData,
   AdLeadCard,
   AdLeadMoney,
+  MarketingCac,
   Margins,
   AdLeadRow,
   GooglePpcData,
@@ -392,6 +393,13 @@ export const serverApi = {
 
   getMargins: async (): Promise<Margins | null> => {
     return serverFetch<Margins | null>('/api/margins').catch(() => null);
+  },
+
+  getMarketingCac: (from?: string, to?: string) => {
+    const query = new URLSearchParams();
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
+    return serverFetch<MarketingCac>(`/api/owner/marketing/cac?${query.toString()}`);
   },
 
   getGooglePpcMoney: (from?: string, to?: string) => {

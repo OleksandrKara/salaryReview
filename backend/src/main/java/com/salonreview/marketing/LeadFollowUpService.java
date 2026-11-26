@@ -1068,6 +1068,15 @@ public class LeadFollowUpService {
         return siteDepositSince(customers, since);
     }
 
+    /** Everything the lead's client paid since the lead's first day (the same figure Collected uses). */
+    java.math.BigDecimal collectedSinceFirstDay(LeadView lead) {
+        List<String> customers = customerIds(lead);
+        if (customers.isEmpty()) return java.math.BigDecimal.ZERO;
+        Instant since = Instant.parse(lead.createdAt()).atZone(java.time.ZoneId.of(LEAD_TZ)).toLocalDate()
+                .atStartOfDay(java.time.ZoneId.of(LEAD_TZ)).toInstant();
+        return collectedSince(customers, since);
+    }
+
     /** Completed payments (tips apart) of the customers from {@code since} on. */
     java.math.BigDecimal collectedSince(List<String> customers, Instant since) {
         if (customers.isEmpty()) return java.math.BigDecimal.ZERO;
