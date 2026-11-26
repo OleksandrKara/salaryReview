@@ -30,7 +30,7 @@ export function lostHref(f: LostFilters, base = '/admin/leads/lost-report'): str
   } else if (f.days !== 90) p.set('days', String(f.days));
   f.sources.forEach((s) => p.append('source', s));
   if (f.reason) p.set('reason', f.reason);
-  f.campaigns.forEach((c) => p.append('campaign', String(c)));
+  (f.campaigns ?? []).forEach((c) => p.append('campaign', String(c)));
   const qs = p.toString();
   return `${base}${qs ? `?${qs}` : ''}`;
 }
