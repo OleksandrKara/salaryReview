@@ -156,6 +156,29 @@ public class MarketingConversionsRepository {
                 (rs, i) -> rs.getString("camp"), businessId, f, f, t, t);
     }
 
+    /**
+     * Texts received from a Google ad visitor, one per text, with the utm_campaign each carried. This is exactly what is sent to
+     * Google Ads as the sms_sent conversion: an inbound text (Twilio) tied to a tap on the site's Text button.
+     */
+    public List<String> googleSmsReceived(Long businessId, Instant from, Instant to) {
+        Timestamp f = from == null ? null : Timestamp.from(from);
+        Timestamp t = to == null ? null : Timestamp.from(to);
+        return jdbc.query("SELECT COALESCE(utm_campaign, '') AS camp FROM ga4_sms_sent_events WHERE business_id = ? AND traffic_source = 'Google Ads' "
+                        + "AND (?::timestamptz IS NULL OR occurred_at >= ?) AND (?::timestamptz IS NULL OR occurred_at < ?)",
+                (rs, i) -> rs.getString("camp"), businessId, f, f, t, t);
+    }
+
+    /** Texts received from Google ad visitors per landing page slug. */
+    public java.util.Map<String, Long> googleSmsReceivedByPage(Long businessId, Instant from, Instant to) {
+        Timestamp f = from == null ? null : Timestamp.from(from);
+        Timestamp t = to == null ? null : Timestamp.from(to);
+        java.util.Map<String, Long> out = new java.util.HashMap<>();
+        jdbc.query("SELECT landing_page_slug AS slug, count(*) AS n FROM ga4_sms_sent_events WHERE business_id = ? AND traffic_source = 'Google Ads' "
+                        + "AND landing_page_slug IS NOT NULL AND (?::timestamptz IS NULL OR occurred_at >= ?) AND (?::timestamptz IS NULL OR occurred_at < ?) GROUP BY 1",
+                rs -> { out.put(rs.getString("slug"), rs.getLong("n")); }, businessId, f, f, t, t);
+        return out;
+    }
+
     /** Conversions Google Ads itself reports per campaign and conversion action (GA4 events imported into Ads), summed over the window. */
     public List<GoogleActionRow> googleConversionsByAction(Long businessId, java.time.LocalDate from, java.time.LocalDate to) {
         return jdbc.query("SELECT campaign_id, action_name, SUM(all_conversions) AS n FROM google_ads_conversions_daily WHERE business_id = ? "

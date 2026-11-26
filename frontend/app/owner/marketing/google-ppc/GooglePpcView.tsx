@@ -156,17 +156,17 @@ function Kpis({ data, margins, onMargins, money, leads }: { data: GooglePpcData;
       <div className="mt-3 rounded-xl bg-white p-3 ring-1 ring-zinc-200 sm:p-4">
         <h2 className="text-sm font-semibold text-zinc-900">Conversions</h2>
         <p className="mt-0.5 text-xs text-zinc-500">Each conversion with the event that fires it. Google Ads shows its own count of the same event, to check against.</p>
-        <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
           {CONVERSION_EVENTS.map((e) => {
-            const ours = e.key === 'sms' ? r.smsTaps : e.key === 'calls' ? r.callTaps : e.key === 'ringostat' ? r.ringostatCalls
+            const ours = e.key === 'sms' ? r.smsReceived : e.key === 'smsTaps' ? r.smsTaps : e.key === 'calls' ? r.callTaps : e.key === 'ringostat' ? r.ringostatCalls
               : e.key === 'consultations' ? r.consultations : e.key === 'deposits' ? (money ? money.siteDeposits : null) : r.forms;
             const google = data.googleByEvent?.[e.event];
             const same = google !== undefined && ours !== null && Math.round(google) === ours;
             return (
               <div key={e.key} className="flex min-w-0 flex-col rounded-lg bg-zinc-50 p-3 ring-1 ring-zinc-200" title={e.what}>
-                <dt className="text-xs font-semibold text-zinc-800">{e.label}</dt>
+                <dt className="flex items-baseline justify-between gap-2 text-xs font-semibold text-zinc-800">{e.label}{e.secondary && <span className="text-[10px] font-normal uppercase tracking-wide text-zinc-400">secondary</span>}</dt>
                 <dd className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900">{ours === null ? dash : num(ours)}</dd>
-                <dd className="text-xs text-zinc-500">{ours === null ? 'Not loaded' : `${perUnit(data.spend, ours)} each`}</dd>
+                <dd className="text-xs text-zinc-500">{ours === null ? 'Not loaded' : e.secondary ? 'not in the total' : `${perUnit(data.spend, ours)} each`}</dd>
                 <dd className="mt-2"><code className="break-all rounded bg-white px-1.5 py-0.5 text-[11px] text-zinc-700 ring-1 ring-zinc-200">{e.event}</code></dd>
                 <dd className={`mt-1 text-[11px] leading-snug ${google === undefined ? 'text-zinc-400' : same ? 'text-emerald-700' : 'text-amber-700'}`}>
                   Google Ads: {google === undefined ? 'no data' : num(Math.round(google))}{same ? ' (matches)' : ''}
@@ -276,7 +276,7 @@ const convTotal = (c: ConvParts) => c.sms + c.calls + c.ringostat + c.consultati
 /** "3 text taps, 2 call taps, 1 consultation": only the kinds that happened. */
 function convBreakdown(c: ConvParts): string {
   return [
-    c.sms > 0 ? `${c.sms} text tap${c.sms === 1 ? '' : 's'}` : null,
+    c.sms > 0 ? `${c.sms} ${c.sms === 1 ? 'text' : 'texts'}` : null,
     c.calls > 0 ? `${c.calls} call tap${c.calls === 1 ? '' : 's'}` : null,
     c.ringostat > 0 ? `${c.ringostat} ${c.ringostat === 1 ? 'phone call' : 'phone calls'}` : null,
     c.consultations > 0 ? `${c.consultations} consult.` : null,
@@ -302,9 +302,9 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
   const known = new Set(data.campaigns.map((c) => Number(c.campaignId)));
   const extra = (money?.campaigns ?? []).filter((m) => m.campaignId === null || !known.has(m.campaignId));
   const un = data.unattributed;
-  const unParts: ConvParts = { sms: un.smsTaps, calls: un.callTaps, ringostat: un.ringostatCalls, consultations: un.consultations, deposits: 0, forms: un.forms };
+  const unParts: ConvParts = { sms: un.smsReceived, calls: un.callTaps, ringostat: un.ringostatCalls, consultations: un.consultations, deposits: 0, forms: un.forms };
   const partsOf = (c: (typeof data.campaigns)[number]): ConvParts => ({
-    sms: c.smsTaps, calls: c.callTaps, ringostat: c.ringostatCalls, consultations: c.consultations, deposits: byId.get(Number(c.campaignId))?.siteDeposits ?? 0, forms: c.forms,
+    sms: c.smsReceived, calls: c.callTaps, ringostat: c.ringostatCalls, consultations: c.consultations, deposits: byId.get(Number(c.campaignId))?.siteDeposits ?? 0, forms: c.forms,
   });
   const totalParts = data.campaigns.reduce((t, c) => {
     const x = partsOf(c);
@@ -483,7 +483,7 @@ function RateBar({ value, max }: { value: number; max: number }) {
 function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null }) {
   const byPage = money?.siteDepositsByPage ?? {};
   const known = new Set(data.pages.map((p) => p.slug));
-  const rows: PageRow[] = data.pages.map((p) => ({ key: p.slug, name: p.name, visitors: p.visitors, sms: p.smsTaps, calls: p.callTaps, consultations: p.consultations, deposits: byPage[p.slug] ?? 0, forms: p.forms }));
+  const rows: PageRow[] = data.pages.map((p) => ({ key: p.slug, name: p.name, visitors: p.visitors, sms: p.smsReceived, calls: p.callTaps, consultations: p.consultations, deposits: byPage[p.slug] ?? 0, forms: p.forms }));
   const unplaced = Object.entries(byPage).filter(([slug]) => !known.has(slug)).reduce((t, [, n]) => t + n, 0);
   if (unplaced > 0) rows.push({ key: 'unplaced', name: 'Page not recorded', visitors: null, sms: 0, calls: 0, consultations: 0, deposits: unplaced, forms: 0 });
   if (rows.length === 0) return null;

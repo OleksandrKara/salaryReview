@@ -3,7 +3,7 @@
  * conversion action ("AnnaKara GA4 (web) sms_click" in Google Ads), so every number here can be checked against the Ads and
  * Analytics screens.
  */
-export type ConvKey = 'sms' | 'calls' | 'ringostat' | 'consultations' | 'deposits' | 'forms';
+export type ConvKey = 'sms' | 'smsTaps' | 'calls' | 'ringostat' | 'consultations' | 'deposits' | 'forms';
 
 export interface ConversionEvent {
   key: ConvKey;
@@ -12,10 +12,13 @@ export interface ConversionEvent {
   event: string;
   /** What the visitor did, in one line. */
   what: string;
+  /** Shown for reference, not part of the conversion total or the cost per conversion. */
+  secondary?: boolean;
 }
 
 export const CONVERSION_EVENTS: ConversionEvent[] = [
-  { key: 'sms', label: 'Text taps', event: 'sms_click', what: 'Tap on a Text us button on the site' },
+  { key: 'sms', label: 'Texts received', event: 'sms_sent', what: 'A text from a site visitor reached us (Twilio) after they tapped Text us on the site. This is the primary text conversion' },
+  { key: 'smsTaps', label: 'Text taps', event: 'sms_click', what: 'Tap on a Text us button. Secondary: the visitor may never send the text', secondary: true },
   { key: 'calls', label: 'Call taps', event: 'phoneNumber_click', what: 'Tap on a phone number on the site' },
   { key: 'ringostat', label: 'Phone calls', event: 'Ringostat_calls', what: 'A real call from a Google ad, received by the call tracker (Ringostat)' },
   { key: 'consultations', label: 'Consultations booked', event: 'consultation_booked', what: 'A consultation booked on the site' },

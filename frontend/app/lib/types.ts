@@ -2665,6 +2665,7 @@ export interface GooglePpcCampaign {
   consultations: number;
   forms: number;
   ringostatCalls: number;
+  smsReceived: number;
   googleByEvent: Record<string, number>;
 }
 
@@ -2679,6 +2680,7 @@ export interface GooglePpcPage {
   fullPayments: number;
   revenue: number;
   forms: number;
+  smsReceived: number;
 }
 
 export interface GooglePpcData {
@@ -2698,11 +2700,12 @@ export interface GooglePpcData {
     revenue: number;
     forms: number;
     ringostatCalls: number;
+    smsReceived: number;
   };
   campaigns: GooglePpcCampaign[];
   pages: GooglePpcPage[];
   customers: GooglePpcCustomer[];
-  unattributed: { smsTaps: number; callTaps: number; consultations: number; forms: number; ringostatCalls: number };
+  unattributed: { smsTaps: number; callTaps: number; consultations: number; forms: number; ringostatCalls: number; smsReceived: number };
   googleByEvent: Record<string, number>;
 }
 
