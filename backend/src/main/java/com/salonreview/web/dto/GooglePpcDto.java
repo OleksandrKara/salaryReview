@@ -2,6 +2,7 @@ package com.salonreview.web.dto;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /** Google Ads results for the whole business: spend from the daily sync, outcomes from visitors who
  * arrived with a Google click on any landing page. */
@@ -15,17 +16,18 @@ public record GooglePpcDto(
         List<Campaign> campaigns,
         List<PageResults> pages,
         List<PayingCustomer> customers,
-        Counts unattributed
+        Counts unattributed,
+        Map<String, Double> googleByEvent
 ) {
     public record Results(long visitors, long smsTaps, long callTaps, long consultations, long deposits,
-                          long fullPayments, long payingCustomers, BigDecimal revenue, long forms) {}
+                          long fullPayments, long payingCustomers, BigDecimal revenue, long forms, long ringostatCalls) {}
 
     /** Conversions that could not be tied to one of this period's campaigns (older campaign, no campaign recorded). */
-    public record Counts(long smsTaps, long callTaps, long consultations, long forms) {}
+    public record Counts(long smsTaps, long callTaps, long consultations, long forms, long ringostatCalls) {}
 
     public record Campaign(long campaignId, String name, String status, BigDecimal spend, long impressions,
                            long clicks, double platformConversions, long smsTaps, long callTaps, long consultations,
-                           long forms) {}
+                           long forms, long ringostatCalls, Map<String, Double> googleByEvent) {}
 
     public record PageResults(String slug, String name, long visitors, long smsTaps, long callTaps,
                               long consultations, long deposits, long fullPayments, BigDecimal revenue, long forms) {}

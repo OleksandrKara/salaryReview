@@ -65,7 +65,16 @@ public class MarketingAdLeadsController {
     public LeadFollowUpService.LostReport lostReport(
             @RequestParam(defaultValue = "90") int days,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return leads.lostReport(days, from, to);
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) List<Long> campaigns) {
+        return campaigns == null || campaigns.isEmpty()
+                ? leads.lostReport(days, from, to)
+                : ads.lostReport(days, from, to, new java.util.HashSet<>(campaigns));
+    }
+
+    /** Google Ads campaigns the lost-leads report can be filtered by. */
+    @GetMapping("/lost-report/campaigns")
+    public List<AdLeadsService.CampaignOption> lostReportCampaigns() {
+        return ads.lostCampaignOptions();
     }
 }

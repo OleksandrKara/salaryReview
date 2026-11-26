@@ -56,7 +56,7 @@ import type {
   MissedBooking,
   Lead,
   LeadSearchPage,
-  LeadDetail, LostReport,
+  LeadDetail, LostReport, LostCampaignOption,
   Redo,
   RevenueDayDetail,
   RevenuePulse,
@@ -418,8 +418,9 @@ export const serverApi = {
 
   getAdLead: (id: number) => serverFetch<AdLeadCard>(`/api/owner/marketing/leads/${id}`),
 
-  getAdLostReport: (days: number, from?: string | null, to?: string | null) =>
-    serverFetch<LostReport>(`/api/owner/marketing/lost-report?days=${days}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`),
+  getAdLostReport: (days: number, from?: string | null, to?: string | null, campaigns: number[] = []) =>
+    serverFetch<LostReport>(`/api/owner/marketing/lost-report?days=${days}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}${campaigns.map((c) => `&campaigns=${c}`).join('')}`),
+  getLostReportCampaigns: () => serverFetch<LostCampaignOption[]>('/api/owner/marketing/lost-report/campaigns'),
 
   getMarketingPages: () => serverFetch<MarketingLandingPage[]>('/api/owner/marketing/pages'),
 

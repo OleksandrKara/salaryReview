@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '../../../lib/api';
 import type { AdLeadCampaignMoney, AdLeadMoney, AdLeadRow, GooglePpcData, Margins } from '../../../lib/types';
 import { romiPercent } from './romi';
+import { CONVERSION_EVENTS } from './conversionEvents';
 import { consultationLabel, statusLabel, statusTone } from '../adLeads';
 import PeriodFilter from '../PeriodFilter';
 import { periodToBounds, periodToCookie, PPC_PERIOD_COOKIE } from '../period';
@@ -154,22 +155,33 @@ function Kpis({ data, margins, onMargins, money, leads }: { data: GooglePpcData;
       </div>
       <div className="mt-3 rounded-xl bg-white p-3 ring-1 ring-zinc-200 sm:p-4">
         <h2 className="text-sm font-semibold text-zinc-900">Conversions</h2>
-        <dl className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {[
-            { label: 'Consultations booked', n: r.consultations, hint: 'online or in studio, from the site' },
-            { label: 'Text taps', n: r.smsTaps, hint: 'taps on the text button' },
-            { label: 'Call taps', n: r.callTaps, hint: 'taps on the call button' },
-            { label: 'Deposits from the site', n: money ? money.siteDeposits : null, hint: 'Book now, Book a procedure (invoices do not count)' },
-            { label: 'Academy forms', n: r.forms, hint: 'course request form, repeats not counted' },
-          ].map((c) => (
-            <div key={c.label} className="min-w-0">
-              <dt className="text-xs font-medium text-zinc-500">{c.label}</dt>
-              <dd className="mt-0.5 text-xl font-semibold tabular-nums text-zinc-900">{c.n === null ? dash : num(c.n)}</dd>
-              <dd className="text-xs text-zinc-500">{c.n === null ? 'Not loaded' : `${perUnit(data.spend, c.n)} each`}</dd>
-              <dd className="text-[11px] leading-snug text-zinc-400">{c.hint}</dd>
-            </div>
-          ))}
+        <p className="mt-0.5 text-xs text-zinc-500">Each conversion with the event that fires it. Google Ads shows its own count of the same event, to check against.</p>
+        <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          {CONVERSION_EVENTS.map((e) => {
+            const ours = e.key === 'sms' ? r.smsTaps : e.key === 'calls' ? r.callTaps : e.key === 'ringostat' ? r.ringostatCalls
+              : e.key === 'consultations' ? r.consultations : e.key === 'deposits' ? (money ? money.siteDeposits : null) : r.forms;
+            const google = data.googleByEvent?.[e.event];
+            const same = google !== undefined && ours !== null && Math.round(google) === ours;
+            return (
+              <div key={e.key} className="flex min-w-0 flex-col rounded-lg bg-zinc-50 p-3 ring-1 ring-zinc-200" title={e.what}>
+                <dt className="text-xs font-semibold text-zinc-800">{e.label}</dt>
+                <dd className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900">{ours === null ? dash : num(ours)}</dd>
+                <dd className="text-xs text-zinc-500">{ours === null ? 'Not loaded' : `${perUnit(data.spend, ours)} each`}</dd>
+                <dd className="mt-2"><code className="break-all rounded bg-white px-1.5 py-0.5 text-[11px] text-zinc-700 ring-1 ring-zinc-200">{e.event}</code></dd>
+                <dd className={`mt-1 text-[11px] leading-snug ${google === undefined ? 'text-zinc-400' : same ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  Google Ads: {google === undefined ? 'no data' : num(Math.round(google))}{same ? ' (matches)' : ''}
+                </dd>
+              </div>
+            );
+          })}
         </dl>
+        <details className="mt-3 text-xs text-zinc-500">
+          <summary className="cursor-pointer font-medium text-zinc-700">What fires each event</summary>
+          <ul className="mt-2 space-y-1">
+            {CONVERSION_EVENTS.map((e) => <li key={e.key}><strong className="font-medium text-zinc-800">{e.label}</strong> <code className="text-[11px]">{e.event}</code>: {e.what}.</li>)}
+          </ul>
+          <p className="mt-2">Google also counts other actions (page visits, local actions) that are not in this list, so its total can be higher.</p>
+        </details>
       </div>
       <MarginsEditor margins={margins} onChange={onMargins} />
       <p className="mt-2 text-xs text-zinc-500">
@@ -259,13 +271,14 @@ function MarginsEditor({ margins, onChange }: { margins: Margins | null; onChang
   );
 }
 
-type ConvParts = { sms: number; calls: number; consultations: number; deposits: number; forms: number };
-const convTotal = (c: ConvParts) => c.sms + c.calls + c.consultations + c.deposits + c.forms;
+type ConvParts = { sms: number; calls: number; ringostat: number; consultations: number; deposits: number; forms: number };
+const convTotal = (c: ConvParts) => c.sms + c.calls + c.ringostat + c.consultations + c.deposits + c.forms;
 /** "3 text taps, 2 call taps, 1 consultation": only the kinds that happened. */
 function convBreakdown(c: ConvParts): string {
   return [
-    c.sms > 0 ? `${c.sms} text` : null,
-    c.calls > 0 ? `${c.calls} call` : null,
+    c.sms > 0 ? `${c.sms} text tap${c.sms === 1 ? '' : 's'}` : null,
+    c.calls > 0 ? `${c.calls} call tap${c.calls === 1 ? '' : 's'}` : null,
+    c.ringostat > 0 ? `${c.ringostat} ${c.ringostat === 1 ? 'phone call' : 'phone calls'}` : null,
     c.consultations > 0 ? `${c.consultations} consult.` : null,
     c.deposits > 0 ? `${c.deposits} ${c.deposits === 1 ? 'deposit' : 'deposits'}` : null,
     c.forms > 0 ? `${c.forms} ${c.forms === 1 ? 'form' : 'forms'}` : null,
@@ -289,13 +302,13 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
   const known = new Set(data.campaigns.map((c) => Number(c.campaignId)));
   const extra = (money?.campaigns ?? []).filter((m) => m.campaignId === null || !known.has(m.campaignId));
   const un = data.unattributed;
-  const unParts: ConvParts = { sms: un.smsTaps, calls: un.callTaps, consultations: un.consultations, deposits: 0, forms: un.forms };
+  const unParts: ConvParts = { sms: un.smsTaps, calls: un.callTaps, ringostat: un.ringostatCalls, consultations: un.consultations, deposits: 0, forms: un.forms };
   const partsOf = (c: (typeof data.campaigns)[number]): ConvParts => ({
-    sms: c.smsTaps, calls: c.callTaps, consultations: c.consultations, deposits: byId.get(Number(c.campaignId))?.siteDeposits ?? 0, forms: c.forms,
+    sms: c.smsTaps, calls: c.callTaps, ringostat: c.ringostatCalls, consultations: c.consultations, deposits: byId.get(Number(c.campaignId))?.siteDeposits ?? 0, forms: c.forms,
   });
   const totalParts = data.campaigns.reduce((t, c) => {
     const x = partsOf(c);
-    return { sms: t.sms + x.sms, calls: t.calls + x.calls, consultations: t.consultations + x.consultations, deposits: t.deposits + x.deposits, forms: t.forms + x.forms };
+    return { sms: t.sms + x.sms, calls: t.calls + x.calls, ringostat: t.ringostat + x.ringostat, consultations: t.consultations + x.consultations, deposits: t.deposits + x.deposits, forms: t.forms + x.forms };
   }, { ...unParts, deposits: extra.reduce((t, m) => t + m.siteDeposits, 0) });
   const hasUn = convTotal(unParts) > 0;
   const leadsTotal = (money?.campaigns ?? []).reduce((t, m) => t + m.leads, 0);
@@ -415,7 +428,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
                 <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
-                <td className="px-3 py-2"><Conv parts={{ sms: 0, calls: 0, consultations: 0, deposits: m.siteDeposits, forms: 0 }} /></td>
+                <td className="px-3 py-2"><Conv parts={{ sms: 0, calls: 0, ringostat: 0, consultations: 0, deposits: m.siteDeposits, forms: 0 }} /></td>
                 <td className="px-3 py-2 text-right tabular-nums">{dash}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{num(m.leads)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{dash}</td>

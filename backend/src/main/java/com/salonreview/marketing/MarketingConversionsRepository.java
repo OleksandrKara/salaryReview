@@ -143,6 +143,30 @@ public class MarketingConversionsRepository {
                 (rs, i) -> rs.getString("camp"), businessId, f, f, t, t);
     }
 
+    /**
+     * Phone calls received through the call tracker (Ringostat) that came from a Google ad, one per call, with the utm_campaign
+     * text each carried. These are real calls, not taps on the number, and Google Ads counts them as the Ringostat_calls conversion.
+     */
+    public List<String> googleRingostatCalls(Long businessId, Instant from, Instant to) {
+        Timestamp f = from == null ? null : Timestamp.from(from);
+        Timestamp t = to == null ? null : Timestamp.from(to);
+        return jdbc.query("SELECT COALESCE(attribution->>'utm_campaign', '') AS camp FROM lead_intake WHERE business_id = ? AND channel = 'Call' "
+                        + "AND source = 'Google Ads' AND outcome <> 'DUPLICATE' "
+                        + "AND (?::timestamptz IS NULL OR created_at >= ?) AND (?::timestamptz IS NULL OR created_at < ?)",
+                (rs, i) -> rs.getString("camp"), businessId, f, f, t, t);
+    }
+
+    /** Conversions Google Ads itself reports per campaign and conversion action (GA4 events imported into Ads), summed over the window. */
+    public List<GoogleActionRow> googleConversionsByAction(Long businessId, java.time.LocalDate from, java.time.LocalDate to) {
+        return jdbc.query("SELECT campaign_id, action_name, SUM(all_conversions) AS n FROM google_ads_conversions_daily WHERE business_id = ? "
+                        + "AND (?::date IS NULL OR day >= ?) AND (?::date IS NULL OR day <= ?) GROUP BY campaign_id, action_name",
+                (rs, i) -> new GoogleActionRow(rs.getLong("campaign_id"), rs.getString("action_name"), rs.getDouble("n")),
+                businessId, from == null ? null : java.sql.Date.valueOf(from), from == null ? null : java.sql.Date.valueOf(from),
+                to == null ? null : java.sql.Date.valueOf(to), to == null ? null : java.sql.Date.valueOf(to));
+    }
+
+    public record GoogleActionRow(long campaignId, String actionName, double conversions) {}
+
     /** Every (campaign id, name) pair the Google Ads sync has stored, so lead and form texts can be matched to a campaign. */
     public List<Map.Entry<Long, String>> googleAdsCampaignNames(Long businessId) {
         return jdbc.query("SELECT DISTINCT campaign_id, campaign_name FROM google_ads_daily WHERE business_id = ?",

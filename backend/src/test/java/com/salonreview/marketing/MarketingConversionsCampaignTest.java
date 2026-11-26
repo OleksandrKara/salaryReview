@@ -68,4 +68,27 @@ class MarketingConversionsCampaignTest {
 
         assertThat(repository.googleAcademyForms(b, null, null)).containsExactlyInAnyOrder("Inweb_Search_Academy", "");
     }
+
+    @Test
+    void ringostatCallsCountPerCallWithTheirCampaignAndGoogleActionsAreSummedPerCampaign() {
+        long b = businesses.save(Business.builder().name("Calls").shortCode("rc-" + System.nanoTime()).timezone("UTC").active(true).build()).getId();
+        String sql = "INSERT INTO lead_intake (business_id, channel, source, phone_number, outcome, attribution) VALUES (?, ?, ?, ?, ?, ?::jsonb)";
+        jdbc.update(sql, b, "Call", "Google Ads", "+16195550101", "MATCHED", "{\"utm_campaign\":\"Inweb_Search_Permanent_Eyebrow\"}");
+        jdbc.update(sql, b, "Call", "Google Ads", "+16195550101", "MATCHED", "{\"utm_campaign\":\"Inweb_Search_Permanent_Eyebrow\"}");
+        jdbc.update(sql, b, "Call", "Google Ads", "+16195550102", "CREATED", null);
+        jdbc.update(sql, b, "Call", "Google Ads", "+16195550103", "DUPLICATE", "{\"utm_campaign\":\"x\"}");
+        jdbc.update(sql, b, "Call", "Google (organic)", "+16195550104", "MATCHED", "{\"utm_campaign\":\"(organic)\"}");
+        jdbc.update(sql, b, "SMS", "Google Ads", "+16195550105", "MATCHED", null);
+
+        assertThat(repository.googleRingostatCalls(b, null, null)).containsExactlyInAnyOrder("Inweb_Search_Permanent_Eyebrow", "Inweb_Search_Permanent_Eyebrow", "");
+
+        String act = "INSERT INTO google_ads_conversions_daily (customer_id, business_id, campaign_id, day, action_name, all_conversions) VALUES ('c', ?, ?, ?::date, ?, ?)";
+        jdbc.update(act, b, 111L, "2026-11-12", "AnnaKara GA4 (web) Ringostat_calls", 2);
+        jdbc.update(act, b, 111L, "2026-11-13", "AnnaKara GA4 (web) Ringostat_calls", 1);
+        jdbc.update(act, b, 111L, "2026-11-13", "Clicks to call", 2);
+        jdbc.update(act, b, 111L, "2026-10-01", "AnnaKara GA4 (web) Ringostat_calls", 9);
+        var rows = repository.googleConversionsByAction(b, java.time.LocalDate.of(2026, 11, 1), java.time.LocalDate.of(2026, 11, 30));
+        assertThat(rows).extracting(MarketingConversionsRepository.GoogleActionRow::actionName, MarketingConversionsRepository.GoogleActionRow::conversions)
+                .containsExactlyInAnyOrder(org.assertj.core.groups.Tuple.tuple("AnnaKara GA4 (web) Ringostat_calls", 3.0), org.assertj.core.groups.Tuple.tuple("Clicks to call", 2.0));
+    }
 }
