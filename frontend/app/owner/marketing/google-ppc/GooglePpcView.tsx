@@ -272,12 +272,12 @@ function MarginsEditor({ margins, onChange }: { margins: Margins | null; onChang
 }
 
 type ConvParts = { sms: number; calls: number; ringostat: number; consultations: number; deposits: number; forms: number };
-const convTotal = (c: ConvParts) => c.sms + c.calls + c.ringostat + c.consultations + c.deposits + c.forms;
+// Call taps are secondary (Google Ads does not count them either): the real call is the Ringostat one.
+const convTotal = (c: ConvParts) => c.sms + c.ringostat + c.consultations + c.deposits + c.forms;
 /** "3 text taps, 2 call taps, 1 consultation": only the kinds that happened. */
 function convBreakdown(c: ConvParts): string {
   return [
     c.sms > 0 ? `${c.sms} ${c.sms === 1 ? 'text' : 'texts'}` : null,
-    c.calls > 0 ? `${c.calls} call tap${c.calls === 1 ? '' : 's'}` : null,
     c.ringostat > 0 ? `${c.ringostat} ${c.ringostat === 1 ? 'phone call' : 'phone calls'}` : null,
     c.consultations > 0 ? `${c.consultations} consult.` : null,
     c.deposits > 0 ? `${c.deposits} ${c.deposits === 1 ? 'deposit' : 'deposits'}` : null,
@@ -317,7 +317,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
     <section aria-label="Campaigns">
       <h2 className="text-sm font-semibold text-zinc-900">Campaigns</h2>
       <p className="mb-2 mt-0.5 text-xs text-zinc-500">
-        Conversions = text taps + call taps + consultations booked + deposits from the site (+ Academy forms). Leads are people created in the period.
+        Conversions = texts received + phone calls + consultations booked + deposits from the site (+ Academy forms). Leads are people created in the period.
       </p>
       <ul className="space-y-2 sm:hidden">
         {data.campaigns.map((c) => {
@@ -395,7 +395,7 @@ function Campaigns({ data, money }: { data: GooglePpcData; money: AdLeadMoney | 
               <th className={th}>Spend</th>
               <th className={th}>Clicks</th>
               <th className={th}>CPC</th>
-              <th className={th} title="Text taps + call taps + consultations booked + deposits from the site (+ Academy forms)">Conversions</th>
+              <th className={th} title="Texts received + phone calls + consultations booked + deposits from the site (+ Academy forms). Taps on the text and call buttons are not counted">Conversions</th>
               <th className={th}>Cost per conversion</th>
               <th className={th} title="People created as leads in the period">Leads</th>
               <th className={th} title="Spend divided by the leads of this campaign that paid since they came in">CAC</th>
@@ -487,7 +487,7 @@ function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null
   const unplaced = Object.entries(byPage).filter(([slug]) => !known.has(slug)).reduce((t, [, n]) => t + n, 0);
   if (unplaced > 0) rows.push({ key: 'unplaced', name: 'Page not recorded', visitors: null, sms: 0, calls: 0, consultations: 0, deposits: unplaced, forms: 0 });
   if (rows.length === 0) return null;
-  const conv = (r: PageRow) => r.sms + r.calls + r.consultations + r.deposits + r.forms;
+  const conv = (r: PageRow) => r.sms + r.consultations + r.deposits + r.forms;
   const hasForms = rows.some((r) => r.forms > 0);
   const share = (r: PageRow) => (r.visitors && r.visitors > 0 ? conv(r) / r.visitors : 0);
   const rate = (r: PageRow) => (r.visitors && r.visitors > 0 ? `${(share(r) * 100).toFixed(1)}%` : dash);
@@ -499,7 +499,7 @@ function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null
     <section aria-label="Results by landing page">
       <h2 className="text-sm font-semibold text-zinc-900">Results by landing page</h2>
       <p className="mb-2 mt-0.5 text-xs text-zinc-500">
-        Conversion rate = text taps + call taps + consultations booked + deposits from the site (+ Academy forms on the Academy page), divided by visits of the page.
+        Conversion rate = texts received + phone calls + consultations booked + deposits from the site (+ Academy forms on the Academy page), divided by visits of the page.
       </p>
       <ul className="space-y-2 sm:hidden">
         {[...rows, total].map((r) => (
@@ -511,8 +511,8 @@ function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null
             {r.key !== 'all' && <div className="mt-1.5"><RateBar value={share(r)} max={maxShare} /></div>}
             <dl className="mt-2 grid grid-cols-3 gap-x-2 gap-y-2 text-xs">
               <Cell label="Visits" value={r.visitors === null ? dash : num(r.visitors)} />
-              <Cell label="Text taps" value={num(r.sms)} />
-              <Cell label="Call taps" value={num(r.calls)} />
+              <Cell label="Texts received" value={num(r.sms)} />
+              <Cell label="Call taps (not counted)" value={num(r.calls)} />
               <Cell label="Consultations" value={num(r.consultations)} />
               <Cell label="Site deposits" value={num(r.deposits)} />
               {hasForms && <Cell label="Forms" value={r.key === 'academy' || r.forms > 0 || r.key === 'all' ? num(r.forms) : dash} />}
@@ -527,8 +527,8 @@ function Pages({ data, money }: { data: GooglePpcData; money: AdLeadMoney | null
             <tr>
               <th className="px-3 py-2 font-medium">Page</th>
               <th className="px-3 py-2 text-right font-medium">Visits</th>
-              <th className="px-3 py-2 text-right font-medium">Text taps</th>
-              <th className="px-3 py-2 text-right font-medium">Call taps</th>
+              <th className="px-3 py-2 text-right font-medium">Texts received</th>
+              <th className="px-3 py-2 text-right font-medium">Call taps (not counted)</th>
               <th className="px-3 py-2 text-right font-medium">Consultations</th>
               <th className="px-3 py-2 text-right font-medium" title="Deposits paid through Book now, Book a procedure; invoices do not count">Site deposits</th>
               {hasForms && <th className="px-3 py-2 text-right font-medium" title="Academy course request form (Academy page only)">Forms</th>}
