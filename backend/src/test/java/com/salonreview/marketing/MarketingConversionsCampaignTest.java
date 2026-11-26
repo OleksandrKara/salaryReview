@@ -91,4 +91,14 @@ class MarketingConversionsCampaignTest {
         assertThat(rows).extracting(MarketingConversionsRepository.GoogleActionRow::actionName, MarketingConversionsRepository.GoogleActionRow::conversions)
                 .containsExactlyInAnyOrder(org.assertj.core.groups.Tuple.tuple("AnnaKara GA4 (web) Ringostat_calls", 3.0), org.assertj.core.groups.Tuple.tuple("Clicks to call", 2.0));
     }
+
+    @Test
+    void textsReceivedFromGoogleAdsAreCountedPerTextWithTheirCampaign() {
+        long b = businesses.save(Business.builder().name("Texts").shortCode("tx-" + System.nanoTime()).timezone("UTC").active(true).build()).getId();
+        String sql = "INSERT INTO ga4_sms_sent_events (business_id, order_id, client_id, client_id_is_ga, occurred_at, traffic_source, utm_campaign, status) VALUES (?, ?, 'c', true, now(), ?, ?, 'SENT')";
+        jdbc.update(sql, b, "sms-1", "Google Ads", "Inweb_Search_Academy");
+        jdbc.update(sql, b, "sms-2", "Google Ads", null);
+        jdbc.update(sql, b, "sms-3", "Google (organic)", "(organic)");
+        assertThat(repository.googleSmsReceived(b, null, null)).containsExactlyInAnyOrder("Inweb_Search_Academy", "");
+    }
 }

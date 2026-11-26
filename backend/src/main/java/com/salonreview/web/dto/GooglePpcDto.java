@@ -20,17 +20,17 @@ public record GooglePpcDto(
         Map<String, Double> googleByEvent
 ) {
     public record Results(long visitors, long smsTaps, long callTaps, long consultations, long deposits,
-                          long fullPayments, long payingCustomers, BigDecimal revenue, long forms, long ringostatCalls) {}
+                          long fullPayments, long payingCustomers, BigDecimal revenue, long forms, long ringostatCalls, long smsReceived) {}
 
     /** Conversions that could not be tied to one of this period's campaigns (older campaign, no campaign recorded). */
-    public record Counts(long smsTaps, long callTaps, long consultations, long forms, long ringostatCalls) {}
+    public record Counts(long smsTaps, long callTaps, long consultations, long forms, long ringostatCalls, long smsReceived) {}
 
     public record Campaign(long campaignId, String name, String status, BigDecimal spend, long impressions,
                            long clicks, double platformConversions, long smsTaps, long callTaps, long consultations,
-                           long forms, long ringostatCalls, Map<String, Double> googleByEvent) {}
+                           long forms, long ringostatCalls, long smsReceived, Map<String, Double> googleByEvent) {}
 
     public record PageResults(String slug, String name, long visitors, long smsTaps, long callTaps,
-                              long consultations, long deposits, long fullPayments, BigDecimal revenue, long forms) {}
+                              long consultations, long deposits, long fullPayments, BigDecimal revenue, long forms, long smsReceived) {}
 
     public record Payment(java.time.Instant at, BigDecimal amount) {}
 
